@@ -53,12 +53,12 @@ extern "C" {
 }
 #endif
 
-#if PLATFORM(MUI)
+#if PLATFORM(MUI) && !OS(AMIGAOS)
 extern "C" {
 #define AF_INET  2
 #define AF_INET6 10
 
-#if OS(MORPHOS) && !OS(AMIGAOS)
+#if OS(MORPHOS)
 	struct in6_addr {
 	   unsigned char   s6_addr[16];   /* IPv6 address */
 	};

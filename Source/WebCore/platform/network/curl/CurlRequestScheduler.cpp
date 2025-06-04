@@ -113,7 +113,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
         }
     }
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if PLATFORM(MUI)
 	if (m_stopped)
 		return;
 #endif
@@ -274,7 +274,7 @@ void CurlRequestScheduler::workerThread()
 
         executeTasks();
 
-#if 1
+#if OS(MORPHOS)
         const int selectTimeoutMS = INT_MAX;
         CURLMcode mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
         if (mc != CURLM_OK)
@@ -358,10 +358,10 @@ void CurlRequestScheduler::workerThread()
                 completeTransfer(client, msg->data.result);
         }
 
-#if PLATFORM(MUI)
-        for (auto& stream : m_streamList.values())
-            stream->tryToTransfer(fdread, fdwrite, fdexcep);
-#endif
+//#if PLATFORM(MUI)
+//        for (auto& stream : m_streamList.values())
+//            stream->tryToTransfer(fdread, fdwrite, fdexcep);
+//#endif
 
         stopThreadIfNoMoreJobRunning();
     }

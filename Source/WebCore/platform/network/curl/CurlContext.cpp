@@ -431,12 +431,12 @@ const String CurlHandle::errorDescription(CURLcode errorCode)
 
 void CurlHandle::enableSSLForHost(const String& host)
 {
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if PLATFORM(MUI)
 	bool caCertOverride = false;
 #endif
     auto& sslHandle = CurlContext::singleton().sslHandle();
     if (auto sslClientCertificate = sslHandle.getSSLClientCertificate(host)) {
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if PLATFORM(MUI)
         setCACertPath(sslClientCertificate->first.utf8().data());
         caCertOverride = true;
 #else
@@ -460,7 +460,7 @@ void CurlHandle::enableSSLForHost(const String& host)
 
     setSslCtxCallbackFunction(willSetupSslCtxCallback, this);
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if PLATFORM(MUI)
 	if (caCertOverride)
 		setSslVerifyHost(CurlHandle::VerifyHost::LooseNameCheck);
 	else
@@ -540,9 +540,8 @@ void CurlHandle::setUrl(const URL& url)
     if (url.protocolIs("https"))
         enableSSLForHost(m_url.host().toString());
 #if PLATFORM(MUI)
-// broken 2.34.6
-//    else
-//        curl_easy_setopt(m_handle, CURLOPT_HTTP09_ALLOWED, 1L);  // HTTP only
+    else
+        curl_easy_setopt(m_handle, CURLOPT_HTTP09_ALLOWED, 1L);  // HTTP only
 #endif
 }
 

@@ -63,7 +63,12 @@ class CurlGlobal {
 protected:
     CurlGlobal()
     {
-        curl_global_init(CURL_GLOBAL_ALL);// | CURL_GLOBAL_NO_GETENV);
+#if OS(AROS) || OS(AMIGAOS)
+        // 7.76.0 does not have CURL_GLOBAL_NO_GETENV
+        curl_global_init(CURL_GLOBAL_ALL );
+#else
+        curl_global_init(CURL_GLOBAL_ALL | CURL_GLOBAL_NO_GETENV);
+#endif
     }
     
     virtual ~CurlGlobal()

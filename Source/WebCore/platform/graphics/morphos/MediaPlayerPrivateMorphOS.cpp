@@ -166,12 +166,14 @@ public:
     		return MediaPlayer::SupportsType::IsNotSupported;
 		}
 
+#if !OS(AROS)
         if (!isCGXVideoValid())
         {
     		return MediaPlayer::SupportsType::IsNotSupported;
 		}
+#endif
 
-		bool withHLS = MediaPlayerMorphOSSettings::settings().m_supportHLSForHost ? MediaPlayerMorphOSSettings::settings().m_supportHLSForHost(page, host) : true;
+		bool withHLS = true;
 
 		DM(dprintf("%s: url '%s' content '%s' ctype '%s' isource %d istream %d profiles %d hlsOK %d host '%s' page %p\n", __func__,
 			parameters.url.string().utf8().data(), parameters.type.raw().utf8().data(), parameters.type.containerType().utf8().data(),
@@ -319,6 +321,16 @@ void MediaPlayerPrivateMorphOS::load(const String& url)
 	m_player->networkStateChanged();
 	m_readyState = MediaPlayer::ReadyState::HaveNothing;
 	m_player->readyStateChanged();
+
+#if 1
+MediaPlayerMorphOSSettings::settings().m_networkingContextForRequests =
+m_player->client().mediaPlayerPage()->mainFrame().loader().networkingContext();
+
+MediaPlayerMorphOSSettings::settings().m_load = [](WebCore::MediaPlayer *player, const String &url, WebCore::MediaPlayerMorphOSInfo& info,
+		MediaPlayerMorphOSStreamSettings &settings, Function<void()> &&yieldFunc) {
+	};
+
+#endif
 
 	m_acinerella = Acinerella::Acinerella::create(this, url);
 }
@@ -810,10 +822,20 @@ void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 
 void MediaPlayerPrivateMorphOS::accUpdated(MediaPlayerMorphOSInfo info)
 {
+#if 1
+	if (info.m_width)
+	{
+		m_width = info.m_width;
+		m_height = info.m_height;
+	}
+
+	accSetVideoSize(m_width, m_height);
+#else
 	if (MediaPlayerMorphOSSettings::settings().m_update)
 	{
 		MediaPlayerMorphOSSettings::settings().m_update(m_player, info);
 	}
+#endif
 }
 
 void MediaPlayerPrivateMorphOS::accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState state)
