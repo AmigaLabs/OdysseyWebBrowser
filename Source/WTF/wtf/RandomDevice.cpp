@@ -29,10 +29,15 @@
 
 #include <stdlib.h>
 
-#if !OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX)
+#if (!OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX)) || OS(AMIGAOS)
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#if !OS(AMIGAOS)
+#define DEV_URANDOM "/dev/urandom"
+#else
+#define DEV_URANDOM "RANDOM:"
+#endif
 #endif
 
 #if OS(WINDOWS)
@@ -54,7 +59,7 @@
 
 namespace WTF {
 
-#if !OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX)
+#if (!OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX)) || OS(AMIGAOS)
 NEVER_INLINE NO_RETURN_DUE_TO_CRASH static void crashUnableToOpenURandom()
 {
     CRASH();
@@ -80,7 +85,7 @@ RandomDevice::RandomDevice()
 {
     int ret = 0;
     do {
-        ret = open("/dev/urandom", O_RDONLY, 0);
+        ret = open(DEV_URANDOM, O_RDONLY, 0);
     } while (ret == -1 && errno == EINTR);
     m_fd = ret;
     if (m_fd < 0)
@@ -105,7 +110,7 @@ void RandomDevice::cryptographicallyRandomValues(unsigned char* buffer, size_t l
     zx_cprng_draw(buffer, length);
 #elif OS(MORPHOS)
 	RandomBytes((APTR)buffer, length);
-#elif OS(UNIX)
+#elif OS(UNIX) || OS(AMIGAOS)
     ssize_t amountRead = 0;
     while (static_cast<size_t>(amountRead) < length) {
         ssize_t currentRead = read(m_fd, buffer + amountRead, length - amountRead);

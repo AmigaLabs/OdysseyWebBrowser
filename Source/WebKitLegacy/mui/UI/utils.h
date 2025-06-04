@@ -31,7 +31,7 @@ char *rexx_result(void);
 
 struct external_notification
 {
-    STRPTR type;
+    CONST_STRPTR type;
     STRPTR message;
 };
 

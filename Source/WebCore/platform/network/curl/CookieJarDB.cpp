@@ -40,7 +40,9 @@
 #include <wtf/text/StringConcatenateNumbers.h>
 
 #include <sys/stat.h>
+#if !OS(AMIGAOS)
 #include <aros/debug.h>
+#endif
 
 namespace WebCore {
 

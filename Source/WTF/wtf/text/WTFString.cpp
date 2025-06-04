@@ -40,6 +40,18 @@
 #include <libraries/charsets.h>
 #endif
 
+#if OS(AMIGAOS)
+#include <proto/codesets.h>
+#ifndef MIBENUM_ISO_8859_1
+#define MIBENUM_ISO_8859_1 CS_MIBENUM_ISO_8859_1
+#endif
+#define MIBENUM_UTF_16 CS_MIBENUM_UTF_16
+#ifndef MIBENUM_SYSTEM
+#define MIBENUM_SYSTEM 0xFFFFFFFF
+#endif
+#define CST_DoNotTerminate (TAG_USER + 3)
+#endif
+
 namespace WTF {
 
 using namespace Unicode;
@@ -680,7 +692,47 @@ CString String::latin1() const
     return result;
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(AMIGAOS)
+// struct Library *CodesetsBase; struct CodesetsIFace *ICodesets;
+
+LONG GetLength(APTR str, LONG bytes, ULONG mib)
+{
+    if (str == NULL) return -1;
+
+    return CodesetsStrLen((CONST_STRPTR) str,
+        CSA_SourceLen, bytes,
+        CSA_SourceMIBenum, mib,
+        TAG_DONE
+    );
+}
+
+LONG ConvertTagList(APTR src, LONG srcbytes, APTR dst, LONG dstbytes,
+   ULONG srcmib, ULONG dstmib, CONST struct TagItem *taglist)
+{
+    STRPTR convertedString = CodesetsConvertStr(
+        CSA_Source, (STRPTR) src,
+        CSA_SourceLen, (ULONG) srcbytes,
+        CSA_DestLenPtr, &dstbytes,
+        CSA_SourceMIBenum, srcmib,
+        CSA_DestMIBenum, dstmib,
+        TAG_DONE
+    );
+    if (convertedString)
+    {
+        dst = convertedString;
+        CodesetsFreeA(convertedString, NULL);
+
+        if ((srcbytes == 0) || (dstbytes == 0))
+        {
+            return 0;
+        }
+        return dstbytes;
+    }
+    return -1;
+}
+#endif
+
 String::String(const char * characters, unsigned inlength, unsigned mib)
 {
 	if (characters)
@@ -695,36 +747,6 @@ String::String(const char * characters, unsigned inlength, unsigned mib)
 				length * sizeof(UChar), mib, MIBENUM_UTF_16, tags);
 		}
 	}
-}
-
-CString String::native() const
-{
-	// string > MorphOS' default codepage string - required for FS access, etc
-    unsigned length = this->length();
-
-    if (!length)
-        return CString("", 0);
-
-	struct TagItem tags[] = { { CST_DoNotTerminate, TRUE }, { TAG_DONE, 0 } };
-
-    if (is8Bit())
-    {
-    	char* characterBuffer;
-		CString result = CString::newUninitialized(length, characterBuffer);
-		ConvertTagList(reinterpret_cast<APTR>(const_cast<unsigned char *>(this->characters8())), length, reinterpret_cast<APTR>(characterBuffer),
-			length, MIBENUM_ISO_8859_1, MIBENUM_SYSTEM, tags);
-		return result;
-	}
-
-    const UChar* characters = this->characters16();
-
-    char* characterBuffer;
-    CString result = CString::newUninitialized(length, characterBuffer);
-
-	ConvertTagList(reinterpret_cast<APTR>(const_cast<UChar *>(characters)), length * sizeof(UChar), reinterpret_cast<APTR>(characterBuffer),
-		length, MIBENUM_UTF_16, MIBENUM_SYSTEM, tags);
-
-    return result;
 }
 #endif
 

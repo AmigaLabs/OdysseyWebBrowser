@@ -51,7 +51,7 @@
 #include <WebCore/TextBoundaries.h>
 #include "gui.h"
 #include "utils.h"
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
 #include <proto/spellchecker.h>
 #endif
 #include <clib/debug_protos.h>
@@ -899,7 +899,7 @@ void WebEditorClient::getGuessesForWord(const String& word, const String& contex
 
         if(dictionary)
         {
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
             D(kprintf("Checking <%s>\n", cword));
 
             STRPTR *res = (STRPTR *) Suggest(dictionary, (STRPTR) cword, NULL);

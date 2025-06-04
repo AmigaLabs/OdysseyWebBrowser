@@ -8,6 +8,9 @@
 #include "GraphicsContextCairo.h"
 
 #include <proto/exec.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <dos/dos.h>
 #include <proto/muimaster.h>
@@ -19,6 +22,7 @@
 
 #include <proto/intuition.h>
 #include <intuition/intuition.h>
+#if OS(AROS) || OS(MORPHOS)
 #include <proto/cybergraphics.h>
 #include <cybergraphx/cybergraphics.h>
 #define __NOLIBBASE__
@@ -27,6 +31,7 @@
 #endif
 #undef __NOLIBBASE__
 #include <cybergraphx/cgxvideo.h>
+#endif
 #include <graphics/rpattr.h>
 #include <proto/graphics.h>
 #if OS(AROS)
@@ -230,8 +235,8 @@ void AcinerellaVideoDecoder::flush()
 void AcinerellaVideoDecoder::dumpStatus()
 {
 	auto lock = Locker(m_lock);
-	dprintf("[\033[35mV]: WM %d IR %d PL %d BUF %f POS %f FIRSTFRAME %d DECFR %d LIVE %d EOF %d\033[0m\n",
-		isWarmedUp(), isReadyToPlay(), isPlaying(), float(bufferSize()), float(position()), m_didShowFirstFrame, m_decodedFrames.size(), m_isLive, m_decoderEOF);
+	D(dprintf("[\033[35mV]: WM %d IR %d PL %d BUF %f POS %f FIRSTFRAME %d DECFR %d LIVE %d EOF %d\033[0m\n",
+		isWarmedUp(), isReadyToPlay(), isPlaying(), float(bufferSize()), float(position()), m_didShowFirstFrame, m_decodedFrames.size(), m_isLive, m_decoderEOF));
 }
 
 void AcinerellaVideoDecoder::setAudioPresentationTime(double apts)

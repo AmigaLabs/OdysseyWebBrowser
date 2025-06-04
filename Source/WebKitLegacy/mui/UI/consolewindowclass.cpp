@@ -25,6 +25,9 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#if defined(__amigaos4__)
+#define __USE_OLD_TIMEVAL__
+#endif
 
 #include "BALBase.h"
 #include <wtf/text/WTFString.h>
@@ -102,7 +105,11 @@ DEFSMETHOD(ConsoleWindow_Add)
         GETDATA;
         struct timeval timeval;
 
+#if defined(__amigaos4__)
+        GetSysTime((struct TimeVal *) &timeval);
+#else
         GetSysTime(&timeval);
+#endif
         Amiga2Date(timeval.tv_secs, &e->clockdata);
 
         stccpy(e->message, msg->message, sizeof(e->message));

@@ -473,7 +473,7 @@ std::unique_ptr<MIMETypeRegistryThreadGlobalData> MIMETypeRegistry::createMIMETy
         "image/png"_s,
         "image/jpeg"_s,
         "image/gif"_s,
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
         "image/png"_s,
         "image/jpeg"_s,
         "image/tiff"_s,

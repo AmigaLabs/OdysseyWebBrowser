@@ -404,7 +404,7 @@ void GraphicsContextCairo::drawPattern(NativeImage& nativeImage, const FloatSize
     Cairo::drawPattern(*this, nativeImage.platformImage().get(), IntSize(imageSize), destRect, tileRect, patternTransform, phase, options);
 }
 
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
 RenderingMode GraphicsContextCairo::renderingMode() const
 {
     return Cairo::State::isAcceleratedContext(*platformContext()) ? RenderingMode::Accelerated : RenderingMode::Unaccelerated;

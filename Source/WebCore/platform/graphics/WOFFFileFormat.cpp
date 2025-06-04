@@ -35,7 +35,7 @@
 static const uint32_t kWoff2Signature = 0x774f4632; // "wOF2"
 #endif
 
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
 #include <netinet/in.h>
 #endif
 

@@ -44,8 +44,8 @@ OBJC_CLASS NSString;
 OBJC_CLASS NSArray;
 #endif
 
-#if PLATFORM(GTK) || OS(MORPHOS)
-#include "SelectionData.h"
+#if PLATFORM(GTK) || OS(MORPHOS) || OS(AMIGAOS)
+#include "morphos/SelectionData.h"
 #endif
 
 #if PLATFORM(WIN)
@@ -105,7 +105,7 @@ struct PasteboardWebContent {
     String text;
     String markup;
 #endif
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     String text;
     String markup;
 #endif
@@ -188,7 +188,7 @@ public:
     Pasteboard(std::unique_ptr<PasteboardContext>&&);
     virtual ~Pasteboard();
 
-#if PLATFORM(GTK) || OS(MORPHOS)
+#if PLATFORM(GTK) || OS(MORPHOS) || OS(AMIGAOS)
     explicit Pasteboard(std::unique_ptr<PasteboardContext>&&, const String& name);
     explicit Pasteboard(std::unique_ptr<PasteboardContext>&&, SelectionData&);
 #if ENABLE(DRAG_SUPPORT)
@@ -266,7 +266,7 @@ public:
     static std::unique_ptr<Pasteboard> createForGlobalSelection(std::unique_ptr<PasteboardContext>&&);
 #endif
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     const SelectionData& selectionData() const { return *m_selectionData; }
 #endif
 
@@ -362,7 +362,7 @@ private:
     String m_name;
 #endif
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     void writeToClipboard();
     void readFromClipboard();
     std::optional<SelectionData> m_selectionData;

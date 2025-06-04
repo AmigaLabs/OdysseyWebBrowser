@@ -431,12 +431,12 @@ const String CurlHandle::errorDescription(CURLcode errorCode)
 
 void CurlHandle::enableSSLForHost(const String& host)
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	bool caCertOverride = false;
 #endif
     auto& sslHandle = CurlContext::singleton().sslHandle();
     if (auto sslClientCertificate = sslHandle.getSSLClientCertificate(host)) {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
         setCACertPath(sslClientCertificate->first.utf8().data());
         caCertOverride = true;
 #else
@@ -460,7 +460,7 @@ void CurlHandle::enableSSLForHost(const String& host)
 
     setSslCtxCallbackFunction(willSetupSslCtxCallback, this);
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	if (caCertOverride)
 		setSslVerifyHost(CurlHandle::VerifyHost::LooseNameCheck);
 	else

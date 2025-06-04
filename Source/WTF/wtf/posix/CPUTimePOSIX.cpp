@@ -39,7 +39,7 @@ static Seconds timevalToSeconds(const struct timeval& value)
 
 std::optional<CPUTime> CPUTime::get()
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	return std::nullopt;
 #else
     struct rusage resource { };
@@ -51,7 +51,7 @@ std::optional<CPUTime> CPUTime::get()
 
 Seconds CPUTime::forCurrentThread()
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	return Seconds(0);
 #else
     struct timespec ts { };

@@ -38,13 +38,18 @@
 
 #include <clib/debug_protos.h>
 
+#if defined(__amigaos4__)
+#include <dos/obsolete.h>
+#endif
+
 #include "gui.h"
 #include "asl.h"
 
-ULONG asl_run_multiple(STRPTR p, struct TagItem *tags, char *** files, ULONG remember_path)
+ULONG asl_run_multiple(CONST_STRPTR p, struct TagItem *tags, char *** files, ULONG remember_path)
 {
     ULONG count = 0;
-    STRPTR dir, file;
+    STRPTR dir;
+    CONST_STRPTR file;
 
     *files = NULL;
     file = NULL;
@@ -167,9 +172,10 @@ void asl_free(ULONG count, char ** files)
     FreeVecTaskPooled(files);
 }
 
-char * asl_run(STRPTR p, struct TagItem *tags, ULONG remember_path)
+char * asl_run(CONST_STRPTR p, struct TagItem *tags, ULONG remember_path)
 {
-    STRPTR result, dir, file;
+    STRPTR result, dir;
+    CONST_STRPTR file;
 
     file = NULL;
     dir = NULL;

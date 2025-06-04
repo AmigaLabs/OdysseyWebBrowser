@@ -32,12 +32,14 @@
 
 #include "CurlRequestSchedulerClient.h"
 
-#if PLATFORM(MUI)
+#if PLATFORM(MUI) && !defined(CLIB4)
 #include <proto/exec.h>
 #include <proto/bsdsocket.h>
 #include <unistd.h>
 #include <bsdsocket/socketbasetags.h>
+#if !OS(AMIGAOS)
 #include <aros/debug.h>
+#endif
 #undef send
 struct Library *SocketBase;
 void init_SocketBase()
@@ -53,6 +55,8 @@ void close_SocketBase()
     CloseLibrary(SocketBase);
     SocketBase = NULL;
 }
+#elif defined(CLIB4)
+#include <sys/select.h>
 #endif
 
 namespace WebCore {
@@ -109,7 +113,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
         }
     }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	if (m_stopped)
 		return;
 #endif
@@ -123,7 +127,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
     }
 
     m_thread = Thread::create("curlThread", [this] {
-#if PLATFORM(MUI)
+#if PLATFORM(MUI) && !defined(CLIB4)
         init_SocketBase();
         /* Increase priority so that network data is transported immediatelly */
         SetTaskPri(FindTask(NULL), 1);
@@ -132,7 +136,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
 
         Locker locker { m_mutex };
         m_runThread = false;
-#if PLATFORM(MUI)
+#if PLATFORM(MUI) && !defined(CLIB4)
         close_SocketBase();
 #endif
     }, ThreadType::Network);
@@ -140,11 +144,13 @@ void CurlRequestScheduler::startOrWakeUpThread()
 
 void CurlRequestScheduler::wakeUpThreadIfPossible()
 {
+#if !PLATFORM(MUI)
     Locker locker { m_multiHandleMutex };
     if (!m_curlMultiHandle)
         return;
 
     m_curlMultiHandle->wakeUp();
+#endif    
 }
 
 void CurlRequestScheduler::stopThreadIfNoMoreJobRunning()
@@ -314,7 +320,7 @@ void CurlRequestScheduler::workerThread()
             // and bail out, stopping the file download. So make sure we
             // have valid file descriptors before calling select.
             if (maxfd >= 0)
-#if PLATFORM(MUI)
+#if PLATFORM(MUI) && !OS(AMIGAOS)
                 rc = WaitSelect(maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout, nullptr);
             else {
                 usleep(100 * 1000);

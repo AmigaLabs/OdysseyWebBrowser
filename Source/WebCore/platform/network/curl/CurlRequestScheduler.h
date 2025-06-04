@@ -85,7 +85,7 @@ private:
     Lock m_mutex;
     RefPtr<Thread> m_thread;
     bool m_runThread { false };
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	bool m_stopped { false };
 #endif
     Vector<Function<void()>> m_taskQueue;

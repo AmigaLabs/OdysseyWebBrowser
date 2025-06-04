@@ -44,6 +44,7 @@
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/Page.h>
 #include <WebCore/StringTruncator.h>
+#include <WebCore/DragActions.h>
 
 #include <wtf/text/CString.h>
 #include "gui.h"
@@ -152,7 +153,7 @@ void WebDragClient::startDrag(DragItem item, DataTransfer& dataTransfer, Frame& 
         set(widget->browser, MA_OWBBrowser_DragURL, "");
         set(widget->browser, MA_OWBBrowser_DragImage, 0);
         set(widget->browser, MA_OWBBrowser_DragData, 0);
-        set(widget->browser, MA_OWBBrowser_DragOperation, DragOperationNone);
+        set(widget->browser, MA_OWBBrowser_DragOperation, 0);
 #endif
     }
 }

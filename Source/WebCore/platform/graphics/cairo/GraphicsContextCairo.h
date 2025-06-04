@@ -104,7 +104,7 @@ public:
     IntRect clipBounds() const final;
     void clipToImageBuffer(ImageBuffer&, const FloatRect&) final;
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	RenderingMode renderingMode() const final { return RenderingMode::Unaccelerated; }
 #else
     RenderingMode renderingMode() const final;

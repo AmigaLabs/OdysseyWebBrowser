@@ -18,6 +18,13 @@
 #include <libraries/mui.h>
 #include <proto/muimaster.h>
 
+#if defined(__amigaos4__)
+#define STACKED
+#define IPTR ULONG
+typedef long long QUAD;
+typedef unsigned long long UQUAD;
+#endif
+
 #define DEFCLASS(s) ULONG create_##s##class(void); \
     struct IClass *get##s##class(void); \
     APTR get##s##classroot(void); \

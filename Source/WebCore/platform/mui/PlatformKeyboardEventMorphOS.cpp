@@ -121,8 +121,10 @@ static int ConvertAmigaKeyToVirtualKey(struct IntuiMessage *im)
             case RAWKEY_F12:       return VK_F12;     break;
             case RAWKEY_HOME:      return VK_HOME;    break;
             case RAWKEY_END:       return VK_END;     break;
+#if !OS(AMIGAOS)
             case RAWKEY_NUMLOCK:   return VK_NUMLOCK; break;
             case RAWKEY_SCRLOCK:   return VK_SCROLL;  break;
+#endif            
             case RAWKEY_BACKSPACE: return VK_BACK;    break;
             case RAWKEY_RETURN:    return VK_RETURN;  break;
             case RAWKEY_ESCAPE:    return VK_ESCAPE;  break;

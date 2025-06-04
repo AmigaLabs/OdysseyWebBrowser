@@ -34,7 +34,7 @@
 
 #include <windows.h>
 
-#elif OS(UNIX) || OS(AROS)
+#elif OS(UNIX) || OS(AROS) || OS(AMIGAOS)
 
 #include <pthread.h>
 #if HAVE(PTHREAD_NP_H)
@@ -76,7 +76,7 @@ StackBounds StackBounds::currentThreadStackBoundsInternal()
     return newThreadStackBounds(pthread_self());
 }
 
-#elif OS(UNIX) || OS(MORPHOS) || OS(AROS)
+#elif OS(UNIX) || OS(MORPHOS) || OS(AROS) || OS(AMIGAOS)
 
 #if OS(OPENBSD)
 

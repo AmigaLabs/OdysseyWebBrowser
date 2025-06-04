@@ -38,7 +38,7 @@
 #if PLATFORM(MUI)
 #include <dos/dos.h>
 #include <proto/dos.h>
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
 #include <proto/asyncio.h>
 #endif
 #include <clib/debug_protos.h>
@@ -61,7 +61,7 @@ OWBFile::~OWBFile()
 	D(kprintf("[File] ~File() OK\n"));
 }
 
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
 int OWBFile::open(char openType)
 {
 	struct AsyncFile *fd = 0;

@@ -931,7 +931,7 @@ bool MediaElementSession::requiresPlaybackTargetRouteMonitoring() const
 size_t MediaElementSession::maximumMediaSourceBufferSize(const SourceBuffer& buffer) const
 {
     // A good quality 1080p video uses 8,000 kbps and stereo audio uses 384 kbps, so assume 95% for video and 5% for audio.
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     const float bufferBudgetPercentageForVideo = .85;
     const float bufferBudgetPercentageForAudio = .15;
 #else

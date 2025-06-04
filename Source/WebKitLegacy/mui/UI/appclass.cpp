@@ -29,6 +29,9 @@
 #if defined(__AROS__) /* Variadic + C++ local object problem */
 #define NO_INLINE_STDARG
 #endif
+#if defined(__amigaos4__)
+#define __USE_OLD_TIMEVAL__
+#endif
 
 #include "cairo.h"
 
@@ -114,6 +117,9 @@ extern void shutdownGlobalFTLWorklist();
 #include <string.h>
 
 /* System */
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <clib/macros.h>
 #include <dos/dos.h>
 #include <dos/dostags.h>
@@ -149,7 +155,11 @@ extern void shutdownGlobalFTLWorklist();
 using namespace WebCore;
 
 extern struct Library * OpenURLBase;
+#if  OS(AMIGAOS)
+const char * _ProgramName = "PROGDIR:Odyssey";
+#else
 extern char * _ProgramName;
+#endif
 
 namespace WebCore
 {
@@ -184,7 +194,7 @@ static CONST TEXT credits[] =
     "\tIlkka Lehtoranta\n\t\t\033ifor his NetSurf GUI classes\033n\n"
     "\tFrederic Rignault\n\t\t\033ifor his bookmark class\033n\n"
     "\tChristian Rosentreter\n\t\t\033ifor ShowGirls icon\033n\n"
-    "\tAndré Siegel\n\t\t\033ifor his OWB icon\033n\n\n"
+    "\tAndrÃ© Siegel\n\t\t\033ifor his OWB icon\033n\n\n"
 
     "\033b%l\033n\n"
     "\tStefan Blixth\n"
@@ -192,8 +202,8 @@ static CONST TEXT credits[] =
     "\tJaime Cagigal\n"
     "\tSamir Hawamdeh\n"
     "\tMarcin Kornas\n"
-    "\tAnbjørn Myren\n"
-    "\tMickaël Pernot\n"
+    "\tAnbjÃ¸rn Myren\n"
+    "\tMickaÃ«l Pernot\n"
     "\tChristian Rosentreter\n"
     "\tHarry Sintonen\n"
     "\tRoman Brychta\n\n"
@@ -493,8 +503,7 @@ enum
 #define REXXHOOK(name, param)    static const struct Hook name = { { NULL, NULL }, (HOOKFUNC)&RexxEmul, NULL, (APTR)(param) }
 static LONG Rexx(void);
 static const struct EmulLibEntry RexxEmul = { TRAP_LIB, 0, (void (*)())&Rexx };
-#endif
-#if OS(AROS)
+#elif OS(AROS)
 AROS_UFP3
 (
     IPTR, Rexx,
@@ -503,6 +512,9 @@ AROS_UFP3
     AROS_UFHA(IPTR *, params, A1)
 );
 #define REXXHOOK(name, param)   static const struct Hook name = { { NULL, NULL }, (APTR)&Rexx, NULL, (APTR)(param) };
+#elif OS(AMIGAOS)
+#define REXXHOOK(name, param)	static const struct Hook name = { { NULL, NULL }, (HOOKFUNC)&Rexx, NULL, (APTR)(param) }
+static LONG Rexx(struct Hook *h,Object * obj,	IPTR *params);
 #endif
 REXXHOOK(RexxHookA, REXX_PRINT);
 REXXHOOK(RexxHookB, REXX_ABOUT);
@@ -561,8 +573,7 @@ static LONG Rexx(void)
     IPTR *params = (IPTR *)REG_A1;
 
     data = (struct Data *) INST_DATA(OCLASS(obj), obj);
-#endif
-#if OS(AROS)
+#elif OS(AROS)
 AROS_UFH3
 (
     IPTR, Rexx,
@@ -572,8 +583,10 @@ AROS_UFH3
 )
 {
     AROS_USERFUNC_INIT
+#elif OS(AMIGAOS)
+static LONG Rexx(struct Hook *h, Object * obj, IPTR *params)
+{   
 #endif
-
     Object *window = (Object *) getv(obj, MA_OWBApp_ActiveWindow);
 
     if ((IPTR)h->h_Data == REXX_ABOUT)
@@ -956,7 +969,7 @@ static void TimerFunc(void)
         {
             D(kprintf("[OWB Timer Thread] Received start signal\n"));
 
-            D(kprintf("[OWB Timer Thread] Adding timerequest for %d µs\n", Interval));
+            D(kprintf("[OWB Timer Thread] Adding timerequest for %d ï¿½s\n", Interval));
 
             while(1)
             {
@@ -997,7 +1010,9 @@ DEFNEW
     NEWLIST(&urlsetting_list);
     NEWLIST(&family_list);
 
+	#if !OS(AMIGAOS)
     installClipboardMonitor();
+    #endif
 
     menus_init();
 
@@ -1011,11 +1026,11 @@ DEFNEW
     owbTimer = Thread::create("[OWB] Timer", [] {
         TimerFunc();
     });
-
+ 
     obj = (Object *) DoSuperNew(cl, obj,
             MUIA_Application_Title      , "Odyssey Web Browser",
             MUIA_Application_Version    , "$VER: Odyssey Web Browser " VERSION " (" OWB_BUILD_DATE ")",
-            MUIA_Application_Copyright  , "©\n2014-2025 Krzysztof Smiechowicz\n2020 Jacek Piszczek\n2009-2014 Fabien Coeurjoly",
+            MUIA_Application_Copyright  , "2025 - AmigaLabs\n2014-2025 Krzysztof Smiechowicz\n2020 Jacek Piszczek\n2009-2014 Fabien Coeurjoly",
             MUIA_Application_Author     , "Fabien Coeurjoly",
             MUIA_Application_Description, APPLICATION_DESCRIPTION,
             MUIA_Application_UsedClasses, classlist,
@@ -1034,7 +1049,7 @@ DEFNEW
         app = obj;
 
         // Try to initialize most static objects crap here with that utf8 call (sigh, what a lame hack). Needed, because doing it in a thread could cause a crash. (still true?)
-        String dummy = "dummyéè";
+        String dummy = "dummyÃ©Ã¨";
         stccpy(data->dummy, dummy.utf8().data(), sizeof(data->dummy));
 
         // Builtin defaults
@@ -1195,8 +1210,9 @@ DEFDISP
     }
 #endif
 
+    #if !OS(AMIGAOS)
     removeClipboardMonitor();
-
+    #endif
     //kprintf("OWBApp: Ok, calling supermethod\n");
 
     WebCore::DOMWindow::dispatchAllPendingUnloadEvents();

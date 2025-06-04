@@ -313,7 +313,7 @@ MonotonicTime MonotonicTime::now()
     };
     static const tbClock tb;
     return fromRawSeconds(static_cast<double>(__builtin_ppc_get_timebase()) / tb.clockFrequency());
-#elif OS(LINUX) || OS(FREEBSD) || OS(OPENBSD) || OS(NETBSD)
+#elif OS(LINUX) || OS(FREEBSD) || OS(OPENBSD) || OS(NETBSD) || OS(AMIGAOS)
     struct timespec ts { };
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return fromRawSeconds(static_cast<double>(ts.tv_sec) + ts.tv_nsec / 1.0e9);

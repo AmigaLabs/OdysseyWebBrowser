@@ -73,7 +73,7 @@ void contextmenu_delete(struct contextmenunode *cn)
 
 #define LABEL(x) (STRPTR)MSG_CONTEXTMENUGROUP_##x
 
-STATIC CONST CONST_STRPTR categories[] =
+STATIC STRPTR categories[] =
 {
     LABEL(LINK),
     LABEL(IMAGE),

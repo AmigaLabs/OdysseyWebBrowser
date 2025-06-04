@@ -222,6 +222,10 @@ void Acinerella::selectStream()
 #if OS(AROS)
 	UQUAD clock = 2000000000;
 #endif
+#if OS(AMIGAOS)
+	ULONG clock = 0; // TODO: Check this
+	GetCPUInfoTags(GCIT_ProcessorSpeed, &clock, TAG_DONE); 
+#endif
 
 	for (auto info : hls->streams())
 	{

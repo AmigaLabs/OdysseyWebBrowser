@@ -44,7 +44,7 @@
 
 #define LABEL(x) (STRPTR)MSG_PREFSWINDOW_##x
 
-STATIC CONST CONST_STRPTR prefslist[] =
+STATIC STRPTR prefslist[] =
 {
     LABEL(CATEGORY_GENERAL),
     LABEL(CATEGORY_INTERFACE),
@@ -63,7 +63,7 @@ STATIC CONST CONST_STRPTR prefslist[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR cachemodels[] =
+STATIC STRPTR cachemodels[] =
 {
     LABEL(CACHE_DOCUMENT_VIEWER),
     LABEL(CACHE_DOCUMENT_BROWSER),
@@ -110,35 +110,35 @@ STATIC CONST CONST_STRPTR textencodings[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR smoothingmethods[] =
+STATIC STRPTR smoothingmethods[] =
 {
     LABEL(SMOOTH_NORMAL),
     LABEL(SMOOTH_ALTERNATIVE),
     NULL,
 };
 
-STATIC CONST CONST_STRPTR newpagepolicies[] =
+STATIC STRPTR newpagepolicies[] =
 {
     LABEL(NEWPAGE_NEWTAB),
     LABEL(NEWPAGE_NEWWINDOW),
     NULL
 };
 
-STATIC CONST CONST_STRPTR newpagepositions[] =
+STATIC STRPTR newpagepositions[] =
 {
     LABEL(NEWPAGE_LAST),
     LABEL(NEWPAGE_AFTERACTIVE),
     NULL
 };
 
-STATIC CONST CONST_STRPTR quicklinklooks[] =
+STATIC STRPTR quicklinklooks[] =
 {
     LABEL(QUICKLINK_BUTTON),
     LABEL(QUICKLINK_LINK),
     NULL
 };
 
-STATIC CONST CONST_STRPTR quicklinklayout[] =
+STATIC STRPTR quicklinklayout[] =
 {
     LABEL(QUICKLINK_DYNAMIC),
     LABEL(QUICKLINK_FIXED),
@@ -146,7 +146,7 @@ STATIC CONST CONST_STRPTR quicklinklayout[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR toolbuttontypes[] =
+STATIC STRPTR toolbuttontypes[] =
 {
     LABEL(NAVIGATION_ICON),
     LABEL(NAVIGATION_TEXT),
@@ -154,7 +154,7 @@ STATIC CONST CONST_STRPTR toolbuttontypes[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR cookiepolicies[] =
+STATIC STRPTR cookiepolicies[] =
 {
     LABEL(COOKIE_ACCEPT),
     LABEL(COOKIE_REJECT),
@@ -162,7 +162,7 @@ STATIC CONST CONST_STRPTR cookiepolicies[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR completiontypes[] =
+STATIC STRPTR completiontypes[] =
 {
     LABEL(COMPLETION_NONE),
     LABEL(COMPLETION_STRING),
@@ -171,7 +171,7 @@ STATIC CONST CONST_STRPTR completiontypes[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR closerequesterpolicies[] =
+STATIC STRPTR closerequesterpolicies[] =
 {
     LABEL(CLOSE_REQUESTER_ALWAYS),
     LABEL(CLOSE_REQUESTER_NEVER),
@@ -179,14 +179,14 @@ STATIC CONST CONST_STRPTR closerequesterpolicies[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR errorreportingmodes[] =
+STATIC STRPTR errorreportingmodes[] =
 {
     LABEL(ERROR_REQUESTER),
     LABEL(ERROR_HTML),
     NULL,
 };
 
-STATIC CONST CONST_STRPTR animationpolicies[] =
+STATIC STRPTR animationpolicies[] =
 {
     LABEL(ANIMATE_NEVER),
     LABEL(ANIMATE_ALWAYS),
@@ -194,7 +194,7 @@ STATIC CONST CONST_STRPTR animationpolicies[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR middlebuttonpolicies[] =
+STATIC STRPTR middlebuttonpolicies[] =
 {
     LABEL(INTERFACE_MIDDLEBUTTON_BEHAVIOUR_NEW_BACKGROUND_TAB),
     LABEL(INTERFACE_MIDDLEBUTTON_BEHAVIOUR_NEW_TAB),
@@ -202,7 +202,7 @@ STATIC CONST CONST_STRPTR middlebuttonpolicies[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR restoresessionmodes[] =
+STATIC STRPTR restoresessionmodes[] =
 {
     LABEL(PRIVACY_SESSION_RESTORATION_OFF),
     LABEL(PRIVACY_SESSION_RESTORATION_ASK),
@@ -210,7 +210,7 @@ STATIC CONST CONST_STRPTR restoresessionmodes[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR loopfiltermodes[] =
+STATIC STRPTR loopfiltermodes[] =
 {
     LABEL(MEDIA_LOOPFILTER_SKIP_NONE),
     LABEL(MEDIA_LOOPFILTER_SKIP_NONREF),
@@ -250,20 +250,23 @@ STATIC CONST CONST_STRPTR useragents_labels[] =
 {
     "Odyssey Web Browser",
 
-    "Firefox 38 (Linux)",
-    "Firefox 3.6 (Windows)",
+    "Firefox (Linux)",
+    "Firefox (Windows)",
 
-    "Internet Explorer 10",
-    "Internet Explorer 8",
+    "Windows 10 Edge",
+    "Windows 10 Chrome",
     "Internet Explorer 6",
 
-    "Opera 12 (Windows)",
+    "Opera (Windows)",
 
     "Safari 13.1 (Mac)",
     "Chrome 42 (Linux)",
 
-    "IPhone",
-    "IPad",
+    "Apple IPhone 16e",
+    "Apple IPad Pro",
+
+    "Samsung Galaxy S25 Ultra",
+    "Google Pixel 9 Pro",
 
     NULL
 };
@@ -274,13 +277,15 @@ STATIC CONST CONST_STRPTR useragents_labels[] =
 #define OSHEADER "AROS x86_64"
 #elif OS(MORPHOS)
 #define OSHEADER "Macintosh; PowerPC MorphOS %u.%u"
+#elif OS(AMIGAOS)
+#define OSHEADER "PowerPC AmigaOS"
 #endif
 const char verfmt[] = "Mozilla/5.0 (" OSHEADER "; Odyssey Web Browser; rv:" VERSION ") AppleWebKit/" WEBKITVER " (KHTML, like Gecko) OWB/" VERSION " Safari/" WEBKITVER;
 STATIC char odysseyuseragent[sizeof(verfmt) + 2 * (10 - 2)];
 
 void init_useragent()
 {
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     strcpy(odysseyuseragent, verfmt);
 #elif OS(MORPHOS)
     ULONG version = 0, revision = 0;
@@ -303,24 +308,27 @@ void init_useragent()
 #endif
 }
 
-STATIC CONST STRPTR useragents_strings[] =
+STATIC CONST CONST_STRPTR useragents_strings[] =
 {
     odysseyuseragent,
+ 
+    "Mozilla/5.0 (X11; Linux i686; rv:138.0) Gecko/20100101 Firefox/138.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
 
-    "Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:38.0) Gecko/20100101 Firefox/38.0",
-    "Mozilla/5.0 (Windows NT 6.1; rv:1.9.2) Gecko/20100101 Firefox/3.6",
-
-    "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)",
-    "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0; .NET CLR 2.0.50727; .NET CLR 3.0.4506.2152; .NET CLR 3.5.30729)",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
     "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; .NET CLR 1.1.4322)",
 
-    "Opera/9.80 (Windows NT 5.1; U; en) Presto/2.12.388 Version/12.14",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 OPR/118.0.0.0",
 
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux i686) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.152 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3.1 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
 
-    "Mozilla/5.0 (iPhone9,4; U; CPU iPhone OS 10_0_1 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) Version/10.0 Mobile/14A403 Safari/602.1",
-    "Mozilla/5.0 (iPad; CPU OS 10_0_1 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) Version/10 Mobile/14A403 Safari/602.1",
+    "Mozilla/5.0 (iPhone17,5; CPU iPhone OS 18_3_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 FireKeepers/1.7.0",
+    "Mozilla/5.0 (iPad16,3; CPU OS 18_3_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Tropicana_NJ/5.7.1",
+
+    "Mozilla/5.0 (Linux; Android 15; SM-S931B Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/127.0.6533.103 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 14; Pixel 9 Pro Build/AD1A.240418.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.54 Mobile Safari/537.36",
 
     NULL
 };

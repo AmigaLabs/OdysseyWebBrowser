@@ -42,7 +42,7 @@ namespace WebCore {
 
 void Cursor::ensurePlatformCursor() const
 {
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
     ULONG pointertype;
 
     switch(m_type)

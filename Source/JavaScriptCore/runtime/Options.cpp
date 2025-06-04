@@ -165,7 +165,7 @@ bool Options::isAvailable(Options::ID id, Options::Availability availability)
     if (id == logJITCodeForPerfID)
         return true;
 #endif
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS) // TODO: Check this
     if (id == traceLLIntExecutionID)
         return !!LLINT_TRACING;
     if (id == traceLLIntSlowPathID)
@@ -177,7 +177,7 @@ bool Options::isAvailable(Options::ID id, Options::Availability availability)
 template<typename T>
 bool overrideOptionWithHeuristic(T& variable, Options::ID id, const char* name, Options::Availability availability)
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
 	(void)variable; (void)id; (void)name; (void)availability;
 	return false;
 #else
@@ -203,7 +203,7 @@ bool overrideOptionWithHeuristic(T& variable, Options::ID id, const char* name, 
 
 bool Options::overrideAliasedOptionWithHeuristic(const char* name)
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
 	(void)name;
 	return false;
 #else

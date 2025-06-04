@@ -205,12 +205,25 @@ struct  MUIP_GoInactive                     { ULONG MethodID; ULONG flags; }; /*
         while ((tag = NextTagItem(&_tags))) switch (tag->ti_Tag)
 #define NEXTTAG }
 
+#ifdef __amigaos4__
+
+#define FORCHILD(_o, _a) \
+	{ \
+		APTR child, _cstate = (APTR)((struct MinList *)getv((Object *)_o, _a))->mlh_Head; \
+		while ((child = NextObject((Object **)&_cstate)))
+
+#define NEXTCHILD }
+
+#else
+
 #define FORCHILD(_o, _a) \
     { \
         APTR child, _cstate = (APTR)((struct MinList *)getv(_o, _a))->mlh_Head; \
         while ((child = NextObject(&_cstate)))
 
 #define NEXTCHILD }
+
+#endif // __amigaos4__
 
 #undef KeyCheckMark
 #define KeyCheckMark(selected,control)\
@@ -270,6 +283,10 @@ APTR MakeCycleLocalized(CONST_STRPTR text, APTR cyclelabels, ULONG first, ULONG 
 
 #if defined(__MORPHOS__)
 ULONG getv(APTR obj, ULONG attr);
+#endif
+#if defined(__amigaos__)
+ULONG getv(APTR obj, ULONG attr);
+#include <aros-overrides.h>
 #endif
 #if defined(__AROS__)
 IPTR getv(APTR obj, ULONG attr);

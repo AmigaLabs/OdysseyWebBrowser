@@ -60,7 +60,7 @@ public:
 
     virtual int getSize();
 private:
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
     void* m_fd;
 #else
     FILE* m_fd;

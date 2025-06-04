@@ -41,7 +41,7 @@ int testFunctionOverrides()
 
     const char* oldFunctionOverrides = Options::functionOverrides();
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     Options::functionOverrides() = "PROGDIR:testapiScripts/testapi-function-overrides.js";
 #else
     Options::functionOverrides() = "./testapiScripts/testapi-function-overrides.js";

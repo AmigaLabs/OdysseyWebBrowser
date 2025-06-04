@@ -12,6 +12,10 @@
 #include <proto/icon.h>
 #include <proto/dos.h>
 
+#if OS(AMIGAOS)
+#include <dos/obsolete.h>
+#endif
+
 #include "gui.h"
 
 using namespace WebCore;

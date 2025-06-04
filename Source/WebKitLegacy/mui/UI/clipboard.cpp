@@ -34,10 +34,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <proto/iffparse.h>
 #include <proto/asl.h>
-#include <proto/dos.h>
 #include <datatypes/textclass.h>
 #include <datatypes/pictureclass.h>
 
@@ -591,7 +593,40 @@ bool copyImageToClipboard(ChkImage *img)
 /*****************************************************************************************************/
 
 /* Clipboard Monitoring */
+#ifdef __amigaos4__
+static struct IOClipReq *clipboardOpen(ULONG unit)
+{
+    struct MsgPort *mp = (struct MsgPort *)AllocSysObjectTags(ASOT_PORT, TAG_END);
 
+    if (mp != NULL)
+    {
+    struct IOStdReq *ior = (struct IOStdReq *)AllocSysObjectTags(ASOT_IOREQUEST,
+        ASOIOR_Size, sizeof(struct IOClipReq),
+        ASOIOR_ReplyPort, mp,
+        TAG_END);
+        
+    if (ior != NULL)
+        {
+        if (!(OpenDevice("clipboard.device", unit, (struct IORequest *)ior, 0)))
+            {
+            return((struct IOClipReq *)ior);
+            }
+        FreeSysObject(ASOT_IOREQUEST, ior);
+        }
+    FreeSysObject(ASOT_PORT, mp);
+    }
+
+	return(NULL);
+}
+static void clipboardClose(struct IOClipReq *ior)
+{
+    struct MsgPort *mp = ior->io_Message.mn_ReplyPort;
+
+    CloseDevice((struct IORequest *)ior);
+    FreeSysObject(ASOT_IOREQUEST, ior);
+    FreeSysObject(ASOT_PORT, mp);
+}
+#else
 static struct IOClipReq *clipboardOpen(ULONG unit)
 {
     struct MsgPort *mp;
@@ -622,6 +657,7 @@ static void clipboardClose(struct IOClipReq *ior)
     DeleteExtIO((struct IORequest *)ior);
     DeletePort(mp);
 }
+#endif /* __amigaos4__ */
 
 static struct Hook changeHook;
 static struct IOClipReq *clipReq;
@@ -647,9 +683,15 @@ bool installClipboardMonitor (void)
         clipIO->io_Command = CBD_CHANGEHOOK;
 
         /* Prepare the hook */
+#ifdef __amigaos4__
+        changeHook.h_Entry = (HOOKFUNC)clipHook;
+        changeHook.h_SubEntry = 0;
+        changeHook.h_Data = 0;
+#else
         changeHook.h_Entry = (APTR)HookEntry;
         changeHook.h_SubEntry = (APTR) clipHook;
         changeHook.h_Data = NULL;
+#endif
 
         /* Start the hook */
         if (DoIO ((struct IORequest *) clipIO))

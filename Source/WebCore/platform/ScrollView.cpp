@@ -1517,7 +1517,7 @@ void ScrollView::hide()
 
 bool ScrollView::isOffscreen() const
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
        // we don't support offscreen and we've got no platformwidgets
        return false;
 #endif

@@ -57,6 +57,9 @@
 #include <proto/exec.h>    
 #include <proto/iffparse.h>
 #include <proto/intuition.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/datatypes.h>
 #include <proto/iffparse.h>
 #include <datatypes/textclass.h>

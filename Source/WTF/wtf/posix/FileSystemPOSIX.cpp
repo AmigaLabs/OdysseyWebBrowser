@@ -38,7 +38,7 @@
 #include <libgen.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#if !PLATFORM(MUI)
+#if !PLATFORM(MUI) || OS(AMIGAOS)
 #include <sys/statvfs.h>
 #endif
 #include <sys/types.h>
@@ -53,6 +53,12 @@
 #if PLATFORM(MUI)
 #if OS(MORPHOS)
 #include <libraries/charsets.h>
+#endif
+#if OS(AMIGAOS)
+#define ODYSSEY
+#ifndef MIBENUM_SYSTEM
+#define MIBENUM_SYSTEM 0xFFFFFFFF
+#endif
 #endif
 #include <proto/dos.h>
 #endif
@@ -199,7 +205,7 @@ std::optional<WallTime> fileCreationTime(const String& path)
 
 std::optional<uint32_t> volumeFileBlockSize(const String& path)
 {
-#if !PLATFORM(MUI)
+#if !PLATFORM(MUI) || OS(AMIGAOS)
     struct statvfs fileStat;
     if (!statvfs(fileSystemRepresentation(path).data(), &fileStat))
         return fileStat.f_frsize;
@@ -213,7 +219,7 @@ String stringFromFileSystemRepresentation(const char* path)
     if (!path)
         return String();
 #if PLATFORM(MUI)
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
 	return String(path, strlen(path), MIBENUM_SYSTEM);
 #endif
 #if OS(AROS)
@@ -271,7 +277,7 @@ String openTemporaryFile(const String& tmpPath, const String& prefix, PlatformFi
         goto end;
 
 #if PLATFORM(MUI)
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
 	return String(buffer, strlen(buffer), MIBENUM_SYSTEM);
 #endif
 #if OS(AROS)
@@ -298,7 +304,7 @@ String temporaryFilePathForPrefix(const String& prefix)
 void setTemporaryFilePathForPrefix(const char * tmpPath, const String& prefix)
 {
 #if PLATFORM(MUI)
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
 	tmpPathPrefixes.set(prefix, String(tmpPath, strlen(tmpPath), MIBENUM_SYSTEM));
 #endif
 #if OS(AROS)
@@ -315,7 +321,7 @@ String openTemporaryFile(const String& prefix, PlatformFileHandle& handle, const
 	{
 		return openTemporaryFile(tmpPathPrefixes.get(prefix), prefix, handle, suffix);
 	}
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	return openTemporaryFile(String(tmpDir, strlen(tmpDir), MIBENUM_SYSTEM), prefix, handle, suffix);
 #endif
 #if OS(AROS)

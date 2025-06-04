@@ -57,6 +57,11 @@
 #include <proto/spellchecker.h>
 #endif
 
+#if OS(AMIGAOS)
+#include <proto/codesets.h>
+#include <proto/application.h>
+#endif
+
 String truncate(const String& url, unsigned int size)
 {
     if (url.length() < size)
@@ -582,6 +587,41 @@ char *utf8_to_local(const char *in)
         }
     }
 #endif
+#if OS(AMIGAOS)
+    {
+        ULONG dataConvertedLength;
+        STRPTR dataConverted = CodesetsUTF8ToStr(
+                        CSA_Source, (IPTR) in,
+                        CSA_DestLenPtr, (IPTR) &dataConvertedLength,
+                        TAG_END);
+
+        if(dataConverted)
+        {
+            char * _ret = strdup(dataConverted);
+            CodesetsFreeA(dataConverted, NULL);
+            return _ret;
+        }
+    }
+#endif
+#if OS(AMIGAOS)
+    {
+        struct codeset *utfCodeset = CodesetsFindA("UTF-8", NULL);
+        ULONG dataConvertedLength;
+        STRPTR dataConverted = CodesetsConvertStr(
+                            CSA_Source, (IPTR) in,
+                            CSA_SourceLen, (IPTR) strlen(in),
+                            CSA_DestLenPtr, (IPTR) &dataConvertedLength,
+                            CSA_DestCodeset, (IPTR) utfCodeset,
+                            TAG_END);
+
+        if(dataConverted)
+        {
+            char * _ret = strdup(dataConverted);
+            CodesetsFreeA(dataConverted, NULL);
+            return _ret;
+        }
+    }
+#endif
 
     return strdup(in); //XXX: fallback if anything fails
 }
@@ -641,31 +681,31 @@ char *local_to_utf8(const char *in)
 
 struct countrycode
 {
-    STRPTR language;
-    STRPTR code;
+    CONST_STRPTR language;
+    CONST_STRPTR code;
 };
 
 static struct countrycode countrycode_table[] = {
     {"dansk", "da"},
     {"deutsch", "de"},
     {"english", "en"},
-    {"español", "sp"},
-    {"français", "fr"},
+    {"espaï¿½ol", "sp"},
+    {"franï¿½ais", "fr"},
     {"greek",    "gr"},
     {"italiano", "it"},
     {"magyar", "hu"},
     {"nederlands", "nl"},
     {"norsk", "no"},
     {"polski", "pl"},
-    {"português", "pt"},
+    {"portuguï¿½s", "pt"},
     {"suomi", "fi"},
     {"svenska", "sv"},
-    {"türkiye", "tr"},
+    {"tï¿½rkiye", "tr"},
     {"czech", "cs"},
     {NULL, NULL}
 };
 
-static STRPTR getcode(STRPTR language)
+static CONST_STRPTR getcode(STRPTR language)
 {
     int i;
     for(i = 0; countrycode_table[i].language; i++)
@@ -754,6 +794,7 @@ STRPTR get_language(STRPTR code, ULONG len)
 
 long get_GMT_offset(void)
 {
+#if !OS(AMIGAOS)    
     struct Locale *l = OpenLocale(NULL);
     LONG ret = 0;
 
@@ -764,6 +805,13 @@ long get_GMT_offset(void)
     }
 
     return ret;
+#else
+    time_t t = time(NULL);
+    struct tm lt = {0};
+
+    localtime_r(&t, &lt);
+    return lt.tm_gmtoff;
+#endif   
 }
 
 long get_DST_offset(void)
@@ -804,10 +852,14 @@ bool rexx_send(char *hostname, char *cmd)
     {
         if ((ReplyPort = (struct MsgPort *)CreateMsgPort ()))
         {
-            if ((HostMsg = CreateRexxMsg (ReplyPort, NULL, (UBYTE *)hostname)))
+            if ((HostMsg = CreateRexxMsg (ReplyPort, NULL, (char *)hostname)))
             {
                 int len = strlen (cmd);
-                if ((HostMsg->rm_Args[0] = (IPTR) CreateArgstring ((UBYTE *)cmd, len)))
+#if OS(AROS)
+                if ((HostMsg->rm_Args[0] = (IPTR) CreateArgstring ((char *)cmd, len)))
+#else                
+                if ((HostMsg->rm_Args[0] = (char *) CreateArgstring ((char *)cmd, len)))
+#endif
                 {
                     HostMsg->rm_Action = RXCOMM | RXFF_RESULT;
                     PutMsg (RexxPort, (struct Message*)HostMsg);
@@ -819,12 +871,12 @@ bool rexx_send(char *hostname, char *cmd)
                         if (answer->rm_Result2)
                         {
                             strncpy (RESULT,(char *)answer->rm_Result2, RESULT_LEN);
-                            DeleteArgstring ((UBYTE *)answer->rm_Result2);
+                            DeleteArgstring ((char *)answer->rm_Result2);
                         }
                         else
                             RESULT[0] = '\0';
                     }
-                    DeleteArgstring ((UBYTE *)HostMsg->rm_Args[0]);
+                    DeleteArgstring ((char *)HostMsg->rm_Args[0]);
                 }
                 else
                     strcpy (RESULT, "Can't create argstring!");
@@ -852,12 +904,39 @@ char *rexx_result(void)
 
 int send_external_notification(struct external_notification *notification)
 {
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
     struct MsgPort *replyport, *port;
 #endif
     ULONG result = 20; /* no port then tell user */
 
 #if !OS(AROS)
+#if OS(AMIGAOS)
+
+    STRPTR iconname = NULL;
+    int32  success = 0;
+    extern uint32 appID;
+
+    iconname = (STRPTR)AllocVec(512,MEMF_SHARED | MEMF_CLEAR);
+    if (iconname) {
+        success = NameFromLock(GetCurrentDir(),iconname,512);
+        if (success) {
+            strcat(iconname,"/Resource/aboutIcon.png");
+        }
+    }
+
+    // send ringhio notification as well
+            Notify(appID,
+                APPNOTIFY_Title, notification->type,
+                APPNOTIFY_Text, notification->message,
+                APPNOTIFY_ImageFile, (STRPTR)iconname,
+                APPNOTIFY_PubScreenName, "FRONT",
+            TAG_END);
+
+    if (iconname) FreeVec(iconname);
+
+    result = 0;
+
+#else
     if( ( replyport = CreateMsgPort() ) )
     {
         struct MagicBeaconNotificationMessage mbnm;
@@ -885,6 +964,7 @@ int send_external_notification(struct external_notification *notification)
         result = 0;
     }
 #endif
+#endif
 
     return( result );
 }
@@ -893,7 +973,9 @@ int send_external_notification(struct external_notification *notification)
 
 static APTR g_dictionary = NULL;
 static char g_dictionary_language[64];
+#if OS(MORPHOS)
 extern struct Library * SpellCheckerBase;
+#endif
 
 APTR get_dictionary()
 {
@@ -949,7 +1031,7 @@ APTR open_dictionary(char *language)
 
     return g_dictionary;
 #endif
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     return NULL;
 #endif
 }
@@ -995,12 +1077,40 @@ Vector<String> get_available_dictionaries()
 
 bool dictionary_can_learn()
 {
+#if OS(MORPHOS)    
     return (SpellCheckerBase->lib_Version > 50 || (SpellCheckerBase->lib_Version == 50 && SpellCheckerBase->lib_Revision >= 1));
+#endif    
 }
 
 
 /* Blanker support */
+#if OS(AMIGAOS)
 
+#include <proto/application.h>
+
+extern uint32 appID;
+
+void enable_blanker(struct Screen *screen, ULONG enable)
+{
+    if(enable)
+    {
+        // enable screenblanker
+        SetApplicationAttrs(appID,
+                    APPATTR_AllowsBlanker, TRUE,
+                    APPATTR_NeedsGameMode, FALSE,
+        TAG_END);
+    }
+    else
+    {
+        // disable screenblanker
+        SetApplicationAttrs(appID,
+                    APPATTR_AllowsBlanker, FALSE,
+                    APPATTR_NeedsGameMode, TRUE,
+        TAG_END);
+    }
+}
+
+#else
 static int blanker_count = 0; /* not too useful, but it should be 0 at the end */
 
 void enable_blanker(struct Screen *screen, ULONG enable)
@@ -1033,6 +1143,7 @@ void enable_blanker(struct Screen *screen, ULONG enable)
         }
     }
 }
+#endif /* OS(AMIGAOS) */
 
 /* Memory guards */
 
@@ -1054,17 +1165,20 @@ WTF::String createWithFormatAndArguments(const char *format, ...)
     return WTF::String(buffer);
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
+#if !OS(AMIGAOS)
 extern void *libnix_mempool;
+#endif /* !OS(AMIGAOS) */
 extern jmp_buf bailout_env;
 
 int morphos_crash(size_t size)
 {
         char msg[1024];
 
+#if OS(AROS)
     kprintf("[OWB: task %p] morphos_crash(%ld) invoked\nDumping StackFrame..\n.", FindTask(NULL), size);
     DumpTaskState(FindTask(NULL));
-
+#endif
     if(size == 0)
     {
         snprintf(msg, sizeof(msg), "Assertion failed.\n\nYou can either:\n - Crash: a hit will follow to dump stackframe and allocated heap memory will be freed\n - Retry: good luck with that.\n - Quit: the application should quit properly and give all memory back.");
@@ -1079,9 +1193,10 @@ int morphos_crash(size_t size)
     {
         case 0:
         {
+#if !OS(AMIGAOS)
             if(libnix_mempool)
             DeletePool(libnix_mempool);
-    
+#endif    
             *(int *)(uintptr_t)0xbbadbeef = 0;
             ((void(*)())0)(); /* More reliable, but doesn't say BBADBEEF */
 

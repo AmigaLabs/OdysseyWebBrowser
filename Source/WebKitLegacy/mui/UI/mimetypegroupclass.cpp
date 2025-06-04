@@ -104,7 +104,7 @@ void mimetype_delete(struct mimetypenode *mn)
 
 #define LABEL(x) (STRPTR)MSG_MIMETYPEGROUP_##x
 
-STATIC CONST CONST_STRPTR actiontypes[] =
+STATIC STRPTR actiontypes[] =
 {
     LABEL(INTERNAL_VIEWER),
     LABEL(EXTERNAL_VIEWER),

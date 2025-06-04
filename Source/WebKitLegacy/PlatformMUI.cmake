@@ -180,6 +180,12 @@ list(APPEND WebKitLegacy_SOURCES
     WebCoreSupport/WebViewGroup.cpp
 )
 
+if (AmigaOS4)
+    list(APPEND WebKitLegacy_SOURCES
+        mui/UI/aos4funcs.cpp
+    )
+endif()
+
 add_definitions("-include WebKitPrefix.h")
 
 set(WebKitLegacy_LIBRARY_TYPE STATIC)

@@ -1,0 +1,421 @@
+In file included from /home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/classes.h:4,
+                 from /home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/gui.h:8,
+                 from /home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:37:
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:43: error: ‘a0’ was not declared in this scope; did you mean ‘y0’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                           ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:47: error: expected primary-expression before ‘struct’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                               ^~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:37: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                     ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:70: error: ‘a2’ was not declared in this scope
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                      ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:47: error: expected primary-expression before ‘pool’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      |                                               ^~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:74: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:64: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:84: error: ‘a1’ was not declared in this scope; did you mean ‘y1’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                    ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:58: error: expected primary-expression before ‘t’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      |                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:88: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                        ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:78: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                              ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:90: error: expression list treated as compound expression in initializer [-fpermissive]
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:299:62: warning: missing initializer for member ‘Hook::h_SubEntry’ [-Wmissing-field-initializers]
+  299 |     static struct Hook n##_hook = { 0, 0, (HOOKFUNC)n##_func }; \
+      |                                                              ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:299:62: warning: missing initializer for member ‘Hook::h_Data’ [-Wmissing-field-initializers]
+  299 |     static struct Hook n##_hook = { 0, 0, (HOOKFUNC)n##_func }; \
+      |                                                              ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:10: error: redefinition of ‘LONG bookmarklisttree_constructfunc_func’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:28: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                            ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:10: note: ‘LONG bookmarklisttree_constructfunc_func’ previously defined here
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:28: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                            ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:43: error: ‘a0’ was not declared in this scope; did you mean ‘y0’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                           ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:47: error: expected primary-expression before ‘struct’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                               ^~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:37: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                     ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:70: error: ‘a2’ was not declared in this scope
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                      ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:47: error: expected primary-expression before ‘pool’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      |                                               ^~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:74: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:64: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:84: error: ‘a1’ was not declared in this scope; did you mean ‘y1’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                                    ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:58: error: expected primary-expression before ‘t’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      |                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:88: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                                        ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:78: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                              ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:92:1: note: in expansion of macro ‘MUI_HOOK’
+   92 | MUI_HOOK(bookmarklisttree_constructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:43: error: ‘a0’ was not declared in this scope; did you mean ‘y0’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                           ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:47: error: expected primary-expression before ‘struct’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                               ^~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:37: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                     ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:70: error: ‘a2’ was not declared in this scope
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                      ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:46: error: expected primary-expression before ‘pool’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      |                                              ^~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:74: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:64: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:84: error: ‘a1’ was not declared in this scope; did you mean ‘y1’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                    ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:57: error: expected primary-expression before ‘t’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      |                                                         ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:88: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                        ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:78: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                              ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:90: error: expression list treated as compound expression in initializer [-fpermissive]
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:299:62: warning: missing initializer for member ‘Hook::h_SubEntry’ [-Wmissing-field-initializers]
+  299 |     static struct Hook n##_hook = { 0, 0, (HOOKFUNC)n##_func }; \
+      |                                                              ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:299:62: warning: missing initializer for member ‘Hook::h_Data’ [-Wmissing-field-initializers]
+  299 |     static struct Hook n##_hook = { 0, 0, (HOOKFUNC)n##_func }; \
+      |                                                              ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:10: error: redefinition of ‘LONG bookmarklisttree_destructfunc_func’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:28: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                            ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:10: note: ‘LONG bookmarklisttree_destructfunc_func’ previously defined here
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:28: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                            ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:43: error: ‘a0’ was not declared in this scope; did you mean ‘y0’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                           ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:47: error: expected primary-expression before ‘struct’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                               ^~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:37: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                     ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:70: error: ‘a2’ was not declared in this scope
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                      ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:46: error: expected primary-expression before ‘pool’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      |                                              ^~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:74: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:64: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:84: error: ‘a1’ was not declared in this scope; did you mean ‘y1’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                                    ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:57: error: expected primary-expression before ‘t’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      |                                                         ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:88: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                                        ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:78: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                              ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:132:1: note: in expansion of macro ‘MUI_HOOK’
+  132 | MUI_HOOK(bookmarklisttree_destructfunc, APTR pool, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:43: error: ‘a0’ was not declared in this scope; did you mean ‘y0’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                           ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:47: error: expected primary-expression before ‘struct’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                               ^~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:37: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                     ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:70: error: ‘a2’ was not declared in this scope
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                      ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:45: error: expected primary-expression before ‘a’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      |                                             ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:74: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:64: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:84: error: ‘a1’ was not declared in this scope; did you mean ‘y1’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                    ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:53: error: expected primary-expression before ‘t’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      |                                                     ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:88: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                        ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:78: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                              ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:90: error: expression list treated as compound expression in initializer [-fpermissive]
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:299:62: warning: missing initializer for member ‘Hook::h_SubEntry’ [-Wmissing-field-initializers]
+  299 |     static struct Hook n##_hook = { 0, 0, (HOOKFUNC)n##_func }; \
+      |                                                              ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:299:62: warning: missing initializer for member ‘Hook::h_Data’ [-Wmissing-field-initializers]
+  299 |     static struct Hook n##_hook = { 0, 0, (HOOKFUNC)n##_func }; \
+      |                                                              ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:10: error: redefinition of ‘LONG bookmarklisttree_displayfunc_func’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:28: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                            ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:10: note: ‘LONG bookmarklisttree_displayfunc_func’ previously defined here
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:298:28: note: in definition of macro ‘MUI_HOOK’
+  298 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
+      |                            ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:43: error: ‘a0’ was not declared in this scope; did you mean ‘y0’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                           ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:47: error: expected primary-expression before ‘struct’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                               ^~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:37: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                     ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:70: error: ‘a2’ was not declared in this scope
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                      ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:45: error: expected primary-expression before ‘a’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      |                                             ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:74: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                          ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:64: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:84: error: ‘a1’ was not declared in this scope; did you mean ‘y1’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                                    ^~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:53: error: expected primary-expression before ‘t’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      |                                                     ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:88: note: in definition of macro ‘MUI_HOOK’
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                                        ^
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/include/macros/vapor.h:300:78: error: ‘__reg’ was not declared in this scope; did you mean ‘_reg’?
+  300 |     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+      |                                                                              ^~~~~
+/home/apalmate/Software/OdysseyWebBrowwserAros/Source/WebKitLegacy/mui/UI/bookmarklisttreeclass.cpp:159:1: note: in expansion of macro ‘MUI_HOOK’
+  159 | MUI_HOOK(bookmarklisttree_displayfunc, APTR a, APTR t)
+      | ^~~~~~~~
+make[3]: *** [Source/WebKitLegacy/CMakeFiles/WebKitLegacy.dir/build.make:415: Source/WebKitLegacy/CMakeFiles/WebKitLegacy.dir/mui/UI/bookmarklisttreeclass.cpp.obj] Errore 1
+make[2]: *** [CMakeFiles/Makefile2:1105: Source/WebKitLegacy/CMakeFiles/WebKitLegacy.dir/all] Errore 2
+make[1]: *** [Makefile:111: all] Errore 2
+make: *** [Makefile.os4:38: build] Errore 2

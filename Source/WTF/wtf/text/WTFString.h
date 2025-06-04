@@ -96,7 +96,7 @@ public:
     String(StaticStringImpl&);
     String(StaticStringImpl*);
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
        String(const char * characters, unsigned length, unsigned mib);
 #endif
 

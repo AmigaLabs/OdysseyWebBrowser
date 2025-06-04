@@ -26,7 +26,9 @@
 #include "config.h"
 #include "DisplayRefreshMonitorMorphOS.h"
 
+#if !OS(AMIGAOS)
 extern "C" { void dprintf(const char *,...); }
+#endif
 
 namespace WebCore {
 

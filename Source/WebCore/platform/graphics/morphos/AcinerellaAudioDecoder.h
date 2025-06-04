@@ -42,6 +42,9 @@ public:
 #if OS(AROS)
 	static void soundFunc(void *ptr);
 #endif
+#if OS(AMIGAOS)
+	static void soundFunc(struct Hook *hook, struct AHIAudioCtrl *actrl, struct AHISoundMessage *smsg);
+#endif
 
 protected:
 	void startPlaying() override;

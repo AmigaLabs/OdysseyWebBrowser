@@ -74,7 +74,7 @@ void* OSAllocator::reserveUncommitted(size_t bytes, Usage usage, bool writable, 
 
 void* OSAllocator::reserveAndCommit(size_t bytes, Usage usage, bool writable, bool executable, bool jitCageEnabled, bool includesGuardPages)
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     return malloc(bytes);
 #else
     // All POSIX reservations start out logically committed.
@@ -201,7 +201,7 @@ void OSAllocator::hintMemoryNotNeededSoon(void* address, size_t bytes)
 
 void OSAllocator::releaseDecommitted(void* address, size_t bytes)
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     free(address);
 #else
     int result = munmap(address, bytes);

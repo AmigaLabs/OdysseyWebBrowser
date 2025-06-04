@@ -38,9 +38,11 @@
 
 #define SYSTEM_PRIVATE 1
 
+#if !OS(AMIGAOS)
 #include <cybergraphx/cybergraphics.h>
 #include <proto/alib.h>
 #include <proto/cybergraphics.h>
+#endif
 #include <proto/utility.h>
 #include <clib/debug_protos.h>
 

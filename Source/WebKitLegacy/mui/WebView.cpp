@@ -176,7 +176,6 @@
 #include "FileIOLinux.h"
 
 #include <proto/exec.h>
-#include <proto/dos.h>
 #include <proto/intuition.h>
 #include <intuition/gadgetclass.h>
 #include "gui.h"

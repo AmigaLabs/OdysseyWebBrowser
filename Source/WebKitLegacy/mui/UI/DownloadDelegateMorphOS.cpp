@@ -41,6 +41,9 @@
 #include <wtf/MonotonicTime.h>
 #include <wtf/URL.h>
 
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <dos/dos.h>
 #include <proto/dos.h>
 #include <dos/dostags.h>
@@ -141,7 +144,7 @@ void DownloadDelegateMorphOS::decideDestinationWithSuggestedFilename(WebDownload
                                                                        fib->fib_Size, tmpdate, tmptime);
 
                                     if ((ULONG)fib->fib_Size == priv->totalSize)
-                                        strbuttons = "*_Overwrite|_Cancel"; //TODO: localize
+                                        strbuttons = (char *) "*_Overwrite|_Cancel"; //TODO: localize
 
                                     int ret = MUI_RequestA(app, NULL, 0, GSI(MSG_REQUESTER_NORMAL_TITLE), strbuttons, message, NULL);
 

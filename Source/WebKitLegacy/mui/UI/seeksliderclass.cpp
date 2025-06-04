@@ -109,12 +109,14 @@ DEFMMETHOD(HandleEvent)
                 case IDCMP_RAWKEY:
                      switch ( Code )
                      {
+#ifndef __amigaos4__ // TODO: Check this with extended mouse
                          case NM_WHEEL_UP:
                             //
                             return MUI_EventHandlerRC_Eat;
                          case NM_WHEEL_DOWN:
                             //
                             return MUI_EventHandlerRC_Eat;
+#endif
                     }
             }
         }

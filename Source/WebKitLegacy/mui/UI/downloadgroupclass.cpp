@@ -190,7 +190,7 @@ void save_download_state()
     ITERATELIST(n, &download_list)
     {
         struct downloadnode *dl = (struct downloadnode *) n;
-        char *state;
+        CONST_STRPTR state;
 
         switch(dl->state)
         {

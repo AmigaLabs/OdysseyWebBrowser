@@ -24,71 +24,42 @@
  */
 
 #include "config.h"
-#include <wtf/PageBlock.h>
+#include "OSAllocator.h"
 
-#if OS(UNIX) || OS(AMIGAOS)
-#include <unistd.h>
-#endif
+#include <wtf/FastMalloc.h>
 
-#if OS(WINDOWS)
-#include <malloc.h>
-#include <windows.h>
-#endif
+#include <string.h>
 
 namespace WTF {
 
-static size_t s_pageSize;
-static size_t s_pageMask;
-
-#if OS(UNIX) || OS(AMIGAOS)
-
-inline size_t systemPageSize()
+void* OSAllocator::reserveUncommitted(size_t bytes, Usage, bool, bool executable, bool, bool)
 {
-    return sysconf(_SC_PAGESIZE);
+	return fastMalloc(bytes);
 }
 
-#elif OS(WINDOWS)
-
-inline size_t systemPageSize()
+void* OSAllocator::reserveAndCommit(size_t bytes, Usage, bool, bool executable, bool, bool)
 {
-    static size_t size = 0;
-    SYSTEM_INFO system_info;
-    GetSystemInfo(&system_info);
-    size = system_info.dwPageSize;
-    return size;
+	void *ptr =	fastMalloc(bytes);
+	if(ptr)
+	{
+		memset(ptr, 0, bytes);
+	}
+	return ptr;
 }
 
-#elif OS(MORPHOS)
-
-inline size_t systemPageSize()
+void OSAllocator::commit(void* address, size_t bytes, bool, bool)
 {
-	return 16;
+	memset(address, 0, bytes);
 }
 
-#elif OS(AROS)
-
-inline size_t systemPageSize()
+void OSAllocator::decommit(void* address, size_t bytes)
 {
-    return 4096;
+	//D(bug("OSAllocator::decommit(%p, %lu)\n", address, bytes));
 }
 
-#endif
-
-size_t pageSize()
+void OSAllocator::releaseDecommitted(void* address, size_t bytes)
 {
-    if (!s_pageSize) {
-        s_pageSize = systemPageSize();
-        RELEASE_ASSERT(isPowerOfTwo(s_pageSize));
-        RELEASE_ASSERT_WITH_MESSAGE(s_pageSize <= CeilingOnPageSize, "CeilingOnPageSize is too low, raise it in PageBlock.h!");
-    }
-    return s_pageSize;
-}
-
-size_t pageMask()
-{
-    if (!s_pageMask)
-        s_pageMask = ~(pageSize() - 1);
-    return s_pageMask;
+	fastFree(address);
 }
 
 } // namespace WTF

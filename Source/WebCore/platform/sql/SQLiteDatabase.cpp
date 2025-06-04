@@ -223,7 +223,7 @@ void SQLiteDatabase::checkpoint(CheckpointMode mode)
 
 void SQLiteDatabase::useWALJournalMode()
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	auto syncStatement = prepareStatement("PRAGMA synchronous=off;"_s);
 	if (syncStatement)
 		syncStatement->step();

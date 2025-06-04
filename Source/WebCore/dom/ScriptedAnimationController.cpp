@@ -37,7 +37,7 @@
 #include <wtf/Ref.h>
 #include <wtf/SystemTracing.h>
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 static const Seconds fullSpeedAnimationInterval { 30_ms };
 static const Seconds halfSpeedThrottlingAnimationInterval { 60_ms };
 static const Seconds aggressiveThrottlingAnimationInterval { 10_s };

@@ -135,7 +135,7 @@ static ULONG LayoutFonc( struct Hook *hook, Object *obj, struct MUI_LayoutMsg *l
             APTR cstate = (APTR)lm->lm_Children->mlh_Head;
             Object *child;
             IPTR w,h,mode;
-            if ( (child=(Object *)NextObject(&cstate)) )
+            if ( (child=(Object *)NextObject((Object **)&cstate)) )
             {
                 if (get(child, MA_QuickLinkGroup_Mode, &mode))
                 {
@@ -176,12 +176,21 @@ static ULONG LayoutFonc( struct Hook *hook, Object *obj, struct MUI_LayoutMsg *l
     return((ULONG)MUILM_UNKNOWN);
 }
 
+#ifdef __amigaos4__
+static struct Hook LayoutFonc_hook = {
+    {NULL, NULL},
+    (HOOKFUNC) LayoutFonc,
+    NULL,
+    0
+};
+#else
 static struct Hook LayoutFonc_hook = {
     {NULL, NULL},
     (APTR) HookEntry,
     (APTR) LayoutFonc,
     NULL
 };
+#endif
 
 static void doset(Object *obj, struct Data *data, struct TagItem *tags)
 {
@@ -222,7 +231,7 @@ static void doset(Object *obj, struct Data *data, struct TagItem *tags)
                     D(kprintf("QuickLinkParentGroup_Hide FALSE\n"));
                     get(obj, MUIA_Group_ChildList, &l);
                     cstate=l->mlh_Head;
-                    button=(Object *)NextObject(&cstate);
+                    button=(Object *)NextObject((Object **)&cstate);
                     //DoMethod(obj, MUIM_Group_InitChange);
                     if (button)
                     {
@@ -246,7 +255,7 @@ static void doset(Object *obj, struct Data *data, struct TagItem *tags)
                     D(kprintf("QuickLinkParentGroup_Hide TRUE\n"));
                     get(obj, MUIA_Group_ChildList, &l);
                     cstate=l->mlh_Head;
-                    data->qlgroup=(Object *)NextObject(&cstate);
+                    data->qlgroup=(Object *)NextObject((Object **)&cstate);
                     //DoMethod(obj, MUIM_Group_InitChange);
                     D(kprintf("QuickLinkParentGroup_Hide Remove QLGroup %08lx\n", data->qlgroup));
                     if (data->qlgroup)

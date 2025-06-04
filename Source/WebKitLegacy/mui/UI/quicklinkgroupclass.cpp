@@ -93,7 +93,7 @@ static void doset(Object *obj, struct Data *data, struct TagItem *tags)
                     
                     DoMethod(obj, MM_QuickLinkGroup_InitChange, MV_QuickLinkGroup_Change_Redraw);
 
-                    while ((child=(Object *)NextObject(&cstate)))
+                    while ((child=(Object *)NextObject((Object **)&cstate)))
                     {
                         set(child, MA_QuickLinkGroup_Mode, data->mode);
                     }
@@ -150,7 +150,7 @@ static ULONG LayoutFonc( struct Hook *hook, Object *obj, struct MUI_LayoutMsg *l
 
             //kprintf("Start calculate hspace=%ld vspace=%ld\n",data->hspace,data->vspace);
             cstate = (Object *)lm->lm_Children->mlh_Head;
-            while ( (child=(Object *)NextObject(&cstate)) )
+            while ( (child=(Object *)NextObject((Object **)&cstate)) )
             {
                 data->count++;
                 if (_minwidth(child)>minwidth)  minwidth=_minwidth(child);
@@ -296,7 +296,7 @@ static ULONG LayoutFonc( struct Hook *hook, Object *obj, struct MUI_LayoutMsg *l
                 for(count=1;(count<=(LONG)data->count);count++)
                 {
                     cstate = (APTR)lm->lm_Children->mlh_Head;  
-                    while ( (child =(Object *)NextObject(&cstate)) )
+                    while ( (child =(Object *)NextObject((Object **)&cstate)) )
                     {
                         node=NULL;
                         get(child, MUIA_UserData, &node);
@@ -336,7 +336,7 @@ static ULONG LayoutFonc( struct Hook *hook, Object *obj, struct MUI_LayoutMsg *l
             }
             else
             {
-                while ( (child =(Object *)NextObject(&cstate)) )
+                while ( (child =(Object *)NextObject((Object **)&cstate)) )
                 {
                     node=NULL;
                     get(child, MUIA_UserData, &node);
@@ -482,12 +482,21 @@ static ULONG LayoutFonc( struct Hook *hook, Object *obj, struct MUI_LayoutMsg *l
     return((ULONG)MUILM_UNKNOWN);
 }
 
+#ifdef __amigaos4__
+static struct Hook LayoutFonc_hook = {
+    {NULL, NULL},
+    (HOOKFUNC) LayoutFonc,
+    NULL,
+    0
+};
+#else
 static struct Hook LayoutFonc_hook = {
     {NULL, NULL},
     (APTR) HookEntry,
     (APTR) LayoutFonc,
     NULL
 };
+#endif
 
 DEFNEW
 {
@@ -671,7 +680,7 @@ DEFSMETHOD(QuickLinkGroup_Remove)
     get(obj,MUIA_Group_ChildList,&l);
     cstate=l->mlh_Head;
     
-    while ((child=(APTR)NextObject(&cstate)))
+    while ((child=(APTR)NextObject((Object **)&cstate)))
     {
         node=NULL;
         get((Object *)child, MUIA_UserData, &node);
@@ -702,7 +711,7 @@ DEFSMETHOD(QuickLinkGroup_Update)
     get(obj,MUIA_Group_ChildList,&l);
     cstate=l->mlh_Head;
     
-    while ((child=(Object *)NextObject(&cstate)))
+    while ((child=(Object *)NextObject((Object **)&cstate)))
     {
         node=NULL;
         get(child, MUIA_UserData, &node);

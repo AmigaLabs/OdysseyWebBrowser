@@ -39,6 +39,13 @@
 #include <wtf/text/StringBuilder.h>
 #include <wtf/unicode/icu/ICUHelpers.h>
 
+#ifndef	FALSE
+#define	FALSE	(0)
+#endif
+
+#ifndef	TRUE
+#define	TRUE	(!FALSE)
+#endif
 
 namespace WebCore {
 using namespace icu;

@@ -390,13 +390,16 @@ void AcinerellaAudioDecoder::soundFunc()
 {
 	AHIAudioCtrl *ahiCtrl = reinterpret_cast<AHIAudioCtrl *>(REG_A2);
 	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(ahiCtrl->ahiac_UserData);
-#endif
-#if OS(AROS)
+#elif OS(AROS)
 void AcinerellaAudioDecoder::soundFunc(void *ptr)
 {
 	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(ptr);
+#elif OS(AMIGAOS)
+void AcinerellaAudioDecoder::soundFunc(struct Hook *hook, struct AHIAudioCtrl * actrl, struct AHISoundMessage * smsg)
+{
+	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(actrl->ahiac_UserData);
 #endif
-	
+
 	me->m_ahiSampleBeingPlayed ++;
 	AHI_SetSound(0, me->m_ahiSampleBeingPlayed % 2, 0, 0, me->m_ahiControl, 0);
 

@@ -126,7 +126,7 @@
 #define U_DISABLE_RENAMING 1
 #endif
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 #define USE_PTHREADS 1
 #endif
 

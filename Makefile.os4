@@ -1,0 +1,68 @@
+
+CCRED=\033[31m
+CCGREEN=\033[32m
+CCYELLOW=\033[33m
+CCBLUE=\033[34m
+CCPINK=\033[35m
+CCLBLUE=\033[36m
+CCEND=\033[0m
+CCBOLD=\033[1m
+CCITAL=\033[3m
+CCUNDR=\033[4m
+
+.PHONY: help
+help: ## Display this help
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make -f os4.Makefile ${CCLBLUE}<target>${CCEND}\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  ${CCLBLUE}%-15s${CCEND} %s\n", $$1, $$2 } /^##@/ { printf "\n${CCBOLD}%s${CCEND}\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+
+#####################################################################
+##@ Build
+
+.PHONY: all
+all: init build ## Initialize and build the project
+
+.PHONY: init
+init: ## Initialize the build folder and run cmake
+	@echo "${CCPINK}${CCBOLD}\n-> Configuring AmigaOS 4 build...\n${CCEND}"
+	@rm -rf build && mkdir build
+	@cd build && \
+		cmake -DCMAKE_TOOLCHAIN_FILE=../Source/cmake/amigaos.cmake \
+			-DCMAKE_BUILD_TYPE=Release \
+			-DCMAKE_CROSSCOMPILING=ON \
+			-DPORT=MUI \
+			..
+
+.PHONY: build
+build: ## Build Odyssey Web Browser
+	@echo "${CCPINK}${CCBOLD}\n-> Building Odyssey Web Browser...\n${CCEND}"
+	@cd build && \
+		make -j7
+#$(shell nproc --ignore=2)
+
+
+# .PHONY: build-jsc
+# build-jsc:
+# 	@rm -rf build WebKitBuild && mkdir -p build WebKitBuild/Release/bin
+# 	@(cd build && \
+# 		$(realpath Tools/Scripts/run-javascriptcore-tests) --jsc-only \
+# 		--no-testmasm --no-testair --no-testb3 --no-testdfg --no-testapi \
+# 		--no-jsc-stress --no-mozilla-tests --no-jit-stress-tests --no-quick \
+# 		--cmakeargs=' \
+# 		-DCMAKE_TOOLCHAIN_FILE=$(realpath Source/cmake/amigaos.cmake) \
+# 		-DCMAKE_MODULE_PATH=$(realpath Source/cmake) \
+# 		-DCMAKE_CROSSCOMPILING=ON \
+# 		-DJAVASCRIPTCORE_DIR=$(realpath Source/JavaScriptCore) \
+# 		-DBUILD_SHARED_LIBS=NO \
+# 		-DCMAKE_BUILD_TYPE=Release \
+# 		-DPORT=JSCOnly \
+# 		-DUSE_SYSTEM_MALLOC=YES \
+# 		-DCMAKE_EXE_LINKER_FLAGS="-lpthread -athread=native" \
+# 		-DCMAKE_FIND_LIBRARY_SUFFIXES=".a" ')
+
+#####################################################################
+##@ Clean
+
+.PHONY: clean
+clean: ## Clean the latest build
+	@echo "${CCPINK}${CCBOLD}\n-> Clean the build folder\n${CCEND}"
+	@rm -rf build

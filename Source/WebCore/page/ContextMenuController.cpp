@@ -831,7 +831,7 @@ void ContextMenuController::populate()
     ContextMenuItem InsertEmojiItem(ActionType, ContextMenuItemTagInsertEmoji, contextMenuItemTagInsertEmoji());
 #endif
 
-#if PLATFORM(GTK) || PLATFORM(WIN) || OS(MORPHOS)
+#if PLATFORM(GTK) || PLATFORM(WIN) || OS(MORPHOS) || OS(AMIGAOS)
     ContextMenuItem ShareMenuItem;
 #else
     ContextMenuItem ShareMenuItem(SubmenuType, ContextMenuItemTagShareMenu, emptyString());

@@ -103,6 +103,7 @@ list(APPEND WebCore_SOURCES
 )
 
 list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
+    platform/morphos/SelectionData.h
 )
 
 list(APPEND WebCore_LIBRARIES

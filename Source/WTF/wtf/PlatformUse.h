@@ -82,7 +82,7 @@
 #define USE_SOUP 1
 #endif
 
-#if PLATFORM(GTK) || PLATFORM(WPE) || OS(MORPHOS)
+#if PLATFORM(GTK) || PLATFORM(WPE) || OS(MORPHOS) || OS(AMIGAOS)
 #define USE_WEBP 1
 #endif
 
@@ -131,7 +131,7 @@
 #define USE_ACCELERATE 1
 #endif
 
-#if OS(WINDOWS) || OS(AROS) || OS(MORPHOS)
+#if OS(WINDOWS) || OS(AROS) || OS(MORPHOS) || OS(AMIGAOS)
 #define USE_SYSTEM_MALLOC 1
 #endif
 
@@ -143,6 +143,9 @@
 #define USE_TEXTURE_MAPPER 1
 #define USE_TEXTURE_MAPPER_GL 0
 #define USE_PTHREADS 1
+#ifdef __amigaos4__
+#define IPTR ULONG
+#endif
 #endif
 
 #if CPU(REGISTER64)

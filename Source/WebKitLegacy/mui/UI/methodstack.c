@@ -25,6 +25,9 @@
 #include <exec/execbase.h>
 #include <proto/alib.h>
 #include <proto/exec.h>
+#ifdef __amigaos4__
+#include <stdarg.h>
+#endif
 
 #include "gui.h"
 
@@ -256,6 +259,110 @@ ULONG methodstack_push_sync_A(APTR obj, ULONG cnt, IPTR *args)
         res = pm->result;
         FreeMem(pm, pm->size);
     }
+
+    return res;
+}
+
+void methodstack_push(APTR obj, ULONG cnt, ...)
+{
+    struct pushedmethod *pm;
+    ULONG size;
+    va_list va;
+
+    va_start(va, cnt);
+    size = sizeof(*pm) + cnt * sizeof(ULONG);
+
+    if ((pm = AllocMem(size, MEMF_ANY)))
+    {
+        ULONG i = 0;
+        pm->obj = obj;
+        pm->size = size;
+        pm->sync = 0;
+
+        while (cnt--)
+        {
+            pm->m[i] = va_arg(va, ULONG);
+            i++;
+        }
+    #ifdef __amigaos4__
+        if ( (struct Process *)((struct ExecBase *)SysBase)->ThisTask == (APTR)mstask)
+    #else
+        if (SysBase->ThisTask == (APTR)mstask)
+    #endif
+        {
+            methodstack_check();
+            DoMethodA(obj, (Msg)&pm->m[0]);
+            FreeMem(pm, size);
+        }
+        else
+        {
+            ObtainSemaphore(&semaphore);
+            AddTail((struct List *)&methodlist, (struct Node *)pm);
+            ReleaseSemaphore(&semaphore);
+        }
+    }
+
+    va_end(va);
+}
+
+ULONG methodstack_push_sync(APTR obj, ULONG cnt, ...)
+{
+    struct pushedmethod *pm;
+    ULONG res, size;
+    va_list va;
+
+    va_start(va, cnt);
+    size = sizeof(*pm) + cnt * sizeof(ULONG);
+    res = 0;
+
+    if ((pm = AllocMem(size, MEMF_ANY)))
+    {
+        #ifdef __amigaos4__
+        struct Process *thisproc = (APTR)(struct Process *)((struct ExecBase *)SysBase)->ThisTask;
+        #else
+        struct Process *thisproc = (APTR)SysBase->ThisTask;
+        #endif
+
+        struct MsgPort *replyport = NULL;
+        ULONG i = 0;
+
+        while (cnt--)
+        {
+            pm->m[i] = va_arg(va, ULONG);
+            i++;
+        }
+
+        if (thisproc == (APTR)mstask)
+        {
+            methodstack_check();
+            res = DoMethodA(obj, (Msg)&pm->m[0]);
+
+            FreeMem(pm, size);
+            va_end(va);
+
+            return res;
+        }
+
+        replyport = CreateMsgPort();
+
+        pm->size = size;
+        pm->obj = obj;
+        pm->sync = TRUE;
+        pm->msg.mn_ReplyPort = replyport;
+
+        ObtainSemaphore(&semaphore);
+        AddTail((struct List *)&methodlist, (struct Node *)pm);
+        ReleaseSemaphore(&semaphore);
+
+        Signal(mstask, SIGBREAKF_CTRL_F);
+        WaitPort(replyport);
+        GetMsg(replyport);
+
+        res = pm->result;
+        FreeMem(pm, pm->size);
+    }
+
+    va_end(va);
 
     return res;
 }

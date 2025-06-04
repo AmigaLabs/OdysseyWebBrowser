@@ -68,6 +68,9 @@
 #include <cstdio>
 #include <cairo.h>
 
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <clib/macros.h>
 #include <proto/iffparse.h>
 #include <proto/asl.h>
@@ -269,6 +272,10 @@ static LONG AppMsgFunc(void)
 {
     struct AppMessage **x = (struct AppMessage **) REG_A1;
     Object *window = (Object *) REG_A2;
+#elif OS(AMIGAOS)
+static LONG AppMsgFunc(struct Hook *h,Object *window, AppMessage **x)
+{    
+#endif    
     struct WBArg *ap;
     struct AppMessage *amsg = *x;
     int i;
@@ -288,9 +295,12 @@ static LONG AppMsgFunc(void)
 
     return(0);
 }
-
+#if OS(MORPHOS)
 static struct EmulLibEntry AppMsgHookGate = { TRAP_LIB, 0, (void (*)(void))AppMsgFunc };
 static struct Hook AppMsgHook = { {0, 0}, (HOOKFUNC)&AppMsgHookGate, NULL, NULL };
+#endif
+#if OS(AMIGAOS)
+static struct Hook AppMsgHook = { {0, 0}, (HOOKFUNC)&AppMsgFunc, NULL, NULL };
 #endif
 #if OS(AROS)
 static struct Hook AppMsgHook = { {0, 0}, NULL, NULL, NULL };
@@ -1485,7 +1495,10 @@ DEFSMETHOD(OWBWindow_LoadURL)
         }
 
         // Close history and restore its global state (a bit heavy to reload whole list...)
+        // TODO: Is this needed for OS4? This crashes the browser loading
+#ifndef __amigaos4__        
         DoMethod((Object *) getv(data->addressbargroup, MA_AddressBarGroup_PopString), MUIM_Popstring_Close, FALSE);
+#endif
 
         if(getv(app, MA_OWBApp_URLCompletionType) & MV_OWBApp_URLCompletionType_Popup)
         {
@@ -2456,7 +2469,7 @@ DEFSMETHOD(OWBWindow_UpdateZone)
 
     if(msg->browser == data->active_browser)
     {
-        char *image;
+        const char *image;
 
         switch(msg->zone)
         {
@@ -2481,7 +2494,7 @@ DEFSMETHOD(OWBWindow_UpdateSecurity)
 
     if(msg->browser == data->active_browser)
     {
-        char *image;
+        const char *image;
         ULONG alpha = 0xFF;
 
         switch(msg->security)
@@ -2513,7 +2526,7 @@ DEFSMETHOD(OWBWindow_UpdatePrivateBrowsing)
     if(msg->browser == data->active_browser)
     {
 #if !OS(AROS)
-        char *image = "PROGDIR:resource/private_browsing.png";;
+        const char *image = "PROGDIR:resource/private_browsing.png";;
 #else
         char *image = "PROGDIR:resource/private_browsing_a.png";;
 #endif
@@ -2553,7 +2566,7 @@ DEFSMETHOD(OWBWindow_UpdateUserScript)
         data->userscriptimage_shorthelp = utf8_to_local(shorthelp.utf8().data());
         set(data->userscriptimage, MUIA_ShortHelp, data->userscriptimage_shorthelp);
 
-        char *image = "PROGDIR:resource/userscript.png";
+        const char *image = "PROGDIR:resource/userscript.png";
         ULONG alpha = scripts->size() ?  0xFF : 0;
 
         set(data->userscriptimage, MUIA_Dtpic_Alpha, alpha);

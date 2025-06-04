@@ -10,6 +10,22 @@
 #include "mui.h"
 #include "owb_cat.h"
 
+#ifdef __amigaos4__
+#define _Msg_ _Msg
+#ifdef __cplusplus
+#define SIPTR LONG
+extern "C" {
+#endif
+
+Object * VARARGS68K DoSuperNew(struct IClass *cl, Object *obj, ...);
+ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, struct RastPort *rp, UWORD destx, UWORD desty, UWORD width, UWORD height, ULONG globalalpha);
+#define WritePixelArrayAlpha _WritePixelArrayAlpha
+
+#ifdef __cplusplus
+}
+#endif
+#endif
+
 #define xstringify(s) stringify(s)
 #define stringify(s) #s
 
@@ -18,11 +34,12 @@
 #define THREAD_NAME              "OWB Thread"
 #define APPLICATION_DESCRIPTION  "WebKit-based browser."
 #define APPLICATION_BASE         "OWB"
-#define APPLICATION_ICON         "PROGDIR:OWB"
 #if !defined(__AROS__)
+#define APPLICATION_ICON         "PROGDIR:Odyssey"
 #define APPLICATION_ENV_PREFS    "ENV:MUI/OWB.config"
 #define APPLICATION_ENVARC_PREFS "ENVARC:MUI/OWB.config"
 #else
+#define APPLICATION_ICON         "PROGDIR:OWB"
 #define APPLICATION_ENV_PREFS    "ENV:Zune/OWB.config"
 #define APPLICATION_ENVARC_PREFS "ENVARC:Zune/OWB.config"
 #endif

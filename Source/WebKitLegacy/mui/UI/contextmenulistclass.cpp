@@ -32,7 +32,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <clib/macros.h>
-#include <proto/dos.h>
 
 #include "gui.h"
 #include "utils.h"
@@ -90,10 +89,10 @@ DEFMMETHOD(List_Display)
         switch(cn->commandType)
         {
             case ACTION_AMIGADOS:
-                commandType    = "AmigaDOS";
+                commandType    = (STRPTR) "AmigaDOS";
                 break;
             case ACTION_REXX:
-                commandType    = "ARexx";
+                commandType    = (STRPTR) "ARexx";
                 break;
             case ACTION_INTERNAL:
                 commandType    = GSI(MSG_CONTEXTMENULIST_INTERNAL);

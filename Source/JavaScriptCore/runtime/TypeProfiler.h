@@ -32,7 +32,9 @@
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 #if PLATFORM(MUI)
+#ifndef INTPTR_MAX
 #define INTPTR_MAX  (2147483647)
+#endif
 #endif
 
 #if OS(MORPHOS)

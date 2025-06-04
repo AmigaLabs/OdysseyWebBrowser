@@ -226,7 +226,7 @@ void SlotVisitor::appendJSCellOrAuxiliary(HeapCell* heapCell)
 
 void SlotVisitor::appendSlow(JSCell* cell, Dependency dependency)
 {
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) // && !OS(AMIGAOS) // TODO: Check this
     if (UNLIKELY(m_heapAnalyzer))
         m_heapAnalyzer->analyzeEdge(m_currentCell, cell, rootMarkReason());
 #endif
@@ -361,8 +361,11 @@ ALWAYS_INLINE void SlotVisitor::visitChildren(const JSCell* cell)
     }
     
 	// MorphOS: appears to be crashing here with cell most likely NULL
+    // TODO: appears to be crashing here with cell most likely NULL
+#if OS(MORPHOS) || OS(AMIGAOS)
 	if (nullptr == cell)
 		return;
+#endif
 
     // Funny story: it's possible for the object to be black already, if we barrier the object at
     // about the same time that it's marked. That's fine. It's a gnarly and super-rare race. It's
@@ -403,7 +406,7 @@ ALWAYS_INLINE void SlotVisitor::visitChildren(const JSCell* cell)
         cell->methodTable(vm())->visitChildren(const_cast<JSCell*>(cell), *this);
         break;
     }
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) // && !OS(AMIGAOS) // TODO: Check this
     if (UNLIKELY(m_heapAnalyzer)) {
         if (m_isFirstVisit)
             m_heapAnalyzer->analyzeNode(const_cast<JSCell*>(cell));
@@ -499,7 +502,11 @@ NEVER_INLINE void SlotVisitor::drain(MonotonicTime timeout)
     
     Locker locker { m_rightToRun };
     
+#if OS(MORPHOS) || OS(AMIGAOS)// TODO: Check this this always evaluates to true since timeout will always be 'infinity'
+    while (1) {
+#else
     while (!hasElapsed(timeout)) {
+#endif
         updateMutatorIsStopped(locker);
         IterationStatus status = forEachMarkStack(
             [&] (MarkStackArray& stack) -> IterationStatus {

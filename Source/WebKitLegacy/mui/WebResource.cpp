@@ -30,6 +30,7 @@
 
 #include <wtf/text/WTFString.h>
 #include <clib/debug_protos.h>
+#include <proto/exec.h>
 
 using namespace WebCore;
 
@@ -54,7 +55,7 @@ WebResource* WebResource::createInstance(RefPtr<WebCore::SharedBuffer>&& data, c
 
 void WebResource::initWithData( RefPtr<WebCore::SharedBuffer>&& data, String url, String mimeType, String textEncodingName, String frameName)
 {
-    kprintf("WebResource::initWithData\n");
+    dprintf("WebResource::initWithData\n");
     m_data = data;
     m_url = URL({ }, String(url));
     m_mimeType = String(mimeType);

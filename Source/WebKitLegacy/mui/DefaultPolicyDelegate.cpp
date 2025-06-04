@@ -52,7 +52,6 @@
 
 #include "gui.h"
 #include "utils.h"
-#include <proto/dos.h>
 #include <proto/intuition.h>
 #include <clib/debug_protos.h>
 #undef get

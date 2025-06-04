@@ -52,7 +52,7 @@ extern CONST_STRPTR * get_user_agent_labels();
 
 // Reuse prefswindow cookie labels
 #define LABEL(x) (STRPTR)MSG_PREFSWINDOW_##x
-STATIC CONST CONST_STRPTR cookiepolicies[] =
+STATIC STRPTR cookiepolicies[] =
 {
     LABEL(COOKIE_ACCEPT),
     LABEL(COOKIE_REJECT),

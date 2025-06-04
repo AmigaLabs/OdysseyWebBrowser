@@ -5,6 +5,9 @@
 #if ENABLE(VIDEO)
 #include <proto/ahi.h>
 #include <proto/exec.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <dos/dos.h>
 
@@ -43,6 +46,8 @@ AcinerellaAudioDecoder::AcinerellaAudioDecoder(AcinerellaDecoderClient* client, 
 
 void AcinerellaAudioDecoder::startPlaying()
 {
+// TODO: Implement startPlaying for AmigaOS 4
+#if !OS(AMIGAOS)	
 	D(dprintf("[AD]%s: %p\n", __func__, this));
 	EP_EVENT(start);
 	initializeAudio();
@@ -52,10 +57,13 @@ void AcinerellaAudioDecoder::startPlaying()
 		AHI_ControlAudio(m_ahiControl, AHIC_Play, TRUE, TAG_DONE);
 		m_playing = true;
 	}
+#endif	
 }
 
 void AcinerellaAudioDecoder::stopPlaying()
 {
+// TODO: Implement stopPlaying for AmigaOS 4
+#if !OS(AMIGAOS)	
 	D(dprintf("[AD]%s: %p\n", __func__, this));
 	EP_EVENT(stop);
 	if (m_ahiControl)
@@ -63,6 +71,7 @@ void AcinerellaAudioDecoder::stopPlaying()
 		AHI_ControlAudio(m_ahiControl, AHIC_Play, FALSE, TAG_DONE);
 		m_playing = false;
 	}
+#endif	
 }
 
 void AcinerellaAudioDecoder::onCoolDown()
@@ -72,11 +81,14 @@ void AcinerellaAudioDecoder::onCoolDown()
 
 void AcinerellaAudioDecoder::doSetVolume(double volume)
 {
+// TODO: Implement volume control for AmigaOS 4
+#if !OS(AMIGAOS)	
 	if (m_ahiControl)
 	{
 		AHI_SetVol(0, (LONG) (double(0x10000L) * volume),
 			0x8000L, m_ahiControl, AHISF_IMM);
 	}
+#endif	
 }
 
 bool AcinerellaAudioDecoder::isReadyToPlay() const
@@ -112,6 +124,8 @@ AROS_UFH3(void, AROS_SoundFunc,
 
 bool AcinerellaAudioDecoder::initializeAudio()
 {
+// TODO: Implement initializeAudio for AmigaOS 4
+#if !OS(AMIGAOS)
 	D(dprintf("[AD]%s:\n", __func__));
 	EP_SCOPE(initializeAudio);
 	
@@ -145,6 +159,15 @@ bool AcinerellaAudioDecoder::initializeAudio()
 					{NULL,NULL},
 					(APTR) AROS_SoundFunc,
 					NULL, NULL,
+				};
+#endif
+#if OS(AMIGAOS)
+				struct Hook __soundHook =
+				{
+					{NULL,NULL},
+					(ULONG (*)(Hook*, void*, void*)) &AcinerellaAudioDecoder::soundFunc,
+					NULL,
+					NULL,
 				};
 #endif
 
@@ -243,7 +266,7 @@ bool AcinerellaAudioDecoder::initializeAudio()
 		DeleteMsgPort(m_ahiPort);
 		m_ahiPort = nullptr;
 	}
-	
+#endif // !OS(AMIGAOS)	
 	return false;
 }
 
@@ -260,6 +283,8 @@ void AcinerellaAudioDecoder::onGetReadyToPlay()
 
 void AcinerellaAudioDecoder::ahiCleanup()
 {
+// TODO: Implement ahiCleanup for AmigaOS 4
+#if !OS(AMIGAOS)	
 	D(dprintf("[AD]%s:\n", __func__));
 	EP_SCOPE(ahiCleanup);
 
@@ -309,6 +334,7 @@ void AcinerellaAudioDecoder::ahiCleanup()
 	}
 
 	D(dprintf("[AD]%s: done\n", __func__));
+#endif // !OS(AMIGAOS)	
 }
 
 void AcinerellaAudioDecoder::onFrameDecoded(const AcinerellaDecodedFrame &frame)
@@ -334,6 +360,8 @@ double AcinerellaAudioDecoder::position() const
 
 void AcinerellaAudioDecoder::flush()
 {
+// TODO: Implement flush for AmigaOS 4
+#if !OS(AMIGAOS)	
 	D(dprintf("[AD]%s: flushing audio\n", __func__));
 	EP_SCOPE(flush);
 
@@ -382,6 +410,7 @@ void AcinerellaAudioDecoder::flush()
 		fillBuffer(index);
 		AHI_ControlAudio(m_ahiControl, AHIC_Play, TRUE, TAG_DONE);
 	}
+#endif // !OS(AMIGAOS)		
 }
 
 void AcinerellaAudioDecoder::dumpStatus()
@@ -398,19 +427,24 @@ void AcinerellaAudioDecoder::soundFunc()
 {
 	AHIAudioCtrl *ahiCtrl = reinterpret_cast<AHIAudioCtrl *>(REG_A2);
 	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(ahiCtrl->ahiac_UserData);
-#endif
-#if OS(AROS)
+#elif OS(AROS)
 void AcinerellaAudioDecoder::soundFunc(void *ptr)
 {
 	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(ptr);
+#elif OS(AMIGAOS)
+void AcinerellaAudioDecoder::soundFunc(struct Hook *hook, struct AHIAudioCtrl * actrl, struct AHISoundMessage * smsg)
+{
+	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(actrl->ahiac_UserData);
 #endif
-
+// TODO: Implement the code below for AmigaOS 4. It needs definition of IAHI
+#if !OS(AMIGAOS)
 	me->m_ahiSampleBeingPlayed ++;
 	AHI_SetSound(0, me->m_ahiSampleBeingPlayed % 2, 0, 0, me->m_ahiControl, 0);
 
 	// D(dprintf("[AD]%s: setSound %d (%d)\n", __func__, me->m_ahiSampleBeingPlayed % 2, me->m_ahiSampleBeingPlayed));
 
 	me->m_ahiSampleConsumed.signal();
+#endif 		
 }
 
 void AcinerellaAudioDecoder::fillBuffer(int index)

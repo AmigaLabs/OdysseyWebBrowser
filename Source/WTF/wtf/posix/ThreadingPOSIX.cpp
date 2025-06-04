@@ -92,6 +92,13 @@ int pthread_setname_np(pthread_t thread, const char *name);
 #include <semaphore.h>
 #endif
 
+#if OS(AMIGAOS)
+#include <semaphore.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <proto/exec.h>
+#endif
+
 namespace WTF {
 
 static Lock globalSuspendLock;
@@ -133,7 +140,7 @@ static LazyNeverDestroyed<Semaphore> globalSemaphoreForSuspendResume;
 
 static std::atomic<Thread*> targetThread { nullptr };
 
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
 void Thread::signalHandlerSuspendResume(int, siginfo_t*, void* ucontext)
 {
     // Touching a global variable atomic types from signal handlers is allowed.
@@ -209,7 +216,7 @@ void Thread::initializePlatformThreading()
 #if !OS(DARWIN) && !OS(AROS)
     globalSemaphoreForSuspendResume.construct(0);
 
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
     // Signal handlers are process global configuration.
     // Intentionally block sigThreadSuspendResume in the handler.
     // sigThreadSuspendResume will be allowed in the handler by sigsuspend.
@@ -249,7 +256,7 @@ ThreadIdentifier Thread::currentID()
 
 void Thread::initializeCurrentThreadEvenIfNonWTFCreated()
 {
-#if !OS(DARWIN) && !OS(MORPHOS) && !OS(AROS)
+#if !OS(DARWIN) && !OS(MORPHOS) && !OS(AROS) && !OS(AMIGAOS)
     RELEASE_ASSERT(g_wtfConfig.isThreadSuspendResumeSignalConfigured);
     sigset_t mask;
     sigemptyset(&mask);
@@ -287,7 +294,7 @@ bool Thread::establishHandle(NewThreadContext* context, std::optional<size_t> st
     pthread_t threadHandle;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     pthread_attr_setstacksize(&attr, 512 * 1024);
 #endif
 #if HAVE(QOS_CLASSES)
@@ -313,8 +320,8 @@ void Thread::initializeCurrentThreadInternal(const char* threadName)
     pthread_setname_np(normalizeThreadName(threadName));
 #elif OS(LINUX)
     prctl(PR_SET_NAME, normalizeThreadName(threadName));
-#elif OS(MORPHOS)
-	char nameBuffer[256];
+#elif OS(MORPHOS) || OS(AMIGAOS)
+	char nameBuffer[256] = {0};
 	strcpy(nameBuffer, "WkWebView:");
 	stccpy(nameBuffer + 10, threadName, sizeof(nameBuffer) - 10);
 	pthread_setname_np(pthread_self(), nameBuffer);
@@ -407,7 +414,7 @@ Thread& Thread::initializeCurrentTLS()
     return initializeTLS(WTFMove(thread));
 }
 
-#ifdef __MORPHOS__
+#if OS(MORPHOS) || OS(AMIGAOS)
 Thread* Thread::getUserDataThreadPointer()
 {
     return (Thread *)FindTask(NULL)->tc_UserData;
@@ -552,7 +559,7 @@ void Thread::establishPlatformSpecificHandle(pthread_t handle)
 #endif
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 void Thread::deleteTLSKey()
 {
 #if !HAVE(FAST_TLS)

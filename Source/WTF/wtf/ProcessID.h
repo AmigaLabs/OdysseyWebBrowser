@@ -25,7 +25,7 @@
 
 #pragma once
 
-#if OS(UNIX)
+#if OS(UNIX) || OS(AMIGAOS)
 #include <unistd.h>
 #endif
 
@@ -55,7 +55,7 @@ inline ProcessID getCurrentProcessID()
     return GetCurrentProcessId();
 #elif OS(MORPHOS)
 	return FindTask(0)->tc_ETask->UniqueID;
-#elif PLATFORM(MUI)
+#elif PLATFORM(MUI) && !OS(AMIGAOS)
     // FIXME: wrong for 64-bits
     return (int) (IPTR) FindTask(NULL);
 #else

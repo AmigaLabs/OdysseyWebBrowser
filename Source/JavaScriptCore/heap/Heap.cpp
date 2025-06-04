@@ -1818,9 +1818,13 @@ bool Heap::stopIfNecessarySlow(unsigned oldState)
     // prevent us from polling this so much. Ideally, stopIfNecessary would ignore the mutatorHasConnBit
     // and there would be some other bit indicating whether we were in some GC phase other than the
     // NotRunning or Concurrent ones.
+    // TODO: Check if this actually is needed for AmigaOS 4. This leads to a crash because the
+    // state.stackOrigin is a nullptr. When this reaches the ConservativeRoots::genericAddSpan
+    // gives a wrong access memory crash
+#if !OS(AMIGAOS)
     if (oldState & mutatorHasConnBit)
         collectInMutatorThread();
-    
+#endif    
     return false;
 }
 

@@ -247,7 +247,7 @@ static bool shouldSuppressThreadSafetyCheck()
     return WebThreadIsEnabled() || applicationSDKVersion() < DYLD_IOS_VERSION_12_0;
 #elif PLATFORM(MAC)
     return !isInWebProcess() && applicationSDKVersion() < DYLD_MACOSX_VERSION_10_14;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	return true; // wut?
 #else
     return false;

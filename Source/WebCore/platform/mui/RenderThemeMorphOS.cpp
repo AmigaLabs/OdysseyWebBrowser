@@ -40,6 +40,9 @@
 #include "StringTruncator.h"
 #include "wtf/text/CString.h"
 
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 
 #include <clib/debug_protos.h>

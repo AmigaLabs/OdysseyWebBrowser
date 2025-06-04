@@ -44,3 +44,28 @@ $ make
 ```
 
 After build completes, your executable will be available in 'cross-build-x86_64-aros/bin' directory.
+
+###
+
+Small changes to Amiga SDK environment to avoid too much changes to the code
+
+create empty `proto/alib.h` file
+
+In `dos/dosextens.h` and an `#ifndef ODYSSEY` guard around `struct Lock`
+
+```
+#ifndef ODYSSEY
+struct Lock
+{
+    BPTR             fl_Link;          /* PRIVATE - filesystem use only.    */
+    ...
+}
+#endif
+```
+
+Create a file inside `devices` called `rawkeycodes.h` and insert the content of following gist: https://gist.github.com/afxgroup/6dfcef4d6593832b06ce529e6af04278  
+
+## TODO: AmigaOS4
+
+Implement audio  
+Implement video  

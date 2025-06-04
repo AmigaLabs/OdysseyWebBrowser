@@ -129,12 +129,13 @@ add_library(LibPSL::LibPSL UNKNOWN IMPORTED GLOBAL)
 set_target_properties(LibPSL::LibPSL PROPERTIES
     IMPORTED_LOCATION "${LibPSL_LIBRARY}"
 )
-set(HarfBuzz_LIBRARY ${AROS_SDK_DIR}/lib/libamiga.a)
+
+set(HarfBuzz_LIBRARY ${AROS_SDK_DIR}/lib/libfreetype.a)
 add_library(HarfBuzz::HarfBuzz UNKNOWN IMPORTED GLOBAL)
 set_target_properties(HarfBuzz::HarfBuzz PROPERTIES
     IMPORTED_LOCATION "${HarfBuzz_LIBRARY}"
 )
-set(HarfBuzz_ICU_LIBRARY ${AROS_SDK_DIR}/lib/libamiga.a)
+set(HarfBuzz_ICU_LIBRARY ${AROS_SDK_DIR}/lib/libfreetype.a)
 add_library(HarfBuzz::ICU UNKNOWN IMPORTED GLOBAL)
 set_target_properties(HarfBuzz::ICU PROPERTIES
     IMPORTED_LOCATION "${HarfBuzz_ICU_LIBRARY}"
@@ -184,7 +185,7 @@ add_library(Fontconfig::Fontconfig UNKNOWN IMPORTED GLOBAL)
 set_target_properties(Fontconfig::Fontconfig PROPERTIES
     IMPORTED_LOCATION "${Fontconfig_LIBRARY}"
 )
-set(Freetype_LIBRARY ${AROS_SDK_DIR}/lib/libfreetype2.a)
+set(Freetype_LIBRARY ${AROS_SDK_DIR}/lib/libfreetype.a)
 add_library(Freetype::Freetype UNKNOWN IMPORTED GLOBAL)
 set_target_properties(Freetype::Freetype PROPERTIES
     IMPORTED_LOCATION "${Freetype_LIBRARY}"

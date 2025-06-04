@@ -104,19 +104,20 @@ extern "C"
 /* System */
 #define SYSTEM_PRIVATE
 
+#if !OS(AMIGAOS)
 #include <cybergraphx/cybergraphics.h>
+#include <proto/cybergraphics.h>
 #if ENABLE_VIDEO
 #include <cybergraphx/cgxvideo.h>
+#endif
 #endif
 #include <intuition/pointerclass.h>
 #include <graphics/rpattr.h>
 #include <devices/rawkeycodes.h>
 #include <devices/inputevent.h>
-#include <proto/cybergraphics.h>
-#if ENABLE(VIDEO) && !OS(AROS)
+#if ENABLE(VIDEO) && !OS(AROS) && !OS(AMIGAOS)
 #include <proto/cgxvideo.h>
 #endif
-#include <proto/dos.h>
 #include <proto/graphics.h>
 #include <proto/layers.h>
 #include <proto/keymap.h>
@@ -187,6 +188,14 @@ static __inline IPTR _CALLFUNC2(void (*func)(void), IPTR arg1, IPTR arg2)
 }
 #define CALLFUNC2(f,a1,a2) _CALLFUNC2((void (*)(void))(f),(IPTR)(a1),(IPTR)(a2))
 #endif
+
+#if OS(AMIGAOS)
+static __inline IPTR _CALLFUNC1(IPTR (*func)(IPTR), IPTR arg1) { return func(arg1); }
+#define CALLFUNC1(f,a1) _CALLFUNC1((IPTR (*)(IPTR))(f),(IPTR)(a1))
+static __inline IPTR _CALLFUNC2(IPTR (*func)(IPTR,IPTR), IPTR arg1, IPTR arg2) { return func(arg1,arg2); }
+#define CALLFUNC2(f,a1,a2) _CALLFUNC2((IPTR (*)(IPTR,IPTR))(f),(IPTR)(a1),(IPTR)(a2))
+#endif /* OS(AMIGAOS) */
+
 
 /**/
 
@@ -290,7 +299,9 @@ struct Data
 
 #if ENABLE(VIDEO)
     /* media  */
+#if !OS(AMIGAOS)
     VLayerHandle     *video_handle;
+#endif
     HTMLMediaElement *video_element; // XXX: we can have several media instances per browser but this one is the vlayer video element (there can be only one at once).
     ULONG video_fullscreen;
     ULONG video_mode;
@@ -300,7 +311,7 @@ struct Data
     double video_lastclick;
 #endif
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     /* popup Menu */
     Object *popmenu;
 #endif
@@ -418,7 +429,7 @@ DEFNEW
         data->view->webView = webView;
         data->view->browser = obj;
 
-#if !OS(AROS) // This causes crash later on
+#if !OS(AROS) && !OS(AMIGAOS)  // This causes crash later on
         data->view->app     = _app(obj);
 #endif
 
@@ -551,7 +562,7 @@ DEFDISPOSE
         DoMethod((Object *) getv(app, MA_OWBApp_PrinterWindow), MM_PrinterWindow_Close);
     }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     if (data->popmenu)
     {
         MUI_DisposeObject(data->popmenu);
@@ -1417,7 +1428,7 @@ DEFMMETHOD(Show)
             data->view->webView->onResize(re);
         }
 
-#if ENABLE(VIDEO) && !OS(AROS)
+#if ENABLE(VIDEO) && !OS(AROS) && !OS(AMIGAOS)
         // Video: recompute vlayer offset whenever window size changes
         if (data->video_element)
         {
@@ -1575,7 +1586,11 @@ DEFSMETHOD(OWBBrowser_Update)
 
         if(src && data->rp_offscreen.BitMap)
         {
+#if OS(AMIGAOS)
+            WritePixelArray(src, data->update_x, data->update_y, stride, PIXF_A8R8G8B8, &data->rp_offscreen, data->update_x, data->update_y, data->update_width, data->update_height);
+#else
             WritePixelArray(src, data->update_x, data->update_y, stride, &data->rp_offscreen, data->update_x, data->update_y, data->update_width, data->update_height, NATIVE_ARGB);
+#endif // OS(AMIGAOS)
         }
     }
 
@@ -1701,7 +1716,11 @@ DEFMMETHOD(Draw)
 
                 if(src)
                 {
+#if OS(AMIGAOS)
+                    WritePixelArray(src, 0, 0, stride, PIXF_A8R8G8B8, &data->rp_offscreen, 0, 0, data->width, data->height);
+#else
                     WritePixelArray(src, 0, 0, stride, &data->rp_offscreen, 0, 0, data->width, data->height, NATIVE_ARGB);
+#endif // OS(AMIGAOS)  
                 }
 
                 data->dirty = FALSE;
@@ -1744,6 +1763,9 @@ DEFMMETHOD(Setup)
         data->ehnode.ehn_Object = obj;
         data->ehnode.ehn_Class = cl;
         data->ehnode.ehn_Events =  IDCMP_MOUSEBUTTONS | IDCMP_RAWKEY | IDCMP_MOUSEMOVE | IDCMP_CHANGEWINDOW;
+#if OS(AMIGAOS)
+        data->ehnode.ehn_Events |= IDCMP_EXTENDEDMOUSE;
+#endif
         data->ehnode.ehn_Priority = 1;
         data->ehnode.ehn_Flags = MUI_EHF_GUIMODE;
         DoMethod(_win(obj), MUIM_Window_AddEventHandler, (IPTR)&data->ehnode);
@@ -1830,6 +1852,9 @@ static void autoscroll_add(Object *obj, struct Data *data, IntuiMessage *im)
             DoMethod(_app(obj), MUIM_Application_AddInputHandler, (IPTR)&data->ihnode);
             data->autoscroll_added = TRUE;
         }
+#if OS(AMIGAOS)
+        set(_win(obj), MUIA_PointerType, MUIV_PointerType_ScrollAll);
+#endif          
 #if 0 // AROS: this is causing a crash
         set(_window(obj), WA_PointerType, POINTERTYPE_MOVE);
 #endif
@@ -1847,6 +1872,9 @@ static void autoscroll_remove(Object *obj, struct Data *data)
             DoMethod(_app(obj), MUIM_Application_RemInputHandler, (IPTR)&data->ihnode);
             data->autoscroll_added = FALSE;
         }
+#if OS(AMIGAOS)
+        set(_win(obj), MUIA_PointerType, MUIV_PointerType_Normal);
+#endif         
 #if 0 // AROS: this is causing a crash
         set(_window(obj), WA_PointerType, data->pointertype);
 #endif
@@ -1895,7 +1923,7 @@ DEFMMETHOD(HandleEvent)
 
                 if(ehn->instance && ehn->handlerfunc)
                 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
                     eaten = CALLFUNC2(ehn->handlerfunc,
                               ehn->instance,
                               (APTR) msg->imsg);
@@ -2228,6 +2256,50 @@ DEFMMETHOD(HandleEvent)
             }
             break;
 
+#if OS(AMIGAOS)
+            case IDCMP_EXTENDEDMOUSE:
+            {
+                bool forwardtoWebview = false;
+
+                // convert the wheel data in any case
+                if(Code & IMSGCODE_INTUIWHEELDATA)
+                {
+                        struct IntuiWheelData *iwd=(struct IntuiWheelData*)im.IAddress;
+                        if(iwd->WheelY<0)
+                                im.Code=RAWKEY_NM_WHEEL_UP;
+                        else if(iwd->WheelY>0)
+                                im.Code=RAWKEY_NM_WHEEL_DOWN;
+                        else if(iwd->WheelX<0)
+                                im.Code=RAWKEY_NM_WHEEL_LEFT;
+                        else if(iwd->WheelX>0)
+                                im.Code=RAWKEY_NM_WHEEL_RIGHT;
+                        im.Class=IDCMP_RAWKEY;
+                }
+
+                // do everything else like for the RAWKEY_NM_WHEEL_XXX handling
+                if(!(Qualifier & IEQUALIFIER_CONTROL) && _isinobject(obj, MouseX, MouseY))
+                {
+                        //printf("we in Qualifier & IEQUALIFIER_CONTROL\n");
+                        data->view->webView->onScroll(im);
+                }
+                else
+                {
+                        forwardtoWebview = true;
+                        rc = MUI_EventHandlerRC_Eat;
+                }
+
+                if(forwardtoWebview)
+                {
+                    if (Code & IECODE_UP_PREFIX)
+                        data->view->webView->onKeyUp(im);
+                    else
+                        data->view->webView->onKeyDown(im);
+                }
+
+            }
+            break;
+#endif
+
             case IDCMP_RAWKEY:
             {
                 bool forwardtoWebview = false;
@@ -2457,7 +2529,7 @@ static void itemActivated(struct Hook *hook, Object *list, PopupMenuMorphOS **th
 
 DEFSMETHOD(OWBBrowser_PopupMenu)
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     GETDATA;
 
     Object *menulistgroup;
@@ -3141,7 +3213,11 @@ static void fix_scanline(struct RastPort *rp, int y, int width, int minalpha)
     unsigned char buff[width * 4]; /* this will never be bigger than DRAGSIZE * 4 */
     int i;
 
+#if OS(AMIGAOS)
+    ReadPixelArray(rp, 0, y, buff, 0, 0, 0, PIXF_A8R8G8B8, width, 1);
+#else
     ReadPixelArray(buff, 0, 0, 0, rp, 0, y, width, 1, RECTFMT_RGBA);
+#endif /* OS(AMIGAOS) */
 
     for(i=0; i<width; i++)
     {
@@ -3151,7 +3227,11 @@ static void fix_scanline(struct RastPort *rp, int y, int width, int minalpha)
         buff[i * 4 + 3] = a;
     }
 
+#if OS(AMIGAOS)
+    WritePixelArray(buff, 0, 0, 0, PIXF_R8G8B8A8, rp, 0, y, width, 1);
+#else
     WritePixelArray(buff, 0, 0, 0, rp, 0, y, width, 1, RECTFMT_RGBA);
+#endif /* OS(AMIGAOS) */    
 }
 
 DEFMMETHOD(CreateDragImage)
@@ -3211,6 +3291,8 @@ DEFMMETHOD(CreateDragImage)
             rp.BitMap = di->bm;
 #if OS(AROS)
             WritePixelArray(src, 0,0, stride, &rp, 0, 0, width, height, RECTFMT_BGRA32);
+#elif OS(AMIGAOS)
+            WritePixelArray(src, 0,0, stride, PIXF_R8G8B8A8, &rp, 0, 0, width, height);
 #else
             WritePixelArray(src, 0,0, stride, &rp, 0, 0, width, height, RECTFMT_ARGB);
 #endif
@@ -3350,6 +3432,8 @@ DEFMMETHOD(CreateDragImage)
                     };
                     SetRPAttrsA(&rp, tags);
                 }
+#elif OS(AMIGAOS)
+                SetRPAttrs(&rp, RPTAG_BPenColor, 0x7f000000, TAG_DONE);
 #else
                 SetRPAttrs(&rp, RPTAG_PenMode, FALSE, RPTAG_FgColor, 0x7f000000, TAG_DONE);
 #endif
@@ -3367,6 +3451,8 @@ DEFMMETHOD(CreateDragImage)
                     };
                     SetRPAttrsA(&rp, tags);
                 }
+#elif OS(AMIGAOS)
+                SetRPAttrs(&rp, RPTAG_APenColor, 0xffffffff, RPTAG_BPenColor, 0x7f000000, TAG_DONE);
 #else
                 SetRPAttrs(&rp, RPTAG_PenMode, FALSE, RPTAG_FgColor, 0xffffffff, RPTAG_BgColor, 0x7f000000, TAG_DONE);
 #endif
@@ -3485,7 +3571,7 @@ DEFMMETHOD(DragFinish)
 
     if(dataObject)
     {
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
         // We leave the object without drop
         if(!msg->dropfollows)
         {
@@ -3677,24 +3763,39 @@ DEFMMETHOD(Backfill)
     {
         if (IsValidRect(&b1))
         {
+#if OS(AMIGAOS)
+            RectFillColor(_rp(obj), b1.MinX-1, b1.MinY, b1.MaxX+1, b1.MaxY+1, 0x00000000);
+#else
+
             FillPixelArray(_rp(obj), b1.MinX, b1.MinY,
                            b1.MaxX - b1.MinX + 1, b1.MaxY - b1.MinY + 1,
                            0x00000000);
+#endif /* OS(AMIGAOS) */   
         }
 
         if (IsValidRect(&b2))
         {
+#if OS(AMIGAOS)
+            RectFillColor(_rp(obj), b2.MinX-1, b2.MinY, b2.MaxX+1, b2.MaxY+1, 0x00000000);
+#else
             FillPixelArray(_rp(obj), b2.MinX, b2.MinY,
                            b2.MaxX - b2.MinX + 1, b2.MaxY - b2.MinY + 1,
                            0x00000000);
+#endif /* OS(AMIGAOS) */   
         }
     }
 
     if (IsValidRect(&k))
     {
+#if OS(AMIGAOS)
+        RectFillColor(_rp(obj), k.MinX, k.MinY,
+                        k.MaxX+1, k.MaxY+1,
+                        data->video_colorkey);
+#else
         FillPixelArray(_rp(obj), k.MinX, k.MinY,
                        k.MaxX - k.MinX + 1, k.MaxY - k.MinY + 1,
                        data->video_colorkey);
+#endif    
     }
 
     return (TRUE);
@@ -3741,7 +3842,7 @@ DEFSMETHOD(OWBBrowser_VideoEnterFullPage)
 
     if(element)
     {
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
         if(CGXVideoBase)
         {
             struct Window *window = (struct Window *) getv(_win(obj), MUIA_Window);
@@ -3871,7 +3972,7 @@ DEFSMETHOD(OWBBrowser_VideoEnterFullPage)
         data->video_element    = NULL;
         data->video_fullscreen = FALSE;
 
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
         // Destroy vlayer
         if (CGXVideoBase)
         {
@@ -3897,7 +3998,7 @@ DEFSMETHOD(OWBBrowser_VideoEnterFullPage)
 
 DEFSMETHOD(OWBBrowser_VideoBlit)
 {
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
     GETDATA;
 
     //kprintf("blitoverlay %d %d %d\n", msg->width, msg->height, msg->linesize);

@@ -82,6 +82,9 @@
 #include "utils.h"
 #include "asl.h"
 #include <clib/debug_protos.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
@@ -320,7 +323,7 @@ void MorphOSWebFrameDelegate::didCommitLoad(WebFrame* webFrame)
                  TAG_DONE);
 
         updateURL(widget->browser, url);
-        updateTitle(widget->browser, FilePart(url), false);
+        updateTitle(widget->browser, (char *) FilePart(url), false);
         updateNavigation(widget->browser);
         free(url);
     }
@@ -359,7 +362,7 @@ void MorphOSWebFrameDelegate::didFinishLoad(WebFrame* webFrame)
         {
             if(u.protocolIs("file"))
             {
-                updateTitle(widget->browser, FilePart(url), false);
+                updateTitle(widget->browser, (char *) FilePart(url), false);
             }
             else if(u.protocolIs("ftp"))
             {

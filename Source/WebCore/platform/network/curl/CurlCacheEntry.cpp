@@ -48,9 +48,17 @@
 #include <wtf/text/StringToIntegerConversion.h>
 
 #if PLATFORM(MUI)
-#include <aros/debug.h>
-#include <proto/dos.h>
-#include <wtf/FileSystem.h>
+    #if !OS(AMIGAOS)
+        #include <aros/debug.h>
+        #include <proto/dos.h>
+    #else
+        #include <proto/exec.h>
+        #include <dos/obsolete.h>
+        #define DOS_DOSEXTENS_H
+        #include <proto/dos.h>
+        #undef DOS_DOSEXTENS_H        
+    #endif
+    #include <wtf/FileSystem.h>
 #endif
 
 namespace WebCore {

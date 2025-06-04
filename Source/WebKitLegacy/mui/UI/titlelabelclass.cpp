@@ -31,7 +31,6 @@
 #include "WebView.h"
 
 #include <clib/macros.h>
-#include <proto/dos.h>
 #include <clib/debug_protos.h>
 
 #include "gui.h"

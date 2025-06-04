@@ -109,8 +109,9 @@ DEFSMETHOD(DateTimeChooserPopup_DidSelect)
 {
     GETDATA;
 
-    char * value = (char *) getv(data->str_date, MUIA_String_Contents);
-    value = "08/05/2014";
+    CONST_STRPTR value = (CONST_STRPTR) getv(data->str_date, MUIA_String_Contents);
+    if (!value)
+        value = "08/05/2014"; // ?? what about this
 
     data->controller->didChooseValue(String(value));
 

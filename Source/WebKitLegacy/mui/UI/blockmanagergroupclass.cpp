@@ -58,7 +58,7 @@ namespace WebCore
 
 #define LABEL(x) (STRPTR)MSG_BLOCKMANAGERGROUP_##x
 
-STATIC CONST CONST_STRPTR filtertypes[] =
+STATIC STRPTR filtertypes[] =
 {
     LABEL(DENY),
     LABEL(ALLOW),

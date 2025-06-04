@@ -66,7 +66,7 @@ list(APPEND WebCore_SOURCES
     rendering/RenderThemeAdwaita.cpp
     page/morphos/DragControllerMorphOS.cpp
     platform/adwaita/ThemeAdwaita.cpp
-    platform/adwaita/ScrollbarThemeAdwaita.cpp
+    platform/adwaita/ScrollbarThemeAdwaita1.cpp
 )
 
 list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS

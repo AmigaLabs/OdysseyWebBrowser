@@ -208,7 +208,7 @@ bool effectApplyAccelerated(Uint8ClampedArray& pixelArray, const Vector<float>& 
 }
 #endif
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 static inline uint32_t matrixOnePixel(const int32_t *values, const uint32_t pixel)
 {
 	int32_t alpha, a;

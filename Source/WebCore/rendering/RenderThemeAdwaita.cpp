@@ -101,7 +101,7 @@ static constexpr auto buttonTextDisabledColorLight = SRGBA<uint8_t> { 146, 149, 
 static constexpr auto buttonTextColorDark = SRGBA<uint8_t> { 238, 238, 236 };
 static constexpr auto buttonTextDisabledColorDark = SRGBA<uint8_t> { 145, 145, 144 };
 
-#if !PLATFORM(GTK) && !OS(MORPHOS)
+#if !PLATFORM(GTK) && !OS(MORPHOS) && !OS(AMIGAOS)
 RenderTheme& RenderTheme::singleton()
 {
     static MainThreadNeverDestroyed<RenderThemeAdwaita> theme;
@@ -111,7 +111,7 @@ RenderTheme& RenderTheme::singleton()
 
 bool RenderThemeAdwaita::supportsFocusRing(const RenderStyle& style) const
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 	return false;
 #else
     switch (style.appearance()) {
@@ -280,7 +280,7 @@ bool RenderThemeAdwaita::paintTextField(const RenderObject& renderObject, const 
     }
 
     int borderSize = textFieldBorderSize;
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
     if (isEnabled(renderObject) && !isReadOnlyControl(renderObject) && isFocused(renderObject))
         borderSize *= 2;
 #endif
@@ -294,7 +294,7 @@ bool RenderThemeAdwaita::paintTextField(const RenderObject& renderObject, const 
     graphicsContext.setFillRule(WindRule::EvenOdd);
     if (!isEnabled(renderObject) || isReadOnlyControl(renderObject))
         graphicsContext.setFillColor(textFieldBorderDisabledColor);
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
     else if (isFocused(renderObject))
         graphicsContext.setFillColor(activeSelectionBackgroundColor({ }));
 #endif
@@ -407,7 +407,7 @@ bool RenderThemeAdwaita::paintMenuList(const RenderObject& renderObject, const P
         ThemeAdwaita::paintArrow(graphicsContext, ThemeAdwaita::ArrowDirection::Down, renderObject.useDarkAppearance());
     }
 
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
     if (isFocused(renderObject))
         ThemeAdwaita::paintFocus(graphicsContext, rect, menuListButtonFocusOffset, renderObject.useDarkAppearance());
 #endif
@@ -583,7 +583,7 @@ bool RenderThemeAdwaita::paintSliderTrack(const RenderObject& renderObject, cons
     paintSliderTicks(renderObject, paintInfo, rect);
 #endif
 
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
     if (isFocused(renderObject))
         ThemeAdwaita::paintFocus(graphicsContext, fieldRect, sliderTrackFocusOffset, renderObject.useDarkAppearance());
 #endif

@@ -5,8 +5,8 @@
  * VaporWare Macros
  * ----------------
  *
- * © 1999-2000 by VaporWare CVS team <ibcvs@vapor.com>
- * © 2006 by Ambient Open Source Team
+ * ï¿½ 1999-2000 by VaporWare CVS team <ibcvs@vapor.com>
+ * ï¿½ 2006 by Ambient Open Source Team
  * All rights reserved
  *
  *
@@ -53,8 +53,7 @@
 #ifdef __GNUC__
 #ifdef __AROS__
 #define BEGINMTABLE static BOOPSI_DISPATCHER(IPTR, dispatch, cl, obj, msg){switch(msg->MethodID){
-#else
-#ifdef __MORPHOS__
+#elif defined(__MORPHOS__)
 #define BEGINMTABLE static ULONG dispatch(void); \
     static struct EmulLibEntry GATE_dispatch = \
     { \
@@ -68,10 +67,10 @@
         MAINTASK; \
         switch (msg->MethodID) \
         {
-
+#elif defined(__amigaos4__)
+#define BEGINMTABLE static ULONG dispatch(struct IClass *cl, Object *obj, Msg msg){switch(msg->MethodID){
 #else
 #define BEGINMTABLE static ULONG dispatch( __reg(a0, struct IClass *cl), __reg(a2, Object *obj), __reg(a1, Msg msg)){switch(msg->MethodID){
-#endif /* !__MORPHOS__ */
 #endif
 #else
 #define BEGINMTABLE static ULONG __asm __saveds dispatch( register __a0 struct IClass *cl, register __a2  Object *obj, register __a1 Msg msg ){switch(msg->MethodID){
@@ -295,10 +294,17 @@
 #else
 #define DEFHOOK(n) static struct Hook n##_hook={0,0,(HOOKFUNC)n##_func}
 
+#ifdef __amigaos4__
+#define MUI_HOOK(n, y, z) \
+	static LONG n##_func(struct Hook *h, y, z); \
+	static struct Hook n##_hook = { { 0, 0}, (HOOKFUNC)n##_func, NULL, 0 }; \
+	static LONG n##_func(struct Hook *h, y, z)
+#else
 #define MUI_HOOK(n, y, z) \
     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z)); \
     static struct Hook n##_hook = { 0, 0, (HOOKFUNC)n##_func }; \
     static LONG ASM SAVEDS n##_func(__reg(a0, struct Hook *h), __reg(a2, y), __reg(a1, z))
+#endif /* !__amigaos4__ */
 
 #define __callback __asm __saveds
 #endif /* !_MORPHOS__ */

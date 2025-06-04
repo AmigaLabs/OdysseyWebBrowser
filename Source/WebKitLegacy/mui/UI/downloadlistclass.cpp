@@ -36,6 +36,9 @@
 #include <stdlib.h>
 #include <clib/macros.h>
 #include <proto/wb.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <proto/timer.h>
 #include <devices/timer.h>

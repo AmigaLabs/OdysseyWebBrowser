@@ -34,6 +34,9 @@
 #include "WebFrame.h"
 #include "WebView.h"
 
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <cairo/cairo-ps.h>
 

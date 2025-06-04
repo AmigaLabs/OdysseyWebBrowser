@@ -32,7 +32,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <clib/macros.h>
-#include <proto/dos.h>
 
 #include "gui.h"
 #include "utils.h"

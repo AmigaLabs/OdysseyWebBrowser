@@ -1,9 +1,20 @@
 #ifndef AROS_OVERRIDES_H
 #define AROS_OVERRIDES_H
 
+#ifdef __amigaos4__
+#define IPTR ULONG
+#define AROS_BIG_ENDIAN 1
+typedef ULONG STACKIPTR;
+#define kprintf DebugPrintF
+
+#define AllocVecTaskPooled(x) AllocVec(x,MEMF_PRIVATE)
+#define FreeVecTaskPooled(x) FreeVec(x)
+
+#else
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 IPTR DoSuperNew(struct IClass *cl, Object *obj, Tag tag1, ...);
 APTR AllocVecTaskPooled(ULONG byteSize);
 VOID FreeVecTaskPooled(APTR memory);
@@ -11,10 +22,11 @@ APTR ARGB2BGRA(APTR src, ULONG stride, ULONG height);
 VOID ARGB2BGRAFREE(APTR dst);
 #ifdef __cplusplus
 }
+
+#undef SetAttrs
 #endif
 
 #undef DoMethod // these inlines somehow conflict with compilation, something abour variadic?
-#undef SetAttrs
 #undef CoerceMethod
 
 #undef NewObject
@@ -25,6 +37,7 @@ typedef struct _struct_Msg _Msg_;
 /* Overrides for struct Node to struct ::Node due to OWB also having such type */
 #ifndef EXEC_NODES_H
 #   include <exec/nodes.h>
+#endif
 #endif
 
 #undef NEWLIST
@@ -54,6 +67,7 @@ do                                                      \
 #undef REMTAIL
 #define REMTAIL(l) ((APTR)RemTail((struct List*)l))
 
+#ifndef __amigaos4__
 #define WA_PointerType                              (WA_Dummy + 164)
 #define POINTERTYPE_NORMAL                          0
 #define POINTERTYPE_MOVE                            14
@@ -83,6 +97,8 @@ do                                                      \
 
 #define NM_WHEEL_UP                                 0x7a
 #define NM_WHEEL_DOWN                               0x7b
+#endif
+
 #undef XMLCALL
 #define XMLCALL
 
@@ -94,8 +110,10 @@ do                                                      \
 
 // redefines (to work around missing functionality, commented is actual value )
 
+#if !defined(__amigaos4__)
 //#define MUIV_Frame_Page 20
 #define MUIV_Frame_Page MUIV_Frame_Group
+#endif
 
 #endif
 

@@ -10,8 +10,10 @@
 #define POP_DARKEN     1
 #endif
 
+#if !OS(AMIGAOS)
 #ifndef ProcessPixelArray
 VOID ProcessPixelArray(struct RastPort *, ULONG, ULONG, ULONG, ULONG, ULONG, LONG, struct TagItem *);
+#endif
 #endif
 
 #include "gui.h"
@@ -91,8 +93,10 @@ DEFMMETHOD(Draw)
 
         ULONG vertoffs   = mleft + (mwidth / 2);
 
+#if !OS(AMIGAOS)
         ProcessPixelArray( rp, vertoffs,     mtop + 1, 1, mheight - 2, POP_BRIGHTEN, 70, NULL);
         ProcessPixelArray( rp, vertoffs - 1, mtop + 1, 1, mheight - 2, POP_DARKEN,   70, NULL);
+#endif
     }
 
     return 0;

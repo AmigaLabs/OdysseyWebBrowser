@@ -34,7 +34,7 @@
 /* Classes management */
 
 struct classdesc {
-    char * name;
+    const char * name;
     APTR initfunc;
     APTR cleanupfunc;
 };

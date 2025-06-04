@@ -649,7 +649,9 @@ void WebChromeClient::didFinishLoadingImageForElement(WebCore::HTMLImageElement&
 
 std::unique_ptr<WebCore::DateTimeChooser> WebChromeClient::createDateTimeChooser(WebCore::DateTimeChooserClient&)
 {
-asm("int3");
+    #if !OS(AMIGAOS)
+    asm("int3");
+    #endif
     return nullptr;
 }
 
