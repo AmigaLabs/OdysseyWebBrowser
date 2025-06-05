@@ -32,8 +32,11 @@
 
 #include "CurlRequestSchedulerClient.h"
 
-#if PLATFORM(MUI) && !defined(CLIB4)
+#if PLATFORM(MUI)
 #include <proto/exec.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/bsdsocket.h>
 #include <unistd.h>
 #include <bsdsocket/socketbasetags.h>
@@ -42,9 +45,16 @@
 #endif
 #undef send
 struct Library *SocketBase;
+#if OS(AMIGAOS)
+struct SocketIFace *ISocket = NULL;
+#endif
+
 void init_SocketBase()
 {
     SocketBase = OpenLibrary("bsdsocket.library", 4L);
+#if OS(AMIGAOS)
+    ISocket = (SocketIFace *)GetInterface(SocketBase, "main", 1, NULL);
+#endif
     SocketBaseTags(
         SBTM_SETVAL(SBTC_ERRNOPTR(sizeof(errno))), (IPTR) &errno,
         SBTM_SETVAL(SBTC_LOGTAGPTR),       (IPTR) "cURL",
@@ -53,10 +63,12 @@ void init_SocketBase()
 void close_SocketBase()
 {
     CloseLibrary(SocketBase);
+#if OS(AMIGAOS)
+    DropInterface((struct Interface*) ISocket);
+    ISocket = NULL;
+#endif    
     SocketBase = NULL;
 }
-#elif defined(CLIB4)
-#include <sys/select.h>
 #endif
 
 namespace WebCore {
@@ -127,7 +139,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
     }
 
     m_thread = Thread::create("curlThread", [this] {
-#if PLATFORM(MUI) && !defined(CLIB4)
+#if PLATFORM(MUI)
         init_SocketBase();
         /* Increase priority so that network data is transported immediatelly */
         SetTaskPri(FindTask(NULL), 1);
@@ -136,7 +148,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
 
         Locker locker { m_mutex };
         m_runThread = false;
-#if PLATFORM(MUI) && !defined(CLIB4)
+#if PLATFORM(MUI)
         close_SocketBase();
 #endif
     }, ThreadType::Network);
@@ -150,7 +162,7 @@ void CurlRequestScheduler::wakeUpThreadIfPossible()
         return;
 
     m_curlMultiHandle->wakeUp();
-#endif    
+#endif
 }
 
 void CurlRequestScheduler::stopThreadIfNoMoreJobRunning()
@@ -279,57 +291,6 @@ void CurlRequestScheduler::workerThread()
         CURLMcode mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
         if (mc != CURLM_OK)
             break;
-
-        // Retry 'select' if it was interrupted by a process signal.
-        int rc = 0;
-#if PLATFORM(MUI)
-        fd_set fdread;
-        fd_set fdwrite;
-        fd_set fdexcep;
-#endif
-        do {
-#if PLATFORM(MUI)
-            FD_ZERO(&fdread);
-            FD_ZERO(&fdwrite);
-            FD_ZERO(&fdexcep);
-            int maxfd = 0;
-
-            struct timeval timeout;
-            timeout.tv_sec = 0;
-            timeout.tv_usec = 500; // shorter timeouts give better outgoing performance
-#else
-            fd_set fdread;
-            fd_set fdwrite;
-            fd_set fdexcep;
-            int maxfd = 0;
-
-            const int selectTimeoutMS = 5;
-
-            struct timeval timeout;
-            timeout.tv_sec = 0;
-            timeout.tv_usec = selectTimeoutMS * 1000; // select waits microseconds
-#endif
-
-            m_curlMultiHandle->getFdSet(fdread, fdwrite, fdexcep, maxfd);
-#if PLATFORM(MUI)
-            for (auto& stream : m_streamList.values())
-                stream->appendMonitoringFd(fdread, fdwrite, fdexcep, maxfd);
-#endif
-
-            // When the 3 file descriptors are empty, winsock will return -1
-            // and bail out, stopping the file download. So make sure we
-            // have valid file descriptors before calling select.
-            if (maxfd >= 0)
-#if PLATFORM(MUI) && !OS(AMIGAOS)
-                rc = WaitSelect(maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout, nullptr);
-            else {
-                usleep(100 * 1000);
-            }
-#else
-                rc = ::select(maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout);
-#endif
-        } while (rc == -1 && errno == EINTR);
-
         int activeCount = 0;
         mc = m_curlMultiHandle->perform(activeCount);
         if (mc != CURLM_OK)

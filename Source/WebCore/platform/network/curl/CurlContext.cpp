@@ -292,7 +292,7 @@ CURLMcode CurlMultiHandle::poll(const Vector<curl_waitfd>& extraFds, int timeout
 {
     int numFds = 0;
 // broken 2.34.6
-//    return curl_multi_poll(m_multiHandle, const_cast<curl_waitfd*>(extraFds.data()), extraFds.size(), timeoutMS, &numFds);
+    return curl_multi_poll(m_multiHandle, const_cast<curl_waitfd*>(extraFds.data()), extraFds.size(), timeoutMS, &numFds);
 }
 
 CURLMcode CurlMultiHandle::wakeUp()

@@ -24,11 +24,31 @@
 #include "config.h"
 #include "CPUTime.h"
 
+#if OS(AMIGAOS)
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <time.h>
+#endif
+
 namespace WTF {
+
+#if OS(AMIGAOS)
+static Seconds timevalToSeconds(const struct timeval& value)
+{
+    return Seconds(value.tv_sec) + Seconds::fromMicroseconds(value.tv_usec);
+}
+#endif
 
 std::optional<CPUTime> CPUTime::get()
 {
-    return std::nullopt;
+#if OS(AROS)
+	return std::nullopt;
+#else
+    struct rusage resource { };
+    int ret = getrusage(RUSAGE_SELF, &resource);
+    ASSERT_UNUSED(ret, !ret);
+    return CPUTime { MonotonicTime::now(), timevalToSeconds(resource.ru_utime), timevalToSeconds(resource.ru_stime) };
+#endif    
 }
 
 Seconds CPUTime::forCurrentThread()

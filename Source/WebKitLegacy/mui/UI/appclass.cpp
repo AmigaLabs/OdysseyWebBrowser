@@ -1225,11 +1225,15 @@ DEFDISP
     /* !!! Manually call save as destructors for static objects are not getting called (where saveIndex is called) !!! */
     CurlCacheManager::singleton().saveIndex();
 
+#if !OS(AMIGAOS)    
     GCController::singleton().garbageCollectNow();
+#endif
 //    FontCache::singleton().invalidate(); // trashes memory like fuck on https://testdrive-archive.azurewebsites.net/Graphics/CanvasPinball/default.html
     MemoryCache::singleton().setDisabled(true);
 
+#if !OS(AMIGAOS)    
     delete &commonVM(); /* This looks weird, but it stops JSC Heap Collector Thread */
+#endif
 #if 0
 // broken 2.34.6
 #if ENABLE(JIT)
