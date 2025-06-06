@@ -558,6 +558,89 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(BalEventKey* event)
     m_keyIdentifier = keyIdentifierForAmigaKeyCode(event);
 #endif
 
+#if OS(AMIGAOS)
+    UChar aSrc[2];
+    if (IDCMP_RAWKEY == event->Class)
+    {
+        if (event->Code & IECODE_UP_PREFIX)
+            m_type = PlatformEvent::KeyUp;
+
+        switch (event->Code & ~IECODE_UP_PREFIX)
+        {
+            case RAWKEY_TAB:
+            case RAWKEY_INSERT:
+            case RAWKEY_PAGEUP:
+            case RAWKEY_PAGEDOWN:
+            case RAWKEY_F11:
+            case RAWKEY_UP:
+            case RAWKEY_DOWN:
+            case RAWKEY_RIGHT:
+            case RAWKEY_LEFT:
+            case RAWKEY_F1:
+            case RAWKEY_F2:
+            case RAWKEY_F3:
+            case RAWKEY_F4:
+            case RAWKEY_F5:
+            case RAWKEY_F6:
+            case RAWKEY_F7:
+            case RAWKEY_F8:
+            case RAWKEY_F9:
+            case RAWKEY_F10:
+            case RAWKEY_HELP:
+            case RAWKEY_LALT:
+            case RAWKEY_RALT:
+            case RAWKEY_PAUSE:
+            case RAWKEY_F12:
+            case RAWKEY_HOME:
+            case RAWKEY_END:
+            aSrc[0] = 0; break;
+
+            default:
+            {
+                struct InputEvent ie;
+                char c = '?';
+
+                ie.ie_NextEvent = NULL;
+                ie.ie_Class = IECLASS_RAWKEY;
+                ie.ie_SubClass = 0;
+                ie.ie_Code = event->Code & ~IECODE_UP_PREFIX;
+                ie.ie_Qualifier = event->Qualifier;
+                ie.ie_EventAddress = (APTR *) *((ULONG *)event->IAddress);
+
+                if (MapRawKey(&ie, (STRPTR)&c, 1, NULL) == 1)
+                {
+                    if(metaKey())
+                    {
+                        if(c == 'a')
+                            c = 1;
+                        else if(c == 'c')
+                            c = 3;
+                        else if(c == 'v')
+                            c = 16;
+                        else if(c == 'x')
+                            c = 18;
+                    }
+
+                    aSrc[0] = (UChar) c;
+                }
+                else
+                {
+                    aSrc[0] = 0;        
+                }
+            }
+        }
+    }
+    aSrc[1] = 0;
+
+    String aText(aSrc);
+    String aUnmodifiedText(aSrc);
+    String aKeyIdentifier = keyIdentifierForAmigaKeyCode(event);
+
+    m_text = aText;
+    m_unmodifiedText = aUnmodifiedText;
+    m_keyIdentifier  = aKeyIdentifier;
+#endif
+
     prev_AltKey   = altKey();
     prev_ShiftKey = shiftKey();
     prev_CtrlKey  = controlKey();
