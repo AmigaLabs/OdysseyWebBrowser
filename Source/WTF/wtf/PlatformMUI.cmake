@@ -19,5 +19,6 @@ endif()
 if (AmigaOS4)
     list(APPEND WTF_SOURCES 
         OSAllocatorAmigaOS.cpp
+        morphos/OS4Misc.cpp
     )
 endif()

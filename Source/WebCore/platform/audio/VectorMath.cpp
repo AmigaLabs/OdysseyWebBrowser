@@ -34,7 +34,7 @@
 #include <Accelerate/Accelerate.h>
 #endif
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 #include "Altivec.h"
 #endif
 
@@ -216,7 +216,7 @@ void multiplyByScalarThenAddToOutput(const float* inputVector, float scalar, flo
         outputVector += 4;
     }
     n = tailFrames;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	if (WTF::HasAltivec::hasAltivec() && isEquallyAligned(inputVector, outputVector))
 	{
 	    while (!is16ByteAligned(inputVector) && n) {
@@ -295,7 +295,7 @@ void multiplyByScalar(const float* inputVector, float scalar, float* outputVecto
         outputVector += 4;
     }
     n = tailFrames;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	if (WTF::HasAltivec::hasAltivec() && isEquallyAligned(inputVector, outputVector))
 	{
 	    while (!is16ByteAligned(inputVector) && n) {
@@ -375,7 +375,7 @@ void addScalar(const float* inputVector, float scalar, float* outputVector, size
         outputVector += 4;
     }
     n = tailFrames;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	if (WTF::HasAltivec::hasAltivec() && isEquallyAligned(inputVector, outputVector))
 	{
 	    while (!is16ByteAligned(inputVector) && n) {
@@ -488,7 +488,7 @@ void add(const float* inputVector1, const float* inputVector2, float* outputVect
         outputVector += 4;
     }
     n = tailFrames;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	if (WTF::HasAltivec::hasAltivec() && isEquallyAligned(inputVector1, outputVector) && isEquallyAligned(inputVector1, inputVector2))
 	{
 	    while (!is16ByteAligned(inputVector1) && n) {
@@ -684,7 +684,7 @@ void multiply(const float* inputVector1, const float* inputVector2, float* outpu
         outputVector += 4;
     }
     n = tailFrames;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	if (WTF::HasAltivec::hasAltivec() && isEquallyAligned(inputVector1, outputVector) && isEquallyAligned(inputVector1, inputVector2))
 	{
 	    while (!is16ByteAligned(inputVector1) && n) {
@@ -901,7 +901,7 @@ void clamp(const float* inputVector, float minimum, float maximum, float* output
         outputVector += 4;
     }
     n = tailFrames;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	if (WTF::HasAltivec::hasAltivec() && isEquallyAligned(inputVector, outputVector))
 	{
 		while (!is16ByteAligned(inputVector) && n) {
