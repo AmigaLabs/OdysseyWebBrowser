@@ -359,7 +359,7 @@ void effectType(Uint8ClampedArray& pixelArray, const Vector<float>& values, IntS
 #if USE(ACCELERATE)
     if (effectApplyAccelerated<filterType>(pixelArray, values, components, bufferSize))
         return;
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 	switch (filterType) {
 	case FECOLORMATRIX_TYPE_MATRIX:
 		applyMatrixFast(values, pixelArray.data(), bufferSize.width(), bufferSize.height());

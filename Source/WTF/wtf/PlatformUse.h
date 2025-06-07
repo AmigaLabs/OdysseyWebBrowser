@@ -74,7 +74,7 @@
 #define USE_FREETYPE 1
 #endif
 
-#if PLATFORM(GTK) || PLATFORM(WPE)
+#if PLATFORM(GTK) || PLATFORM(WPE) || OS(AMIGAOS)
 #define USE_HARFBUZZ 1
 #endif
 
