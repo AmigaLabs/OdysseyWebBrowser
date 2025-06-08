@@ -46,6 +46,12 @@
 #define D(x)
 #define USE_THREAD 0
 
+#if OS(AROS) || OS(MORPHOS)
+#define PRT "PS:"
+#else
+#define PRT "PRT:"
+#endif
+
 using namespace WebCore;
 
 struct printerjob
@@ -86,8 +92,8 @@ struct Data
     struct printerjob pj;
 };
 
-static char *print_modes[] = {"Postscript", "Turboprint", NULL};
-static char *ps_levels[] = {"Level 2", "Level 3", NULL};
+static const char *print_modes[] = {"Postscript", "Turboprint", NULL};
+static const char *ps_levels[] = {"Level 2", "Level 3", NULL};
 
 DEFNEW
 {
@@ -129,7 +135,7 @@ DEFNEW
                     Child, st_output = StringObject,
                            MUIA_CycleChain, TRUE,
                            MUIA_Frame, MUIV_Frame_String,
-                           MUIA_String_Contents, "PS:",
+                           MUIA_String_Contents, PRT,
                            MUIA_String_MaxLen, 512,
                            End,
 
@@ -354,7 +360,7 @@ DEFTMETHOD(PrinterWindow_Start)
     data->pj.pslevel = getv(data->cy_pslevel, MUIA_Cycle_Active) == 1 ? CAIRO_PS_LEVEL_3 : CAIRO_PS_LEVEL_2;
     data->pj.scale   = (float) 1.0 * getv(data->sl_scale, MUIA_Slider_Level) / 100.0;
     
-    strncpy(data->pj.output, (char*)getv(data->st_output, MUIA_String_Contents), sizeof(data->pj.output));
+    strncpy(data->pj.output, (char*)getv(data->st_output, MUIA_String_Contents), sizeof(data->pj.output) - 1);
 
 #if USE_THREAD
     set(_win(data->browser), MUIA_Window_Sleep, TRUE);
@@ -810,7 +816,11 @@ DEFTMETHOD(PrinterWindow_StatusUpdate)
 
 DEFTMETHOD(PrinterWindow_PrinterPrefs)
 {
+#if OS(AROS) || OS(MORPHOS)    
     SystemTagList("MOSSYS:Prefs/Preferences MOSSYS:Prefs/MPrefs/Printer.mprefs", TAG_DONE);
+#else
+    SystemTagList("SYS:Prefs/Printer", TAG_DONE);
+#endif    
     return 0;
 }
 
