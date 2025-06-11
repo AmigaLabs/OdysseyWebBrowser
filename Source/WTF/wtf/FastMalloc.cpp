@@ -53,7 +53,9 @@
 
 #if PLATFORM(MUI)
 #include <cstdint>
+#if !OS(AMIGAOS)
 extern "C" { void dprintf(const char *,... ); }
+#endif
 #undef CRASH
 extern "C" { void _oomCrash() { std::abort(); }; void oomCrash() __attribute__((weak, alias ("_oomCrash"))); }
 #define CRASH oomCrash
@@ -207,7 +209,7 @@ void fastAlignedFree(void* p)
     _aligned_free(p);
 }
 
-#elif OS(MORPHOS)
+#elif OS(MORPHOS) || OS(AMIGAOS)
 
 void* fastAlignedMalloc(size_t alignment, size_t size)
 {

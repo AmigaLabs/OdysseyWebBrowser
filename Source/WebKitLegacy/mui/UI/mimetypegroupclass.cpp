@@ -43,7 +43,7 @@
 
 using namespace WebCore;
 
-struct mimetypenode* mimetype_create(char *mimetype, char *extensions, mimetype_action_t action, char *viewer, char *parameters, int builtin, char *description)
+struct mimetypenode* mimetype_create(const char *mimetype, const char *extensions, mimetype_action_t action, const char *viewer, const char *parameters, int builtin, char *description)
 {
     APTR n;
     bool found = false;
@@ -118,7 +118,11 @@ STATIC STRPTR actiontypes[] =
 };
 
 STATIC CONST CONST_STRPTR placeholders[] = {"%l", "%f", "%p", NULL};
+#if !OS(AMIGAOS)
 STATIC CONST CONST_STRPTR placeholders_desc[] = {"%l - link URL", "%f - generated local path", "%p - OWB REXX port", NULL};
+#else
+STATIC CONST CONST_STRPTR placeholders_desc[] = {"%l - link URL", "%f - generated local path", "%p - ODYSSEY REXX port", NULL};
+#endif
 
 static void cycles_init(void)
 {

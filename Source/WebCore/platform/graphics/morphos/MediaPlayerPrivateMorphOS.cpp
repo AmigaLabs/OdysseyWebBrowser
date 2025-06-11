@@ -166,7 +166,7 @@ public:
     		return MediaPlayer::SupportsType::IsNotSupported;
 		}
 
-#if !OS(AROS)
+#if !OS(AROS) && !OS(AMIGAOS)
         if (!isCGXVideoValid())
         {
     		return MediaPlayer::SupportsType::IsNotSupported;

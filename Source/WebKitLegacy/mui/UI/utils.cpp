@@ -686,23 +686,75 @@ struct countrycode
 };
 
 static struct countrycode countrycode_table[] = {
-    {"dansk", "da"},
-    {"deutsch", "de"},
-    {"english", "en"},
-    {"espa�ol", "sp"},
-    {"fran�ais", "fr"},
-    {"greek",    "gr"},
-    {"italiano", "it"},
-    {"magyar", "hu"},
-    {"nederlands", "nl"},
-    {"norsk", "no"},
-    {"polski", "pl"},
-    {"portugu�s", "pt"},
-    {"suomi", "fi"},
-    {"svenska", "sv"},
-    {"t�rkiye", "tr"},
-    {"czech", "cs"},
-    {NULL, NULL}
+#if OS(AMIGAOS)
+    { "albanian",          "sq" },
+    { "belarusian",        "be" },
+    { "bosnian",           "bs" },
+    { "bulgarian",         "bg" },
+    { "catalan",           "ca" },
+    { "croatian",          "hr" },
+    { "czech",             "cs" },
+    { "danish",            "da" },
+    { "dutch",             "ne" },
+    { "english",           "en-US" },
+    { "english-british",   "en-GB" },
+    { "esperanto",         "eo" },
+    { "estonian",          "et" },
+    { "faroese",           "fo" },
+    { "finnish",           "fi" },
+    { "french",            "fr" },
+    { "galician",          "gl" },
+    { "german",            "de" },
+    { "greek",             "el" },
+    { "hebrew",            "he" },
+    { "hungarian",         "hu" },
+    { "icelandic",         "is" },
+    { "irish",             "ga" },
+    { "italian",           "it" },
+    { "latvian",           "lv" },
+    { "lithuanian",        "lt" },
+    { "macedonian",        "mk" },
+    { "malay-indonesian",  "ms-ID" },
+    { "malay-malaysian",   "ms-MY" },
+    { "maltese",           "mt" },
+    { "norwegian",         "no" },
+    { "norwegian-nynorsk", "nn" },
+    { "polish",            "pl" },
+    { "portuguese",        "pt" },
+    { "portuguese-brazil", "pt-BR" },
+    { "romanian",          "ro" },
+    { "russian",           "ru" },
+    { "serbian",           "sr" },
+    { "slovak",            "sk" },
+    { "slovenian",         "sl" },
+    { "spanish",           "sp" },
+    { "swedish",           "sv" },
+    { "thai",              "th" },
+    { "turkish_int",       "tr" },
+    { "turkish",           "tr" },
+    { "ukrainian",         "uk" },
+    { 0,                   0 }
+#else	  
+
+	{"dansk", "da"},
+	{"deutsch", "de"},
+	{"english", "en"},
+	{"español", "sp"},
+	{"français", "fr"},
+	{"greek",    "gr"},
+	{"italiano", "it"},
+	{"magyar", "hu"},
+	{"nederlands", "nl"},
+	{"norsk", "no"},
+	{"polski", "pl"},
+	{"português", "pt"},
+	{"suomi", "fi"},
+	{"svenska", "sv"},
+	{"türkiye", "tr"},
+	{"èe¹tina", "cs"},
+	{"russian", "ru"},
+	{NULL, NULL}
+#endif	
 };
 
 static CONST_STRPTR getcode(STRPTR language)
@@ -916,9 +968,9 @@ int send_external_notification(struct external_notification *notification)
     int32  success = 0;
     extern uint32 appID;
 
-    iconname = (STRPTR)AllocVec(512,MEMF_SHARED | MEMF_CLEAR);
+    iconname = (STRPTR) malloc(512);
     if (iconname) {
-        success = NameFromLock(GetCurrentDir(),iconname,512);
+        success = NameFromLock(GetCurrentDir(), iconname, 512);
         if (success) {
             strcat(iconname,"/Resource/aboutIcon.png");
         }
@@ -932,7 +984,8 @@ int send_external_notification(struct external_notification *notification)
                 APPNOTIFY_PubScreenName, "FRONT",
             TAG_END);
 
-    if (iconname) FreeVec(iconname);
+    if (iconname) 
+        free(iconname);
 
     result = 0;
 

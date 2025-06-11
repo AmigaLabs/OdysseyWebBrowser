@@ -311,6 +311,13 @@ struct Data
     double video_lastclick;
 #endif
 
+#if OS(AMIGAOS)
+	int compositing;
+	struct BitMap *srcbm;
+	struct BitMap *dstbm;
+	struct Rectangle rect;
+#endif
+
 #if OS(MORPHOS) || OS(AMIGAOS)
     /* popup Menu */
     Object *popmenu;
@@ -724,6 +731,7 @@ static void doset(APTR obj, struct Data *data, struct TagItem *tags)
 
         case MA_OWBBrowser_Pointer:
         {
+#if !OS(AMIGAOS)
             if(is_morphos2() && getv(app, MA_OWBApp_EnablePointers))
             {
                 if (data->pointertype != tag->ti_Data)
@@ -733,7 +741,19 @@ static void doset(APTR obj, struct Data *data, struct TagItem *tags)
                     if (muiRenderInfo(obj))
                         set(_window(obj), WA_PointerType, tag->ti_Data);
                 }
+            }            
+#else
+            if(getv(app, MA_OWBApp_EnablePointers))
+            {
+                if (data->pointertype != tag->ti_Data)
+                {
+                    data->pointertype = tag->ti_Data;
+
+                    if (muiRenderInfo(obj))
+						SetWindowPointer(_window(obj), WA_Pointer, tag->ti_Data, TAG_DONE);
+                }
             }
+ #endif
         }
         break;
 
@@ -1462,6 +1482,33 @@ DEFMMETHOD(Show)
                                   TAG_DONE);
             }
         }
+#elif OS(AMIGAOS)
+		// Video: recompute vlayer offset whenever window size changes
+		if(data->video_element)
+		{
+			struct Window *window = (struct Window *) getv(_win(obj), MUIA_Window);
+
+			if(window && data->compositing==1)
+			{
+				FloatSize size = data->video_element->player()->naturalSize();
+				//D(bug("naturalsize %dx%d\n", size.width(), size.height()));
+
+				if ( ( size.width() / size.height()) < ( (float) _mwidth(obj) / (float) _mheight(obj)) )
+				{
+					// Width is too big
+					data->video_y_offset = 0;
+					data->video_x_offset = _mwidth(obj) - (ULONG) (_mheight(obj) * ( size.width() / size.height()));
+					data->video_x_offset /= 2;
+				}
+				else
+				{
+					// Height too big
+					data->video_y_offset = _mheight(obj) - (ULONG) (_mwidth(obj) * ( size.height() / size.width()));
+					data->video_y_offset /= 2;
+					data->video_x_offset = 0;
+				}
+			}
+		}        
 #endif
     }
 
@@ -2071,10 +2118,17 @@ DEFMMETHOD(HandleEvent)
             {
                 data->mouse_inside = mouse_inside;
 
+#if !OS(AMIGAOS4)
                 if(is_morphos2() && getv(app, MA_OWBApp_EnablePointers))
                 {
                     set(_window(obj), WA_PointerType, mouse_inside ? data->pointertype : POINTERTYPE_NORMAL);
                 }
+#else
+                if(getv(app, MA_OWBApp_EnablePointers))
+                {
+					SetWindowPointer(_window(obj), WA_Pointer, mouse_inside ? data->pointertype : NULL, TAG_DONE);
+                }
+#endif                
             }
         
             return MUI_EventHandlerRC_Eat;
@@ -2417,10 +2471,17 @@ DEFMMETHOD(HandleEvent)
             if (data->mouse_inside != mouse_inside)
             {
                 data->mouse_inside = mouse_inside;
+#if !OS(AMIGAOS)                
                 if(is_morphos2() && getv(app, MA_OWBApp_EnablePointers))
                 {
                     set(_window(obj), WA_PointerType, mouse_inside ? data->pointertype : POINTERTYPE_NORMAL);
                 }
+#else
+                if(getv(app, MA_OWBApp_EnablePointers))
+                {
+					SetWindowPointer(_window(obj), WA_Pointer, mouse_inside ? data->pointertype : NULL, TAG_DONE);
+                }
+#endif                
             }
         }
     }
@@ -3246,12 +3307,12 @@ DEFMMETHOD(CreateDragImage)
         struct RastPort rp;
         LONG width;
         LONG height;
-        STRPTR url;
+        CONST_STRPTR url;
 
         if (parent == NULL)
             return (IPTR)0;
 
-        url = (STRPTR) getv(obj, MA_OWBBrowser_DragURL);
+        url = (CONST_STRPTR) getv(obj, MA_OWBBrowser_DragURL);
 
 
         // If we have a real dragimage, use it
@@ -3335,7 +3396,9 @@ DEFMMETHOD(CreateDragImage)
 
             InitRastPort(&rp);
             rp.BitMap = di->bm;
+#if !OS(AMIGAOS)
             SetRPAttrs(&rp, RPTAG_PenMode, FALSE, RPTAG_FgColor, 0x7f000000, TAG_DONE);
+#endif
             RectFill(&rp, 0, 0, di->width, di->height);
 
             SetFont(&rp, font);
@@ -3432,10 +3495,8 @@ DEFMMETHOD(CreateDragImage)
                     };
                     SetRPAttrsA(&rp, tags);
                 }
-#elif OS(AMIGAOS)
+#elif OS(MORPHOS)
                 SetRPAttrs(&rp, RPTAG_BPenColor, 0x7f000000, TAG_DONE);
-#else
-                SetRPAttrs(&rp, RPTAG_PenMode, FALSE, RPTAG_FgColor, 0x7f000000, TAG_DONE);
 #endif
                 RectFill(&rp, 0, 0, di->width, di->height);
 
@@ -3451,9 +3512,7 @@ DEFMMETHOD(CreateDragImage)
                     };
                     SetRPAttrsA(&rp, tags);
                 }
-#elif OS(AMIGAOS)
-                SetRPAttrs(&rp, RPTAG_APenColor, 0xffffffff, RPTAG_BPenColor, 0x7f000000, TAG_DONE);
-#else
+#elif OS(MORPHOS)
                 SetRPAttrs(&rp, RPTAG_PenMode, FALSE, RPTAG_FgColor, 0xffffffff, RPTAG_BgColor, 0x7f000000, TAG_DONE);
 #endif
                 

@@ -467,7 +467,7 @@ ExceptionOr<Ref<ChannelMergerNode>> BaseAudioContext::createChannelMerger(size_t
 ExceptionOr<Ref<OscillatorNode>> BaseAudioContext::createOscillator()
 {
     ALWAYS_LOG(LOGIDENTIFIER);
-#if OS(MORPHOS)
+#if OS(MORPHOS)|| OS(AMIGAOS) // TODO: Check this
        // There is some memory trashing going on in the PeriodicWave.cpp/generateBasicWaveform
        // But so far - impossible to pinpoint where exactly
        return Exception { InvalidStateError };

@@ -134,7 +134,7 @@ struct Data
     Object *statusbar;
     Object *progressgauge;
     Object *progressgroup;
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
     Object *networkledsgroup;
 #endif
@@ -312,7 +312,7 @@ DEFNEW
     Object *panelgroup, *panelbalance;
     Object *pagegroup, *pagetitles;
     Object *zoneimage, *secureimage, *privatebrowsingimage, *userscriptimage;
-#if 0
+#if OS(AMIGAOS)
 //broken 2.24
     Object *networkledsgroup;
 #endif
@@ -433,7 +433,7 @@ DEFNEW
                             End,
                         End,
 
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
                     Child, networkledsgroup = (Object *) NewObject(getnetworkledsgroupclass(), NULL, TAG_DONE),
 #endif
@@ -472,7 +472,7 @@ DEFNEW
         data->userscriptimage = userscriptimage;
         data->progressgauge   = progressgauge;
         data->progressgroup   = progressgroup;
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
         data->networkledsgroup = networkledsgroup;
 #endif
@@ -858,7 +858,7 @@ DEFGET
         }
         return TRUE;
 
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
         case MA_OWBWindow_NetworkLedsGroup:
         {
@@ -2355,7 +2355,11 @@ DEFSMETHOD(OWBWindow_UpdateTitle)
 
     if(msg->browser == data->active_browser)
     {
+#if OS(AROS)
         snprintf(data->windowtitle, sizeof(data->windowtitle), "OWB: %s", msg->title);
+#else        
+        snprintf(data->windowtitle, sizeof(data->windowtitle), "Odyssey: %s", msg->title);
+#endif
         set(obj, MUIA_Window_Title, data->windowtitle);
     }
 

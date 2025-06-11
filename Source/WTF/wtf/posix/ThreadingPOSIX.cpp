@@ -320,7 +320,7 @@ void Thread::initializeCurrentThreadInternal(const char* threadName)
     pthread_setname_np(normalizeThreadName(threadName));
 #elif OS(LINUX)
     prctl(PR_SET_NAME, normalizeThreadName(threadName));
-#elif OS(MORPHOS) || OS(AMIGAOS)
+#elif OS(MORPHOS)
 	char nameBuffer[256] = {0};
 	strcpy(nameBuffer, "WkWebView:");
 	stccpy(nameBuffer + 10, threadName, sizeof(nameBuffer) - 10);
@@ -336,7 +336,7 @@ void Thread::initializeCurrentThreadInternal(const char* threadName)
 		pthread_setschedparam(pthread_self(), SCHED_MORPHOS, &param);
 	}
 #endif
-#elif OS(AROS)
+#elif OS(AROS)|| OS(AMIGAOS)
     pthread_setname_np(pthread_self(), threadName);
 #else
     UNUSED_PARAM(threadName);

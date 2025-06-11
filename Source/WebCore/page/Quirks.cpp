@@ -934,7 +934,7 @@ bool Quirks::shouldMakeEventListenerPassive(const EventTarget& eventTarget, cons
 #if ENABLE(MEDIA_STREAM)
 bool Quirks::shouldEnableLegacyGetUserMediaQuirk() const
 {
-#if OS(MORPHOS)
+#if OS(MORPHOS)|| OS(AMIGAOS)
 	return true;
 #endif
     if (!needsQuirks())

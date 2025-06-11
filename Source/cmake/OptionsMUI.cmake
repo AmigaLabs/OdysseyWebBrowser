@@ -84,6 +84,7 @@ set(ENABLE_WEBKIT_LEGACY ON)
 
 set(WTF_USE_ICU_UNICODE 1)
 set(WTF_USE_CURL 1)
+set(HAVE_LOCALTIME_R 1)
 
 set(WTF_OUTPUT_NAME WTFMUI)
 set(JavaScriptCore_OUTPUT_NAME javascriptcoremui)
@@ -130,9 +131,10 @@ set_target_properties(LibPSL::LibPSL PROPERTIES
     IMPORTED_LOCATION "${LibPSL_LIBRARY}"
 )
 
-set(HarfBuzz_LIBRARY ${AROS_SDK_DIR}/lib/libfreetype.a)
+set(HarfBuzz_LIBRARY ${AROS_SDK_DIR}/lib/libharfbuzz.a)
 add_library(HarfBuzz::HarfBuzz UNKNOWN IMPORTED GLOBAL)
 set_target_properties(HarfBuzz::HarfBuzz PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${HarfBuzz_INCLUDE_DIRS}"
     IMPORTED_LOCATION "${HarfBuzz_LIBRARY}"
 )
 set(HarfBuzz_ICU_LIBRARY ${AROS_SDK_DIR}/lib/libfreetype.a)

@@ -102,8 +102,8 @@ unsigned long __stack = 2*1024*1024;
 jmp_buf bailout_env;
 
 #ifdef __amigaos4__
-TEXT version[] __attribute__((section(".text"))) = "$VER: Odyssey Web Browser 2.0.0 (12.01.2025)";
-static const char * __attribute__((used)) stackcookie = "$STACK: 2000000";
+TEXT version[] __attribute__((section(".text"))) = "$VER: Odyssey Web Browser 2.0.0 (05.06.2025)";
+static const char * __attribute__((used)) stackcookie = "$STACK: 20000000";
 struct Library 			*IntuitionBase	= NULL;
 struct IntuitionIFace	*IIntuition 	= NULL;
 
@@ -735,6 +735,13 @@ void main_loop(void)
 
 int main (int argc, char* argv[])
 {
+	#ifdef __amigaos4__	
+	// save tc_UserData on run.	
+	struct Task *CurrentTask = FindTask(NULL);
+	APTR olduserdata = CurrentTask->tc_UserData;
+	CurrentTask->tc_UserData = NULL;
+	#endif
+
 #if !defined(__AROS__)
 	signal(SIGINT, SIG_IGN);
 #endif
@@ -777,6 +784,11 @@ int main (int argc, char* argv[])
 	close_libs();
 
 	//dosnotify_cleanup();
+
+    #ifdef __amigaos4__
+	// restore tc_UserData at exit
+	CurrentTask->tc_UserData = olduserdata;
+	#endif
 
     return 0;
 }

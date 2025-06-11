@@ -1080,7 +1080,7 @@ void Heap::collectNow(Synchronousness synchronousness, GCRequest request)
         
     case Sync: {
         collectSync(request);
-        
+
         DeferGCForAWhile deferGC(*this);
         if (UNLIKELY(Options::useImmortalObjects()))
             sweeper().stopSweeping();

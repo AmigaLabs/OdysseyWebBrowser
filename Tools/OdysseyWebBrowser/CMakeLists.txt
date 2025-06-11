@@ -15,7 +15,6 @@ set(OdysseyWebBrowser_LIBRARIES
     WebKitLegacy
     -mcrt=clib4
     -Wl,--start-group WebCore -Wl,--end-group
-    -lz
     -lfreetype
     -lcairo
     -lwebp 
@@ -38,7 +37,6 @@ set(OdysseyWebBrowser_LIBRARIES
     -lxslt
     -lxml2
     -lexpat
-    -ldebug
     -lavformat
     -lbz2
     -lavcodec

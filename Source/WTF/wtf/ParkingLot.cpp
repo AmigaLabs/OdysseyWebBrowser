@@ -427,6 +427,7 @@ void ensureHashtableSize(unsigned numThreads)
 ThreadData* myThreadData();
 static void parkinglockunlocker(void *arg)
 {
+    printf("parkinglockunlocker called for thread %p\n", Thread::current());
     ThreadData* me = myThreadData();
     me->parkingLock.unlock();
 }
@@ -607,7 +608,7 @@ NEVER_INLINE ParkingLot::ParkResult ParkingLot::parkConditionallyImpl(
     {
         MutexLocker locker(me->parkingLock);
         while (me->address && timeout.nowWithSameClock() < timeout) {
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
             if (!me->parkingCondition.timedWait(
                 me->parkingLock, timeout.approximateWallTime())) {
                 // Usually this happens when the application is terminating.

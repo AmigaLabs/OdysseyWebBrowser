@@ -73,10 +73,6 @@ JSC::VM& commonVMSlow()
     vm.heap.machineThreads().addCurrentThread();
 #endif
 
-#if OS(AMIGAOS1) // TODO: Check this
-    vm.heap.machineThreads().addCurrentThread();
-#endif
-
     JSVMClientData::initNormalWorld(&vm, WorkerThreadType::Main);
 
     return vm;

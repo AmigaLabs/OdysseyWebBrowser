@@ -67,10 +67,14 @@ void Widget::setCursor(const Cursor& cursor)
 {
     if (!isFrameView())
         return;
+#if OS(AMIGAOS)
+    set((Object *) getv(app, MA_OWBApp_ActiveBrowser), MA_OWBBrowser_Pointer, cursor.platformCursor());
+#else        
     if(is_morphos2())
     {
         set((Object *) getv(app, MA_OWBApp_ActiveBrowser), MA_OWBBrowser_Pointer, cursor.platformCursor());
     }
+#endif    
 }
 
 void Widget::show()

@@ -1173,6 +1173,11 @@ DEFNEW
         DoMethod(prefs_save, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MM_OWBApp_PrefsSave, TRUE);
         DoMethod(prefs_use, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MM_OWBApp_PrefsSave, FALSE);
         DoMethod(prefs_cancel, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 1, MM_OWBApp_PrefsCancel);
+
+		#if OS(AMIGAOS)
+		// disable plugins in preferences by default.
+		set(ch_enableplugins, MUIA_Disabled, TRUE);        // disable plugins support by default 
+		#endif 
     }
 
     return (IPTR)obj;

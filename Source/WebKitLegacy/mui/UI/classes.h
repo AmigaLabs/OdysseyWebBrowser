@@ -317,7 +317,11 @@ enum {
     MA_OWBWindow_AddressBarGroup,
     MA_OWBWindow_FastLinkGroup,
     MA_OWBWindow_FastLinkParentGroup,
+#ifdef __amigaos4__
+    MA_OWBWindow_NetworkLedsGroup,
+#else
     MA_OWBWindow_NetworkLedsGroupBROKEN,
+#endif    
     MA_OWBWindow_SearchGroup,
     MA_OWBWindow_NavigationGroup,
     MA_OWBWindow_BookmarkPanelGroup,

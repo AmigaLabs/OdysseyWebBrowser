@@ -410,7 +410,7 @@ struct NewMenu MenuData[] =
 /* Windows */
     { NM_TITLE, MENU(WINDOWS)         , 0, 0, 0, NULL },
     { NM_ITEM , MENU(DOWNLOADS)       , (STRPTR) "D", 0, 0, (APTR)MNA_DOWNLOADS_WINDOW },
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
     { NM_ITEM , MENU(NETWORK)         , 0, 0, 0, (APTR)MNA_NETWORK_WINDOW },
 #endif
@@ -1228,12 +1228,12 @@ DEFDISP
 #if !OS(AMIGAOS)    
     GCController::singleton().garbageCollectNow();
 #endif
-//    FontCache::singleton().invalidate(); // trashes memory like fuck on https://testdrive-archive.azurewebsites.net/Graphics/CanvasPinball/default.html
+    //    FontCache::singleton().invalidate(); // trashes memory like fuck on https://testdrive-archive.azurewebsites.net/Graphics/CanvasPinball/default.html
     MemoryCache::singleton().setDisabled(true);
 
 #if !OS(AMIGAOS)    
     delete &commonVM(); /* This looks weird, but it stops JSC Heap Collector Thread */
-#endif
+#endif    
 #if 0
 // broken 2.34.6
 #if ENABLE(JIT)
@@ -2390,10 +2390,8 @@ void prefs_update(Object *obj, struct Data *data)
     /* Needed in ResourceHandleManager::sharedInstance() */
     stccpy(data->certificate_path, (char *) getv(data->prefswin, MA_OWBApp_CertificatePath), sizeof(data->certificate_path));
 
-#if 0
 // broken 2.24
     int activeconnections = (int) getv(data->prefswin, MA_OWBApp_ActiveConnections);
-#endif
 #if 0
 // broken 2.18
     ResourceHandleManager::setMaxConnections(activeconnections);
@@ -2457,7 +2455,7 @@ void prefs_update(Object *obj, struct Data *data)
 
             set((Object *) getv(child, MA_OWBWindow_SearchGroup), MA_SearchBarGroup_SearchButton, data->showvalidationbuttons);
             set((Object *) getv(child, MA_OWBWindow_AddressBarGroup), MA_AddressBarGroup_GoButton, data->showvalidationbuttons);
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
             set((Object *) getv(child, MA_OWBWindow_NetworkLedsGroup), MA_NetworkLedsGroup_Count, activeconnections);
 #endif
@@ -2608,7 +2606,7 @@ DEFSMETHOD(Network_AddJob)
     {
         if(getv(child, MA_OWB_WindowType) == MV_OWB_Window_Browser)
         {
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
             DoMethod((Object *)getv(child, MA_OWBWindow_NetworkLedsGroup), MM_Network_AddJob, msg->job);
 #endif
@@ -2629,7 +2627,7 @@ DEFSMETHOD(Network_RemoveJob)
     {
         if(getv(child, MA_OWB_WindowType) == MV_OWB_Window_Browser)
         {
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
             DoMethod((Object *) getv(child, MA_OWBWindow_NetworkLedsGroup), MM_Network_RemoveJob, msg->job);
 #endif
@@ -2650,7 +2648,7 @@ DEFSMETHOD(Network_UpdateJob)
     {
         if(getv(child, MA_OWB_WindowType) == MV_OWB_Window_Browser)
         {
-#if 0
+#if OS(AMIGAOS)
 // broken 2.24
             DoMethod((Object *)getv(child, MA_OWBWindow_NetworkLedsGroup), MM_Network_UpdateJob, msg->job);
 #endif

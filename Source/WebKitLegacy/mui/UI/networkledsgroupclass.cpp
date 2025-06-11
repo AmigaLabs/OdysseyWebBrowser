@@ -126,9 +126,9 @@ DEFNEW
 
     if (obj)
     {
-#if 0
+#if OS(AMIGAOS)
 // broken 2.18
-        set(obj, MA_NetworkLedsGroup_Count, ResourceHandleManager::maxConnections());
+        set(obj, MA_NetworkLedsGroup_Count, 16);
 #endif
 
         DoMethod(obj, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MM_OWBApp_OpenWindow, MV_OWB_Window_Network);

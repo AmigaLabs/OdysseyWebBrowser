@@ -1991,3 +1991,66 @@ Do you want to interrupt processing of the current script?
 MSG_WEBVIEW_JSACTION_TITLE (//)
 Javascript Alert
 ;
+;
+; Additional strings since 1.23
+;
+MSG_PREFSWINDOW_MEDIA_USE_MP4 (//)
+_MP4 (H.264) support
+;
+;
+;Notifications "title" strings
+;
+MSG_NOTIFY_DL_COMPLETED (//60)
+Download Completed
+;
+MSG_NOTIFY_DL_CANCELLED (//60)
+Download Cancelled
+;
+MSG_NOTIFY_DL_FAILED (//60)
+Download Failed
+;
+;
+;SpoofUserAgent
+;
+MSG_PREFSWINDOW_CATEGORY_SPOOFING (//)
+Spoofing
+;
+MSG_USERAGENTGROUP_ADD (//)
+Add
+;
+MSG_USERAGENTGROUP_REMOVE (//)
+Remove
+;
+MSG_USERAGENTGROUP_MAKE_DEFAULT (//)
+Make default
+;
+MSG_USERAGENTGROUP_NAME (//)
+Name:
+;
+MSG_USERAGENTGROUP_SHOW_IN_MENU (//)
+Show in menu
+;
+MSG_USERAGENTGROUP_USERAGENT (//)
+User-Agent:
+;
+MSG_USERAGENTLIST_STATUS (//)
+Status
+;
+MSG_USERAGENTLIST_NAME (//)
+Name
+;
+MSG_USERAGENTLIST_USERAGENT (//)
+User-Agent
+;
+MSG_USERAGENTLIST_STATUS_DEFAULT (//)
+\033bdefault\033n
+;
+MSG_USERAGENTLIST_STATUS_ENABLED (//)
+enabled
+;
+MSG_USERAGENTLIST_STATUS_DISABLED (//)
+disabled
+;
+MSG_USERAGENTLIST_INFO (//60)
+NOTE: max. 64 entries; max. in menu 32
+;

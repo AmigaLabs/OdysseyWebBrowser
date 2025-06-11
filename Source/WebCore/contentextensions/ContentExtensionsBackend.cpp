@@ -50,8 +50,10 @@
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/CString.h>
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
+#if !OS(AMIGAOS)
 extern "C" { void dprintf(const char *,...); }
+#endif
 bool shouldLoadResource(const WebCore::ContentExtensions::ResourceLoadInfo& info, WebCore::DocumentLoader& loader);
 #endif
 
@@ -201,14 +203,18 @@ ContentRuleListResults ContentExtensionsBackend::processContentRuleListsForLoad(
     }
 
     ResourceLoadInfo resourceLoadInfo = { url, mainDocumentURL, resourceType, mainFrameContext };
-#if OS(MORPHOS)
+#if OS(MORPHOS)|| OS(AMIGAOS)
     ContentRuleListResults results;
 	if (!shouldLoadResource(resourceLoadInfo, initiatingDocumentLoader))
 	{
 		ContentRuleListResults::Result result;
 		results.summary.blockedLoad = true;
 		result.blockedLoad = true;
-		results.results.append({ "x-morphos-blocker", WTFMove(result) });
+#if OS(MORPHOS)
+        results.results.append({ "x-morphos-blocker", WTFMove(result) });
+#else
+        results.results.append({ "x-amigaos-blocker", WTFMove(result) });
+#endif        
 	}
 	else
 	{

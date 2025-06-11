@@ -277,6 +277,7 @@ public:
     void setHttpCustomRequest(const String&);
 #if PLATFORM(MUI)
     void setResumeOffset(long long);
+    void setSslMaxTLSVersion(long version);
 #endif
 
     void enableConnectionOnly();

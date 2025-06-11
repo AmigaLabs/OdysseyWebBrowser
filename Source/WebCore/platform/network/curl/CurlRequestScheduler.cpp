@@ -78,6 +78,8 @@ CurlRequestScheduler::CurlRequestScheduler(long maxConnects, long maxTotalConnec
     , m_maxTotalConnections(maxTotalConnections)
     , m_maxHostConnections(maxHostConnections)
 {
+    printf("CurlRequestScheduler created with maxConnects: %ld, maxTotalConnections: %ld, maxHostConnections: %ld\n",
+        m_maxConnects, m_maxTotalConnections, m_maxHostConnections);
 }
 
 bool CurlRequestScheduler::add(CurlRequestSchedulerClient* client)

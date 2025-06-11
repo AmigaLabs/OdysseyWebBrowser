@@ -90,7 +90,11 @@ STATIC CONST CONST_STRPTR actiontypes[] =
 };
 
 STATIC CONST CONST_STRPTR placeholders[] = {"%l", "%i", "%u", "%p", NULL};
+#if !OS(AMIGAOS)
 STATIC CONST CONST_STRPTR placeholders_desc[] = {"%l - link URL", "%i - image URL", "%u - page URL", "%p - OWB REXX port", NULL};
+#else
+STATIC CONST CONST_STRPTR placeholders_desc[] = {"%l - link URL", "%i - image URL", "%u - page URL", "%p - ODYSSEY REXX port", NULL};
+#endif
 
 static void cycles_init(void)
 {

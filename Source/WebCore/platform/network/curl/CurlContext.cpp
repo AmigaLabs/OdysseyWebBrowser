@@ -408,6 +408,7 @@ CurlHandle::CurlHandle()
 
 #if PLATFORM(MUI)
     curl_easy_setopt(m_handle, CURLOPT_BUFFERSIZE, 64 * 1024);
+    setSslMaxTLSVersion(CURL_SSLVERSION_TLSv1_2);
 #endif
 
 #if CURL_TRACES
@@ -671,6 +672,11 @@ void CurlHandle::setResumeOffset(long long offset)
 {
 	curl_easy_setopt(m_handle, CURLOPT_RESUME_FROM_LARGE, curl_off_t(offset));
 }
+void CurlHandle::setSslMaxTLSVersion(long version)
+{
+    curl_easy_setopt(m_handle, CURLOPT_SSLVERSION, version);
+}
+
 #endif
 
 void CurlHandle::enableAcceptEncoding()

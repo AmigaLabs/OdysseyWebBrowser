@@ -41,6 +41,7 @@ public:
     virtual void send(CurlStreamID, UniqueArray<uint8_t>&&, size_t) = 0;
 
     virtual void callClientOnMainThread(CurlStreamID, WTF::Function<void(CurlStream::Client&)>&&) = 0;
+    virtual long maxConnects() const { return 16; }
 };
 
 } // namespace WebCore
