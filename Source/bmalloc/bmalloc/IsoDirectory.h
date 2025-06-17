@@ -25,11 +25,15 @@
 
 #pragma once
 
+#if !BUSE(TZONE)
+
 #include "Bits.h"
 #include "EligibilityResult.h"
 #include "IsoPage.h"
 #include "Packed.h"
 #include "Vector.h"
+
+#if !BUSE(LIBPAS)
 
 namespace bmalloc {
 
@@ -94,3 +98,5 @@ private:
 
 } // namespace bmalloc
 
+#endif
+#endif // !BUSE(TZONE)

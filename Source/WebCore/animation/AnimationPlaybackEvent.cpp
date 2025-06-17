@@ -27,46 +27,28 @@
 #include "AnimationPlaybackEvent.h"
 
 #include "WebAnimationUtilities.h"
-#include <wtf/IsoMallocInlines.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
-WTF_MAKE_ISO_ALLOCATED_IMPL(AnimationPlaybackEvent);
+WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(AnimationPlaybackEvent);
 
 AnimationPlaybackEvent::AnimationPlaybackEvent(const AtomString& type, const AnimationPlaybackEventInit& initializer, IsTrusted isTrusted)
-    : AnimationEventBase(type, initializer, isTrusted)
+    : AnimationEventBase(EventInterfaceType::AnimationPlaybackEvent, type, initializer, isTrusted)
+    , m_timelineTime(initializer.timelineTime)
+    , m_currentTime(initializer.currentTime)
 {
-    if (initializer.currentTime)
-        m_currentTime = Seconds::fromMilliseconds(*initializer.currentTime);
-    else
-        m_currentTime = std::nullopt;
-
-    if (initializer.timelineTime)
-        m_timelineTime = Seconds::fromMilliseconds(*initializer.timelineTime);
-    else
-        m_timelineTime = std::nullopt;
 }
 
-AnimationPlaybackEvent::AnimationPlaybackEvent(const AtomString& type, std::optional<Seconds> currentTime, std::optional<Seconds> timelineTime, WebAnimation* animation)
-    : AnimationEventBase(type, animation, timelineTime)
-    , m_currentTime(currentTime)
+AnimationPlaybackEvent::AnimationPlaybackEvent(const AtomString& type, WebAnimation* animation, std::optional<WebAnimationTime> scheduledTime, std::optional<WebAnimationTime> timelineTime, std::optional<WebAnimationTime> currentTime)
+    : AnimationEventBase(EventInterfaceType::AnimationPlaybackEvent, type, animation, scheduledTime)
 {
+    if (timelineTime)
+        m_timelineTime = *timelineTime;
+    if (currentTime)
+        m_currentTime = *currentTime;
 }
 
 AnimationPlaybackEvent::~AnimationPlaybackEvent() = default;
-
-std::optional<double> AnimationPlaybackEvent::bindingsCurrentTime() const
-{
-    if (!m_currentTime)
-        return std::nullopt;
-    return secondsToWebAnimationsAPITime(m_currentTime.value());
-}
-
-std::optional<double> AnimationPlaybackEvent::bindingsTimelineTime() const
-{
-    if (!timelineTime())
-        return std::nullopt;
-    return secondsToWebAnimationsAPITime(timelineTime().value());
-}
 
 } // namespace WebCore

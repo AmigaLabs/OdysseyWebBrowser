@@ -25,13 +25,11 @@
 
 #include "config.h"
 #include "CAAudioStreamDescription.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
-CAAudioStreamDescription::CAAudioStreamDescription()
-    : m_streamDescription({ })
-{
-}
+WTF_MAKE_TZONE_ALLOCATED_IMPL(CAAudioStreamDescription);
 
 CAAudioStreamDescription::~CAAudioStreamDescription() = default;
 
@@ -40,7 +38,7 @@ CAAudioStreamDescription::CAAudioStreamDescription(const AudioStreamBasicDescrip
 {
 }
 
-CAAudioStreamDescription::CAAudioStreamDescription(double sampleRate, uint32_t numChannels, PCMFormat format, bool isInterleaved)
+CAAudioStreamDescription::CAAudioStreamDescription(double sampleRate, uint32_t numChannels, PCMFormat format, IsInterleaved isInterleaved)
 {
     m_streamDescription.mFormatID = kAudioFormatLinearPCM;
     m_streamDescription.mSampleRate = sampleRate;
@@ -48,13 +46,20 @@ CAAudioStreamDescription::CAAudioStreamDescription(double sampleRate, uint32_t n
     m_streamDescription.mChannelsPerFrame = numChannels;
     m_streamDescription.mBytesPerFrame = 0;
     m_streamDescription.mBytesPerPacket = 0;
-    m_streamDescription.mFormatFlags = kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked;
+    m_streamDescription.mFormatFlags = static_cast<AudioFormatFlags>(kAudioFormatFlagsNativeEndian) | static_cast<AudioFormatFlags>(kAudioFormatFlagIsPacked);
     m_streamDescription.mReserved = 0;
 
     int wordsize;
     switch (format) {
+    case Uint8:
+        wordsize = 1;
+        break;
     case Int16:
         wordsize = 2;
+        m_streamDescription.mFormatFlags |= kAudioFormatFlagIsSignedInteger;
+        break;
+    case Int24:
+        wordsize = 3;
         m_streamDescription.mFormatFlags |= kAudioFormatFlagIsSignedInteger;
         break;
     case Int32:
@@ -76,7 +81,7 @@ CAAudioStreamDescription::CAAudioStreamDescription(double sampleRate, uint32_t n
     }
 
     m_streamDescription.mBitsPerChannel = wordsize * 8;
-    if (isInterleaved)
+    if (isInterleaved == IsInterleaved::Yes)
         m_streamDescription.mBytesPerFrame = m_streamDescription.mBytesPerPacket = wordsize * numChannels;
     else {
         m_streamDescription.mFormatFlags |= kAudioFormatFlagIsNonInterleaved;
@@ -94,52 +99,45 @@ AudioStreamDescription::PCMFormat CAAudioStreamDescription::format() const
 {
     if (m_format != None)
         return m_format;
-
     if (m_streamDescription.mFormatID != kAudioFormatLinearPCM)
         return None;
     if (m_streamDescription.mFramesPerPacket != 1)
         return None;
     if (m_streamDescription.mBytesPerFrame != m_streamDescription.mBytesPerPacket)
         return None;
-    if (m_streamDescription.mBitsPerChannel / sizeof(double) > m_streamDescription.mBytesPerFrame)
-        return None;
     if (!m_streamDescription.mChannelsPerFrame)
         return None;
+    if (!isNativeEndian())
+        return None;
+    if (m_streamDescription.mBitsPerChannel % 8)
+        return None;
+    uint32_t bytesPerSample = m_streamDescription.mBitsPerChannel / 8;
+    uint32_t numChannelsPerFrame = numberOfInterleavedChannels();
+    if (m_streamDescription.mBytesPerFrame % numChannelsPerFrame)
+        return None;
+    if (m_streamDescription.mBytesPerFrame / numChannelsPerFrame != bytesPerSample)
+        return None;
+    std::optional<PCMFormat> format;
+    auto asbdFormat = m_streamDescription.mFormatFlags & (kLinearPCMFormatFlagIsFloat | kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagsSampleFractionMask);
+    if (asbdFormat == kLinearPCMFormatFlagIsFloat) {
+        if (bytesPerSample == sizeof(float))
+            format = Float32;
+        else if (bytesPerSample == sizeof(double))
+            format = Float64;
+    } else if (asbdFormat == kLinearPCMFormatFlagIsSignedInteger) {
+        if (bytesPerSample == sizeof(int16_t))
+            format = Int16;
+        else if (bytesPerSample == sizeof(int32_t))
+            format = Int32;
+        else if (bytesPerSample == 3)
+            format = Int24;
+    } else if (bytesPerSample == sizeof(uint8_t))
+        format = Uint8;
 
-    unsigned wordsize = m_streamDescription.mBytesPerFrame;
-    if (isInterleaved()) {
-        if (wordsize % m_streamDescription.mChannelsPerFrame)
-            return None;
-
-        wordsize /= m_streamDescription.mChannelsPerFrame;
-    }
-
-    if (isNativeEndian() && wordsize * sizeof(double) == m_streamDescription.mBitsPerChannel) {
-        // Packed and native endian, good
-        if (m_streamDescription.mFormatFlags & kLinearPCMFormatFlagIsFloat) {
-            if (m_streamDescription.mFormatFlags & (kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagsSampleFractionMask))
-                return None;
-
-            if (wordsize == sizeof(float))
-                return m_format = Float32;
-            if (wordsize == sizeof(double))
-                return m_format = Float64;
-
-            return None;
-        }
-
-        if (m_streamDescription.mFormatFlags & kLinearPCMFormatFlagIsSignedInteger) {
-            unsigned fractionBits = (m_streamDescription.mFormatFlags & kLinearPCMFormatFlagsSampleFractionMask) >> kLinearPCMFormatFlagsSampleFractionShift;
-            if (!fractionBits) {
-                if (wordsize == sizeof(int16_t))
-                    return m_format = Int16;
-                if (wordsize == sizeof(int32_t))
-                    return m_format = Int32;
-            }
-        }
-    }
-
-    return None;
+    if (!format)
+        return None;
+    m_format = *format;
+    return m_format;
 }
 
 bool operator==(const AudioStreamBasicDescription& a, const AudioStreamBasicDescription& b)
@@ -224,22 +222,12 @@ bool CAAudioStreamDescription::operator==(const AudioStreamBasicDescription& oth
     return m_streamDescription == other;
 }
 
-bool CAAudioStreamDescription::operator!=(const AudioStreamBasicDescription& other) const
-{
-    return !operator==(other);
-}
-
 bool CAAudioStreamDescription::operator==(const AudioStreamDescription& other) const
 {
     if (other.platformDescription().type != PlatformDescription::CAAudioStreamBasicType)
         return false;
 
-    return operator==(*WTF::get<const AudioStreamBasicDescription*>(other.platformDescription().description));
-}
-
-bool CAAudioStreamDescription::operator!=(const AudioStreamDescription& other) const
-{
-    return !operator==(other);
+    return operator==(*std::get<const AudioStreamBasicDescription*>(other.platformDescription().description));
 }
 
 const AudioStreamBasicDescription& CAAudioStreamDescription::streamDescription() const

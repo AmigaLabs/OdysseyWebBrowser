@@ -28,26 +28,37 @@
 
 #include "Document.h"
 #include "DocumentLoader.h"
-#include "Frame.h"
+#include "FrameDestructionObserverInlines.h"
+#include "InspectorClient.h"
 #include "InstrumentingAgents.h"
+#include "LocalFrame.h"
 #include "Page.h"
-#include "ScriptState.h"
+#include "PageConsoleClient.h"
+#include "ThreadableWebSocketChannel.h"
 #include "WebSocket.h"
-#include "WebSocketChannel.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
 using namespace Inspector;
 
-PageNetworkAgent::PageNetworkAgent(PageAgentContext& context)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(PageNetworkAgent);
+
+PageNetworkAgent::PageNetworkAgent(PageAgentContext& context, InspectorClient* client)
     : InspectorNetworkAgent(context)
     , m_inspectedPage(context.inspectedPage)
+#if ENABLE(INSPECTOR_NETWORK_THROTTLING)
+    , m_client(client)
+#endif
 {
+#if !ENABLE(INSPECTOR_NETWORK_THROTTLING)
+    UNUSED_PARAM(client);
+#endif
 }
 
 PageNetworkAgent::~PageNetworkAgent() = default;
 
-Protocol::Network::LoaderId PageNetworkAgent::loaderIdentifier(DocumentLoader* loader)
+Inspector::Protocol::Network::LoaderId PageNetworkAgent::loaderIdentifier(DocumentLoader* loader)
 {
     if (loader) {
         if (auto* pageAgent = m_instrumentingAgents.enabledPageAgent())
@@ -56,7 +67,7 @@ Protocol::Network::LoaderId PageNetworkAgent::loaderIdentifier(DocumentLoader* l
     return { };
 }
 
-Protocol::Network::FrameId PageNetworkAgent::frameIdentifier(DocumentLoader* loader)
+Inspector::Protocol::Network::FrameId PageNetworkAgent::frameIdentifier(DocumentLoader* loader)
 {
     if (loader) {
         if (auto* pageAgent = m_instrumentingAgents.enabledPageAgent())
@@ -77,12 +88,12 @@ Vector<WebSocket*> PageNetworkAgent::activeWebSockets()
         if (!channel->hasCreatedHandshake())
             continue;
 
-        if (!is<Document>(webSocket->scriptExecutionContext()))
+        RefPtr document = dynamicDowncast<Document>(webSocket->scriptExecutionContext());
+        if (!document)
             continue;
 
         // FIXME: <https://webkit.org/b/168475> Web Inspector: Correctly display iframe's WebSockets
-        auto* document = downcast<Document>(webSocket->scriptExecutionContext());
-        if (document->page() != &m_inspectedPage)
+        if (document->page() != m_inspectedPage.ptr())
             continue;
 
         webSockets.append(webSocket);
@@ -93,10 +104,19 @@ Vector<WebSocket*> PageNetworkAgent::activeWebSockets()
 
 void PageNetworkAgent::setResourceCachingDisabledInternal(bool disabled)
 {
-    m_inspectedPage.setResourceCachingDisabledByWebInspector(disabled);
+    m_inspectedPage->setResourceCachingDisabledByWebInspector(disabled);
 }
 
-ScriptExecutionContext* PageNetworkAgent::scriptExecutionContext(Protocol::ErrorString& errorString, const Protocol::Network::FrameId& frameId)
+#if ENABLE(INSPECTOR_NETWORK_THROTTLING)
+
+bool PageNetworkAgent::setEmulatedConditionsInternal(std::optional<int>&& bytesPerSecondLimit)
+{
+    return m_client && m_client->setEmulatedConditions(WTFMove(bytesPerSecondLimit));
+}
+
+#endif // ENABLE(INSPECTOR_NETWORK_THROTTLING)
+
+ScriptExecutionContext* PageNetworkAgent::scriptExecutionContext(Inspector::Protocol::ErrorString& errorString, const Inspector::Protocol::Network::FrameId& frameId)
 {
     auto* pageAgent = m_instrumentingAgents.enabledPageAgent();
     if (!pageAgent) {
@@ -115,6 +135,11 @@ ScriptExecutionContext* PageNetworkAgent::scriptExecutionContext(Protocol::Error
     }
 
     return document;
+}
+
+void PageNetworkAgent::addConsoleMessage(std::unique_ptr<Inspector::ConsoleMessage>&& message)
+{
+    m_inspectedPage->console().addMessage(WTFMove(message));
 }
 
 } // namespace WebCore

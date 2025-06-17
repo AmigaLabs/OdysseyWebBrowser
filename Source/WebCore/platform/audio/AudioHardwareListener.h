@@ -23,11 +23,10 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef AudioHardwareListener_h
-#define AudioHardwareListener_h
+#pragma once
 
+#include <wtf/AbstractRefCounted.h>
 #include <wtf/Ref.h>
-#include <wtf/RefCounted.h>
 
 namespace WebCore {
     
@@ -37,7 +36,7 @@ enum class AudioHardwareActivityType {
     IsInactive
 };
 
-class AudioHardwareListener : public RefCounted<AudioHardwareListener> {
+class AudioHardwareListener : public AbstractRefCounted {
 public:
     class Client {
     public:
@@ -76,5 +75,3 @@ protected:
 };
 
 }
-
-#endif // AudioHardwareListener_h

@@ -64,7 +64,7 @@ function matchAll(arg)
     return regExp.@@matchAll(string);
 }
 
-@globalPrivate
+@linkTimeConstant
 function repeatSlowPath(string, count)
 {
     "use strict";
@@ -94,7 +94,7 @@ function repeatSlowPath(string, count)
     }
 }
 
-@globalPrivate
+@linkTimeConstant
 function repeatCharactersSlowPath(string, count)
 {
     "use strict";
@@ -113,7 +113,7 @@ function repeatCharactersSlowPath(string, count)
         operand += operand;
     }
     if (remainingCharacters)
-        result += @stringSubstringInternal.@call(string, 0, remainingCharacters);
+        result += @stringSubstring.@call(string, 0, remainingCharacters);
     return result;
 }
 
@@ -211,7 +211,7 @@ function padEnd(maxLength/*, fillString*/)
     return string + truncatedStringFiller;
 }
 
-@globalPrivate
+@linkTimeConstant
 function hasObservableSideEffectsForStringReplace(regexp, replacer)
 {
     "use strict";
@@ -226,12 +226,34 @@ function hasObservableSideEffectsForStringReplace(regexp, replacer)
     if (regexpExec !== @regExpBuiltinExec)
         return true;
 
+    var regexpFlags = @tryGetById(regexp, "flags");
+    if (regexpFlags !== @regExpProtoFlagsGetter)
+        return true;
+
+    // These are accessed by the builtin flags getter.
+    var regexpDotAll = @tryGetById(regexp, "dotAll");
+    if (regexpDotAll !== @regExpProtoDotAllGetter)
+        return true;
     var regexpGlobal = @tryGetById(regexp, "global");
     if (regexpGlobal !== @regExpProtoGlobalGetter)
         return true;
-
+    var regexpHasIndices = @tryGetById(regexp, "hasIndices");
+    if (regexpHasIndices !== @regExpProtoHasIndicesGetter)
+        return true;
+    var regexpIgnoreCase = @tryGetById(regexp, "ignoreCase");
+    if (regexpIgnoreCase !== @regExpProtoIgnoreCaseGetter)
+        return true;
+    var regexpMultiline = @tryGetById(regexp, "multiline");
+    if (regexpMultiline !== @regExpProtoMultilineGetter)
+        return true;
+    var regexpSticky = @tryGetById(regexp, "sticky");
+    if (regexpSticky !== @regExpProtoStickyGetter)
+        return true;
     var regexpUnicode = @tryGetById(regexp, "unicode");
     if (regexpUnicode !== @regExpProtoUnicodeGetter)
+        return true;
+    var regexpUnicodeSets = @tryGetById(regexp, "unicodeSets");
+    if (regexpUnicodeSets !== @regExpProtoUnicodeSetsGetter)
         return true;
 
     return typeof regexp.lastIndex !== "number";
@@ -317,13 +339,13 @@ function split(separator, limit)
     return @stringSplitFast.@call(this, separator, limit);
 }
 
-@globalPrivate
+@linkTimeConstant
 function stringConcatSlowPath()
 {
     "use strict";
 
     var result = @toString(this);
-    for (var i = 0, length = arguments.length; i < length; ++i)
+    for (var i = 0, length = @argumentCount(); i < length; ++i)
         result += @toString(arguments[i]);
     return result;
 }
@@ -340,26 +362,7 @@ function concat(arg /* ... */)
     return @tailCallForwardArguments(@stringConcatSlowPath, this);
 }
 
-// FIXME: This is extremely similar to charAt, so we should optimize it accordingly.    
-//        https://bugs.webkit.org/show_bug.cgi?id=217139    
-function at(index)    
-{   
-    "use strict";   
-
-    if (@isUndefinedOrNull(this))   
-        @throwTypeError("String.prototype.at requires that |this| not be null or undefined"); 
-
-    var string = @toString(this);   
-    var length = string.length; 
-
-    var k = @toIntegerOrInfinity(index);  
-    if (k < 0)  
-        k += length;    
-
-    return (k >= 0 && k < length) ? string[k] : @undefined; 
-}
-
-@globalPrivate
+@linkTimeConstant
 function createHTML(func, string, tag, attribute, value)
 {
     "use strict";

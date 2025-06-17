@@ -21,6 +21,7 @@
 #include "config.h"
 #include "GStreamerEMEUtilities.h"
 
+#include <wtf/StdLibExtras.h>
 #include <wtf/text/Base64.h>
 
 #if ENABLE(ENCRYPTED_MEDIA) && USE(GSTREAMER)
@@ -38,14 +39,16 @@ struct GMarkupParseContextUserData {
 static void markupStartElement(GMarkupParseContext*, const gchar* elementName, const gchar**, const gchar**, gpointer userDataPtr, GError**)
 {
     GMarkupParseContextUserData* userData = static_cast<GMarkupParseContextUserData*>(userDataPtr);
-    if (g_str_has_suffix(elementName, "pssh"))
+    auto nameView = StringView::fromLatin1(elementName);
+    if (nameView.endsWith("pssh"_s))
         userData->isParsingPssh = true;
 }
 
 static void markupEndElement(GMarkupParseContext*, const gchar* elementName, gpointer userDataPtr, GError**)
 {
     GMarkupParseContextUserData* userData = static_cast<GMarkupParseContextUserData*>(userDataPtr);
-    if (g_str_has_suffix(elementName, "pssh")) {
+    auto nameView = StringView::fromLatin1(elementName);
+    if (nameView.endsWith("pssh"_s)) {
         ASSERT(userData->isParsingPssh);
         userData->isParsingPssh = false;
     }
@@ -55,7 +58,8 @@ static void markupText(GMarkupParseContext*, const gchar* text, gsize textLength
 {
     GMarkupParseContextUserData* userData = static_cast<GMarkupParseContextUserData*>(userDataPtr);
     if (userData->isParsingPssh) {
-        std::optional<Vector<uint8_t>> pssh = base64Decode(text, textLength);
+        auto data = unsafeMakeSpan(reinterpret_cast<const uint8_t*>(text), textLength);
+        auto pssh = base64Decode(data);
         if (pssh.has_value())
             userData->pssh = SharedBuffer::create(WTFMove(*pssh));
     }
@@ -80,7 +84,8 @@ RefPtr<SharedBuffer> InitData::extractCencIfNeeded(RefPtr<SharedBuffer>&& unpars
     GMarkupParseContextUserData userData;
     GUniquePtr<GMarkupParseContext> markupParseContext(g_markup_parse_context_new(&markupParser, (GMarkupParseFlags) 0, &userData, nullptr));
 
-    if (g_markup_parse_context_parse(markupParseContext.get(), payload->dataAsCharPtr(), payload->size(), nullptr)) {
+    auto payloadData = spanReinterpretCast<const char>(payload->span());
+    if (g_markup_parse_context_parse(markupParseContext.get(), payloadData.data(), payloadData.size(), nullptr)) {
         if (userData.pssh)
             payload = WTFMove(userData.pssh);
         else
@@ -90,5 +95,8 @@ RefPtr<SharedBuffer> InitData::extractCencIfNeeded(RefPtr<SharedBuffer>&& unpars
     return payload;
 }
 
-}
+#undef GST_CAT_DEFAULT
+
+} // namespace WebCore
+
 #endif // ENABLE(ENCRYPTED_MEDIA) && USE(GSTREAMER)

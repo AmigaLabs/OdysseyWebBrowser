@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, 2015-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,8 +33,14 @@
 #include "FTLTypedPointer.h"
 #include "JSCJSValueInlines.h"
 #include "Options.h"
+#include "StructureRareDataInlines.h"
+#include <wtf/TZoneMallocInlines.h>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 
 namespace JSC { namespace FTL {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(AbstractHeap);
 
 AbstractHeap::AbstractHeap(AbstractHeap* parent, const char* heapName, ptrdiff_t offset)
     : m_offset(offset)
@@ -122,7 +128,7 @@ void AbstractHeap::deepDump(PrintStream& out, unsigned indent) const
 
 void AbstractHeap::badRangeError() const
 {
-    dataLog("Heap does not have range: ", *this, "\n");
+    dataLogLn("Heap does not have range: ", *this);
     RELEASE_ASSERT_NOT_REACHED();
 }
 
@@ -134,9 +140,7 @@ IndexedAbstractHeap::IndexedAbstractHeap(AbstractHeap* parent, const char* heapN
 {
 }
 
-IndexedAbstractHeap::~IndexedAbstractHeap()
-{
-}
+IndexedAbstractHeap::~IndexedAbstractHeap() = default;
 
 TypedPointer IndexedAbstractHeap::baseIndex(Output& out, LValue base, LValue index, JSValue indexAsConstant, ptrdiff_t offset, LValue mask)
 {
@@ -210,14 +214,14 @@ void IndexedAbstractHeap::initialize(AbstractHeap& field, ptrdiff_t signedIndex)
         unsigned numHexlets = power >> 2;
         
         size_t stringLength = m_heapNameLength + (negative ? strlen(negSplit) : strlen(posSplit)) + numHexlets;
-        char* characters;
+        std::span<char> characters;
         m_largeIndexNames.append(CString::newUninitialized(stringLength, characters));
         
-        memcpy(characters, m_heapForAnyIndex.heapName(), m_heapNameLength);
+        memcpy(characters.data(), m_heapForAnyIndex.heapName(), m_heapNameLength);
         if (negative)
-            memcpy(characters + m_heapNameLength, negSplit, strlen(negSplit));
+            memcpy(characters.data() + m_heapNameLength, negSplit, strlen(negSplit));
         else
-            memcpy(characters + m_heapNameLength, posSplit, strlen(posSplit));
+            memcpy(characters.data() + m_heapNameLength, posSplit, strlen(posSplit));
         
         size_t accumulator = index;
         for (unsigned i = 0; i < numHexlets; ++i) {
@@ -225,7 +229,7 @@ void IndexedAbstractHeap::initialize(AbstractHeap& field, ptrdiff_t signedIndex)
             accumulator >>= 4;
         }
         
-        field.initialize(&m_heapForAnyIndex, characters, m_offset + signedIndex * m_elementSize);
+        field.initialize(&m_heapForAnyIndex, characters.data(), m_offset + signedIndex * m_elementSize);
         return;
     }
     
@@ -242,9 +246,7 @@ NumberedAbstractHeap::NumberedAbstractHeap(AbstractHeap* heap, const char* heapN
 {
 }
 
-NumberedAbstractHeap::~NumberedAbstractHeap()
-{
-}
+NumberedAbstractHeap::~NumberedAbstractHeap() = default;
 
 void NumberedAbstractHeap::dump(PrintStream& out)
 {
@@ -256,9 +258,7 @@ AbsoluteAbstractHeap::AbsoluteAbstractHeap(AbstractHeap* heap, const char* heapN
 {
 }
 
-AbsoluteAbstractHeap::~AbsoluteAbstractHeap()
-{
-}
+AbsoluteAbstractHeap::~AbsoluteAbstractHeap() = default;
 
 void AbsoluteAbstractHeap::dump(PrintStream& out)
 {
@@ -267,5 +267,6 @@ void AbsoluteAbstractHeap::dump(PrintStream& out)
 
 } } // namespace JSC::FTL
 
-#endif // ENABLE(FTL_JIT)
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
 
+#endif // ENABLE(FTL_JIT)

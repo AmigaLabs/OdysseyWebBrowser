@@ -37,6 +37,32 @@
 #include "pas_reserved_memory_provider.h"
 #include "pas_segregated_shared_page_directory.h"
 
+static pas_allocation_result allocate_from_megapages(
+    size_t size,
+    pas_alignment alignment,
+    const char* name,
+    pas_heap* heap,
+    pas_physical_memory_transaction* transaction,
+    void* arg)
+{
+    const pas_heap_config* heap_config;
+
+    PAS_UNUSED_PARAM(name);
+    PAS_ASSERT(heap);
+    PAS_ASSERT(transaction);
+    PAS_ASSERT(!arg);
+    PAS_ASSERT(!alignment.alignment_begin);
+
+    heap_config = pas_heap_config_kind_get_config(heap->config_kind);
+
+    PAS_PROFILE(MEGAPAGES_ALLOCATION, heap, size, alignment.alignment, heap_config);
+
+    return pas_large_heap_try_allocate_and_forget(
+        &heap->large_heap, size, alignment.alignment, pas_non_compact_allocation_mode,
+        heap_config, transaction);
+}
+
+/* Warning: This creates caches that allow type confusion. Only use this for primitive heaps! */
 pas_basic_heap_page_caches* pas_create_basic_heap_page_caches_with_reserved_memory(
     pas_basic_heap_runtime_config* template_runtime_config,
     uintptr_t begin,
@@ -61,24 +87,29 @@ pas_basic_heap_page_caches* pas_create_basic_heap_page_caches_with_reserved_memo
         pas_object_allocation);
 
     pas_large_heap_physical_page_sharing_cache_construct(
+        &caches->megapage_large_heap_cache,
+        pas_reserved_memory_provider_try_allocate,
+        provider);
+
+    pas_large_heap_physical_page_sharing_cache_construct(
         &caches->large_heap_cache,
         pas_reserved_memory_provider_try_allocate,
         provider);
     
     pas_megapage_cache_construct(
-        &caches->small_segregated_megapage_cache,
-        pas_reserved_memory_provider_try_allocate,
-        provider);
+        &caches->small_exclusive_segregated_megapage_cache,
+        allocate_from_megapages,
+        NULL);
 
     pas_megapage_cache_construct(
-        &caches->small_bitfit_megapage_cache,
-        pas_reserved_memory_provider_try_allocate,
-        provider);
+        &caches->small_other_megapage_cache,
+        allocate_from_megapages,
+        NULL);
 
     pas_megapage_cache_construct(
         &caches->medium_megapage_cache,
-        pas_reserved_memory_provider_try_allocate,
-        provider);
+        allocate_from_megapages,
+        NULL);
 
     for (PAS_EACH_SEGREGATED_PAGE_CONFIG_VARIANT_ASCENDING(segregated_variant)) {
         pas_shared_page_directory_by_size* directories;

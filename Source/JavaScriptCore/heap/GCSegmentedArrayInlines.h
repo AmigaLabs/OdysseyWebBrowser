@@ -27,6 +27,8 @@
 
 #include "GCSegmentedArray.h"
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace JSC {
 
 template <typename T>
@@ -177,9 +179,6 @@ template <typename T>
 #if ASSERT_ENABLED
 inline void GCSegmentedArray<T>::validatePrevious()
 {
-    unsigned count = 0;
-    for (GCArraySegment<T>* current = m_segments.head(); current; current = current->next())
-        count++;
     ASSERT(m_segments.size() == m_numberOfSegments);
 }
 #else
@@ -224,3 +223,5 @@ inline size_t GCSegmentedArray<T>::size() const
 }
 
 } // namespace JSC
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

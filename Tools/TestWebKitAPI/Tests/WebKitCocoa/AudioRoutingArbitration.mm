@@ -69,19 +69,29 @@ public:
 
             if (forceGC)
                 [webView.get().configuration.processPool _garbageCollectJavaScriptObjectsForTesting];
-            TestWebKitAPI::Util::sleep(0.1);
+            TestWebKitAPI::Util::runFor(0.1_s);
         } while (++tries <= 100);
 
         EXPECT_EQ(status, [webView _audioRoutingArbitrationStatus]) << message;
     }
 };
 
+// Disabling AudioRoutingArbitration tests until rdar://136533250 is resolved
+#if PLATFORM(MAC)
+TEST_F(AudioRoutingArbitration, DISABLED_Basic)
+#else
 TEST_F(AudioRoutingArbitration, Basic)
+#endif
 {
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusActive, "Basic");
 }
 
+// Disabling AudioRoutingArbitration tests until rdar://136533250 is resolved
+#if PLATFORM(MAC)
+TEST_F(AudioRoutingArbitration, DISABLED_Mute)
+#else
 TEST_F(AudioRoutingArbitration, Mute)
+#endif
 {
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusActive, "Mute 1");
 
@@ -94,7 +104,12 @@ TEST_F(AudioRoutingArbitration, Mute)
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusActive, "Mute 3");
 }
 
+// Disabling AudioRoutingArbitration tests until rdar://136533250 is resolved
+#if PLATFORM(MAC)
+TEST_F(AudioRoutingArbitration, DISABLED_Navigation)
+#else
 TEST_F(AudioRoutingArbitration, Navigation)
+#endif
 {
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusActive, "Navigation 1");
 
@@ -103,7 +118,12 @@ TEST_F(AudioRoutingArbitration, Navigation)
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusNone, "Navigation 2");
 }
 
+// Disabling AudioRoutingArbitration tests until rdar://136533250 is resolved
+#if PLATFORM(MAC)
+TEST_F(AudioRoutingArbitration, DISABLED_Deletion)
+#else
 TEST_F(AudioRoutingArbitration, Deletion)
+#endif
 {
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusActive, "Deletion 1");
 
@@ -112,7 +132,12 @@ TEST_F(AudioRoutingArbitration, Deletion)
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusNone, "Deletion 2", true);
 }
 
+// Disabling AudioRoutingArbitration tests until rdar://136533250 is resolved
+#if PLATFORM(MAC)
+TEST_F(AudioRoutingArbitration, DISABLED_Close)
+#else
 TEST_F(AudioRoutingArbitration, Close)
+#endif
 {
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusActive, "Close 1");
 
@@ -121,7 +146,12 @@ TEST_F(AudioRoutingArbitration, Close)
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusNone, "Close 2");
 }
 
+// Disabling AudioRoutingArbitration tests until rdar://136533250 is resolved
+#if PLATFORM(MAC)
+TEST_F(AudioRoutingArbitration, DISABLED_Updating)
+#else
 TEST_F(AudioRoutingArbitration, Updating)
+#endif
 {
     statusShouldBecomeEqualTo(WKWebViewAudioRoutingArbitrationStatusActive, "Updating 1");
 
@@ -146,7 +176,7 @@ TEST_F(AudioRoutingArbitration, Updating)
         if ([webView _audioRoutingArbitrationUpdateTime] > arbitrationUpdateTime)
             break;
 
-        TestWebKitAPI::Util::sleep(0.1);
+        TestWebKitAPI::Util::runFor(0.1_s);
     } while (++tries <= 100);
 
     EXPECT_LT(arbitrationUpdateTime, [webView _audioRoutingArbitrationUpdateTime]) << "Arbitration was not updated";

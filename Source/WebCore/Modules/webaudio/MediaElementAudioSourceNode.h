@@ -40,11 +40,13 @@ class AudioContext;
 struct MediaElementAudioSourceOptions;
     
 class MediaElementAudioSourceNode final : public AudioNode, public AudioSourceProviderClient {
-    WTF_MAKE_ISO_ALLOCATED(MediaElementAudioSourceNode);
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(MediaElementAudioSourceNode);
 public:
     static ExceptionOr<Ref<MediaElementAudioSourceNode>> create(BaseAudioContext&, MediaElementAudioSourceOptions&&);
 
     virtual ~MediaElementAudioSourceNode();
+
+    USING_CAN_MAKE_WEAKPTR(AudioNode);
 
     HTMLMediaElement& mediaElement() { return m_mediaElement; }
 

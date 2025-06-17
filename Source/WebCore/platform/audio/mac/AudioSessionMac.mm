@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2019 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,8 +31,11 @@
 #import "FloatConversion.h"
 #import "Logging.h"
 #import "NotImplemented.h"
+#import "SpanCoreAudio.h"
 #import <CoreAudio/AudioHardware.h>
+#import <wtf/LoggerHelper.h>
 #import <wtf/MainThread.h>
+#import <wtf/TZoneMallocInlines.h>
 #import <wtf/UniqueArray.h>
 #import <wtf/text/WTFString.h>
 
@@ -40,7 +43,9 @@
 
 namespace WebCore {
 
-static AudioDeviceID defaultDevice()
+WTF_MAKE_TZONE_ALLOCATED_IMPL(AudioSessionMac);
+
+static AudioDeviceID defaultDeviceWithoutCaching()
 {
     AudioDeviceID deviceID = kAudioDeviceUnknown;
     UInt32 infoSize = sizeof(deviceID);
@@ -48,13 +53,7 @@ static AudioDeviceID defaultDevice()
     AudioObjectPropertyAddress defaultOutputDeviceAddress = {
         kAudioHardwarePropertyDefaultOutputDevice,
         kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
         kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
     };
     OSStatus result = AudioObjectGetPropertyData(kAudioObjectSystemObject, &defaultOutputDeviceAddress, 0, 0, &infoSize, (void*)&deviceID);
     if (result)
@@ -73,118 +72,151 @@ static float defaultDeviceTransportIsBluetooth()
     static const AudioObjectPropertyAddress audioDeviceTransportTypeProperty = {
         kAudioDevicePropertyTransportType,
         kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
         kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster,
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
     };
     UInt32 transportType = kAudioDeviceTransportTypeUnknown;
     UInt32 transportSize = sizeof(transportType);
-    if (AudioObjectGetPropertyData(defaultDevice(), &audioDeviceTransportTypeProperty, 0, 0, &transportSize, &transportType))
+    if (AudioObjectGetPropertyData(defaultDeviceWithoutCaching(), &audioDeviceTransportTypeProperty, 0, 0, &transportSize, &transportType))
         return false;
 
     return transportType == kAudioDeviceTransportTypeBluetooth || transportType == kAudioDeviceTransportTypeBluetoothLE;
 }
 #endif
 
-void AudioSessionMac::addSampleRateObserverIfNeeded() const
+Ref<AudioSessionMac> AudioSessionMac::create()
 {
-    if (m_hasSampleRateObserver)
-        return;
-    m_hasSampleRateObserver = true;
-
-    AudioObjectPropertyAddress nominalSampleRateAddress = {
-        kAudioDevicePropertyNominalSampleRate,
-        kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
-        kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
-    };
-    AudioObjectAddPropertyListener(defaultDevice(), &nominalSampleRateAddress, handleSampleRateChange, const_cast<AudioSessionMac*>(this));
+    return adoptRef(*new AudioSessionMac);
 }
 
-OSStatus AudioSessionMac::handleSampleRateChange(AudioObjectID device, UInt32, const AudioObjectPropertyAddress* sampleRateAddress, void* inClientData)
+AudioSessionMac::AudioSessionMac() = default;
+
+AudioSessionMac::~AudioSessionMac() = default;
+
+void AudioSessionMac::removePropertyListenersForDefaultDevice() const
 {
-    ASSERT(inClientData);
-    if (!inClientData)
-        return noErr;
+    if (hasBufferSizeObserver()) {
+        AudioObjectRemovePropertyListenerBlock(defaultDevice(), &bufferSizeAddress(), dispatch_get_main_queue(), m_handleBufferSizeChangeBlock.get());
+        m_handleBufferSizeChangeBlock = nullptr;
+    }
+    if (hasSampleRateObserver()) {
+        AudioObjectRemovePropertyListenerBlock(defaultDevice(), &nominalSampleRateAddress(), dispatch_get_main_queue(), m_handleSampleRateChangeBlock.get());
+        m_handleSampleRateChangeBlock = nullptr;
+    }
+    if (hasMuteChangeObserver())
+        removeMuteChangeObserverIfNeeded();
+}
 
-    auto* session = static_cast<AudioSessionMac*>(inClientData);
+void AudioSessionMac::handleDefaultDeviceChange()
+{
+    bool hadBufferSizeObserver = hasBufferSizeObserver();
+    bool hadSampleRateObserver = hasSampleRateObserver();
+    bool hadMuteObserver = hasMuteChangeObserver();
 
-    Float64 nominalSampleRate;
-    UInt32 nominalSampleRateSize = sizeof(Float64);
-    OSStatus result = AudioObjectGetPropertyData(device, sampleRateAddress, 0, 0, &nominalSampleRateSize, (void*)&nominalSampleRate);
-    if (result)
-        return result;
+    removePropertyListenersForDefaultDevice();
+    m_defaultDevice = defaultDeviceWithoutCaching();
 
-    session->m_sampleRate = narrowPrecisionToFloat(nominalSampleRate);
+    if (hadBufferSizeObserver)
+        addBufferSizeObserverIfNeeded();
+    if (hadSampleRateObserver)
+        addSampleRateObserverIfNeeded();
+    if (hadMuteObserver)
+        addMuteChangeObserverIfNeeded();
 
-    callOnMainThread([session] {
-        session->handleSampleRateChange();
+    if (m_bufferSize)
+        handleBufferSizeChange();
+    if (m_sampleRate)
+        handleSampleRateChange();
+    if (m_lastMutedState)
+        handleMutedStateChange();
+}
+
+const AudioObjectPropertyAddress& AudioSessionMac::defaultOutputDeviceAddress()
+{
+    static const AudioObjectPropertyAddress defaultOutputDeviceAddress = {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    return defaultOutputDeviceAddress;
+}
+
+void AudioSessionMac::addDefaultDeviceObserverIfNeeded() const
+{
+    if (hasDefaultDeviceObserver())
+        return;
+
+    m_handleDefaultDeviceChangeBlock = makeBlockPtr([weakSession = ThreadSafeWeakPtr { *this }](UInt32, const AudioObjectPropertyAddress[]) mutable {
+        if (auto session = weakSession.get())
+            session->handleDefaultDeviceChange();
     });
+    AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &defaultOutputDeviceAddress(), dispatch_get_main_queue(), m_handleDefaultDeviceChangeBlock.get());
+}
 
-    return noErr;
+const AudioObjectPropertyAddress& AudioSessionMac::nominalSampleRateAddress()
+{
+    static const AudioObjectPropertyAddress nominalSampleRateAddress = {
+        kAudioDevicePropertyNominalSampleRate,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    return nominalSampleRateAddress;
+}
+
+void AudioSessionMac::addSampleRateObserverIfNeeded() const
+{
+    if (hasSampleRateObserver())
+        return;
+
+    m_handleSampleRateChangeBlock = makeBlockPtr([weakSession = ThreadSafeWeakPtr { *this }](UInt32, const AudioObjectPropertyAddress[]) {
+        if (RefPtr session = weakSession.get())
+            session->handleSampleRateChange();
+    });
+    AudioObjectAddPropertyListenerBlock(defaultDevice(), &nominalSampleRateAddress(), dispatch_get_main_queue(), m_handleSampleRateChangeBlock.get());
 }
 
 void AudioSessionMac::handleSampleRateChange() const
 {
+    auto newSampleRate = sampleRateWithoutCaching();
+    if (m_sampleRate == newSampleRate)
+        return;
+
+    m_sampleRate = newSampleRate;
     m_configurationChangeObservers.forEach([this](auto& observer) {
         observer.sampleRateDidChange(*this);
     });
 }
 
-void AudioSessionMac::addBufferSizeObserverIfNeeded() const
+const AudioObjectPropertyAddress& AudioSessionMac::bufferSizeAddress()
 {
-    if (m_hasBufferSizeObserver)
-        return;
-    m_hasBufferSizeObserver = true;
-
-    AudioObjectPropertyAddress bufferSizeAddress = {
+    static const AudioObjectPropertyAddress bufferSizeAddress = {
         kAudioDevicePropertyBufferFrameSize,
         kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
         kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
     };
-    AudioObjectAddPropertyListener(defaultDevice(), &bufferSizeAddress, handleBufferSizeChange, const_cast<AudioSessionMac*>(this));
+    return bufferSizeAddress;
 }
 
-OSStatus AudioSessionMac::handleBufferSizeChange(AudioObjectID device, UInt32, const AudioObjectPropertyAddress* bufferSizeAddress, void* inClientData)
+void AudioSessionMac::addBufferSizeObserverIfNeeded() const
 {
-    ASSERT(inClientData);
-    if (!inClientData)
-        return noErr;
+    if (hasBufferSizeObserver())
+        return;
 
-    auto* session = static_cast<AudioSessionMac*>(inClientData);
-
-    UInt32 bufferSize;
-    UInt32 bufferSizeSize = sizeof(bufferSize);
-    OSStatus result = AudioObjectGetPropertyData(device, bufferSizeAddress, 0, 0, &bufferSizeSize, &bufferSize);
-    if (result)
-        return result;
-
-    session->m_bufferSize = bufferSize;
-
-    callOnMainThread([session] {
-        session->handleBufferSizeChange();
+    m_handleBufferSizeChangeBlock = makeBlockPtr([weakSession = ThreadSafeWeakPtr { *this }](UInt32, const AudioObjectPropertyAddress[]) {
+        if (RefPtr session = weakSession.get())
+            session->handleBufferSizeChange();
     });
-
-    return noErr;
+    AudioObjectAddPropertyListenerBlock(defaultDevice(), &bufferSizeAddress(), dispatch_get_main_queue(), m_handleBufferSizeChangeBlock.get());
 }
 
 void AudioSessionMac::handleBufferSizeChange() const
 {
+    auto newBufferSize = bufferSizeWithoutCaching();
+    if (!newBufferSize)
+        return;
+    if (m_bufferSize == newBufferSize)
+        return;
+
+    m_bufferSize = newBufferSize;
     m_configurationChangeObservers.forEach([this](auto& observer) {
         observer.bufferSizeDidChange(*this);
     });
@@ -196,12 +228,14 @@ void AudioSessionMac::audioOutputDeviceChanged()
     if (!m_playingToBluetooth || *m_playingToBluetooth == defaultDeviceTransportIsBluetooth())
         return;
 
+    ALWAYS_LOG(LOGIDENTIFIER);
     m_playingToBluetooth = std::nullopt;
 #endif
 }
 
 void AudioSessionMac::setIsPlayingToBluetoothOverride(std::optional<bool> value)
 {
+    ALWAYS_LOG(LOGIDENTIFIER, value ? (*value ? "true" : "false") : "null");
 #if ENABLE(ROUTING_ARBITRATION)
     isPlayingToBluetoothOverride = value;
 #else
@@ -209,14 +243,19 @@ void AudioSessionMac::setIsPlayingToBluetoothOverride(std::optional<bool> value)
 #endif
 }
 
-void AudioSessionMac::setCategory(CategoryType category, RouteSharingPolicy)
+void AudioSessionMac::setCategory(CategoryType category, Mode mode, RouteSharingPolicy policy)
 {
+    AudioSessionCocoa::setCategory(category, mode, policy);
+
 #if ENABLE(ROUTING_ARBITRATION)
+    ALWAYS_LOG(LOGIDENTIFIER, category, " mode = ", mode, " policy = ", policy);
+
     bool playingToBluetooth = defaultDeviceTransportIsBluetooth();
     if (category == m_category && m_playingToBluetooth && *m_playingToBluetooth == playingToBluetooth)
         return;
 
     m_category = category;
+    m_policy = policy;
 
     if (m_setupArbitrationOngoing) {
         RELEASE_LOG_ERROR(Media, "AudioSessionMac::setCategory() - a beginArbitrationWithCategory is still ongoing");
@@ -239,21 +278,27 @@ void AudioSessionMac::setCategory(CategoryType category, RouteSharingPolicy)
 
     m_playingToBluetooth = playingToBluetooth;
     m_setupArbitrationOngoing = true;
-    m_routingArbitrationClient->beginRoutingArbitrationWithCategory(m_category, [this] (RoutingArbitrationError error, DefaultRouteChanged defaultRouteChanged) {
-        m_setupArbitrationOngoing = false;
+    m_routingArbitrationClient->beginRoutingArbitrationWithCategory(m_category, [weakThis = ThreadSafeWeakPtr { *this }] (RoutingArbitrationError error, DefaultRouteChanged defaultRouteChanged) {
+        RefPtr protectedThis = weakThis.get();
+        if (!protectedThis)
+            return;
+
+        protectedThis->m_setupArbitrationOngoing = false;
         if (error != RoutingArbitrationError::None) {
-            RELEASE_LOG_ERROR(Media, "AudioSessionMac::setCategory() - beginArbitrationWithCategory:%s failed with error %s", convertEnumerationToString(m_category).ascii().data(), convertEnumerationToString(error).ascii().data());
+            RELEASE_LOG_ERROR(Media, "AudioSessionMac::setCategory() - beginArbitrationWithCategory:%s failed with error %s", convertEnumerationToString(protectedThis->m_category).ascii().data(), convertEnumerationToString(error).ascii().data());
             return;
         }
 
-        m_inRoutingArbitration = true;
+        protectedThis->m_inRoutingArbitration = true;
 
         // FIXME: Do we need to reset sample rate and buffer size for the new default device?
         if (defaultRouteChanged == DefaultRouteChanged::Yes)
             LOG(Media, "AudioSessionMac::setCategory() - defaultRouteChanged!");
     });
 #else
+    UNUSED_PARAM(mode);
     m_category = category;
+    m_policy = policy;
 #endif
 }
 
@@ -261,36 +306,29 @@ float AudioSessionMac::sampleRate() const
 {
     if (!m_sampleRate) {
         addSampleRateObserverIfNeeded();
-
-        Float64 nominalSampleRate;
-        UInt32 nominalSampleRateSize = sizeof(Float64);
-
-        AudioObjectPropertyAddress nominalSampleRateAddress = {
-            kAudioDevicePropertyNominalSampleRate,
-            kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
-            kAudioObjectPropertyElementMain
-#else
-            ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-            kAudioObjectPropertyElementMaster
-            ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
-        };
-        OSStatus result = AudioObjectGetPropertyData(defaultDevice(), &nominalSampleRateAddress, 0, 0, &nominalSampleRateSize, (void*)&nominalSampleRate);
-        if (result != noErr) {
-            RELEASE_LOG_ERROR(Media, "AudioSessionMac::sampleRate() - AudioObjectGetPropertyData() failed with error %d", result);
-            return 44100;
-        }
-
-        m_sampleRate = narrowPrecisionToFloat(nominalSampleRate);
-        if (!*m_sampleRate) {
-            RELEASE_LOG_ERROR(Media, "AudioSessionMac::sampleRate() - AudioObjectGetPropertyData() return an invalid sample rate");
-            m_sampleRate = 44100;
-        }
-
         handleSampleRateChange();
+        ASSERT(m_sampleRate);
     }
     return *m_sampleRate;
+}
+
+float AudioSessionMac::sampleRateWithoutCaching() const
+{
+    Float64 nominalSampleRate;
+    UInt32 nominalSampleRateSize = sizeof(Float64);
+
+    OSStatus result = AudioObjectGetPropertyData(defaultDevice(), &nominalSampleRateAddress(), 0, 0, &nominalSampleRateSize, (void*)&nominalSampleRate);
+    if (result != noErr) {
+        RELEASE_LOG_ERROR(Media, "AudioSessionMac::sampleRate() - AudioObjectGetPropertyData() failed with error %d", result);
+        return 44100;
+    }
+
+    auto sampleRate = narrowPrecisionToFloat(nominalSampleRate);
+    if (!sampleRate) {
+        RELEASE_LOG_ERROR(Media, "AudioSessionMac::sampleRate() - AudioObjectGetPropertyData() return an invalid sample rate");
+        return 44100;
+    }
+    return sampleRate;
 }
 
 size_t AudioSessionMac::bufferSize() const
@@ -300,28 +338,28 @@ size_t AudioSessionMac::bufferSize() const
 
     addBufferSizeObserverIfNeeded();
 
+    m_bufferSize = bufferSizeWithoutCaching();
+    return m_bufferSize.value_or(0);
+}
+
+std::optional<size_t> AudioSessionMac::bufferSizeWithoutCaching() const
+{
     UInt32 bufferSize;
     UInt32 bufferSizeSize = sizeof(bufferSize);
-
-    AudioObjectPropertyAddress bufferSizeAddress = {
-        kAudioDevicePropertyBufferFrameSize,
-        kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
-        kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
-    };
-    OSStatus result = AudioObjectGetPropertyData(defaultDevice(), &bufferSizeAddress, 0, 0, &bufferSizeSize, &bufferSize);
-
+    OSStatus result = AudioObjectGetPropertyData(defaultDevice(), &bufferSizeAddress(), 0, 0, &bufferSizeSize, &bufferSize);
     if (result)
-        return 0;
-
-    m_bufferSize = bufferSize;
+        return std::nullopt;
 
     return bufferSize;
+}
+
+AudioDeviceID AudioSessionMac::defaultDevice() const
+{
+    if (!m_defaultDevice) {
+        m_defaultDevice = defaultDeviceWithoutCaching();
+        addDefaultDeviceObserverIfNeeded();
+    }
+    return *m_defaultDevice;
 }
 
 size_t AudioSessionMac::numberOfOutputChannels() const
@@ -335,13 +373,7 @@ size_t AudioSessionMac::maximumNumberOfOutputChannels() const
     AudioObjectPropertyAddress sizeAddress = {
         kAudioDevicePropertyStreamConfiguration,
         kAudioObjectPropertyScopeOutput,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
         kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
     };
 
     UInt32 size = 0;
@@ -357,20 +389,9 @@ size_t AudioSessionMac::maximumNumberOfOutputChannels() const
         return 0;
 
     size_t channels = 0;
-    for (UInt32 i = 0; i < audioBufferList->mNumberBuffers; ++i)
-        channels += audioBufferList->mBuffers[i].mNumberChannels;
+    for (auto& buffer : span(*audioBufferList))
+        channels += buffer.mNumberChannels;
     return channels;
-}
-
-bool AudioSessionMac::tryToSetActiveInternal(bool)
-{
-    notImplemented();
-    return true;
-}
-
-RouteSharingPolicy AudioSessionMac::routeSharingPolicy() const
-{
-    return RouteSharingPolicy::Default;
 }
 
 String AudioSessionMac::routingContextUID() const
@@ -388,18 +409,14 @@ void AudioSessionMac::setPreferredBufferSize(size_t bufferSize)
     if (m_bufferSize == bufferSize)
         return;
 
+    ALWAYS_LOG(LOGIDENTIFIER, bufferSize);
+
     AudioValueRange bufferSizeRange = {0, 0};
     UInt32 bufferSizeRangeSize = sizeof(AudioValueRange);
     AudioObjectPropertyAddress bufferSizeRangeAddress = {
         kAudioDevicePropertyBufferFrameSizeRange,
         kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
         kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
     };
     OSStatus result = AudioObjectGetPropertyData(defaultDevice(), &bufferSizeRangeAddress, 0, 0, &bufferSizeRangeSize, &bufferSizeRange);
     if (result)
@@ -409,23 +426,13 @@ void AudioSessionMac::setPreferredBufferSize(size_t bufferSize)
     size_t maxBufferSize = static_cast<size_t>(bufferSizeRange.mMaximum);
     UInt32 bufferSizeOut = std::min(maxBufferSize, std::max(minBufferSize, bufferSize));
 
-    AudioObjectPropertyAddress preferredBufferSizeAddress = {
-        kAudioDevicePropertyBufferFrameSize,
-        kAudioObjectPropertyScopeGlobal,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
-        kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
-    };
-
-    result = AudioObjectSetPropertyData(defaultDevice(), &preferredBufferSizeAddress, 0, 0, sizeof(bufferSizeOut), (void*)&bufferSizeOut);
+    result = AudioObjectSetPropertyData(defaultDevice(), &bufferSizeAddress(), 0, 0, sizeof(bufferSizeOut), (void*)&bufferSizeOut);
 
     if (!result) {
         m_bufferSize = bufferSizeOut;
-        handleBufferSizeChange();
+        m_configurationChangeObservers.forEach([this](auto& observer) {
+            observer.bufferSizeDidChange(*this);
+        });
     }
 
 #if !LOG_DISABLED
@@ -443,13 +450,7 @@ bool AudioSessionMac::isMuted() const
     AudioObjectPropertyAddress muteAddress = {
         kAudioDevicePropertyMute,
         kAudioDevicePropertyScopeOutput,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
         kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
     };
     AudioObjectGetPropertyData(defaultDevice(), &muteAddress, 0, nullptr, &muteSize, &mute);
     
@@ -464,12 +465,31 @@ bool AudioSessionMac::isMuted() const
     }
 }
 
-static OSStatus handleMutePropertyChange(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void* inClientData)
+size_t AudioSessionMac::outputLatency() const
 {
-    callOnMainThread([inClientData] {
-        reinterpret_cast<AudioSession*>(inClientData)->handleMutedStateChange();
-    });
-    return noErr;
+    AudioObjectPropertyAddress addr = {
+        0,
+        kAudioDevicePropertyScopeOutput,
+        kAudioObjectPropertyElementMain
+    };
+
+    addr.mSelector = kAudioDevicePropertyLatency;
+    UInt32 size = sizeof(UInt32);
+    UInt32 deviceLatency = 0;
+    if (AudioObjectGetPropertyData(defaultDevice(), &addr, 0, 0, &size, &deviceLatency) != noErr)
+        deviceLatency = 0;
+
+    UInt32 streamLatency = 0;
+    addr.mSelector = kAudioDevicePropertyStreams;
+    AudioStreamID streamID;
+    size = sizeof(AudioStreamID);
+    if (AudioObjectGetPropertyData(defaultDevice(), &addr, 0, 0, &size, &streamID) == noErr) {
+        addr.mSelector = kAudioStreamPropertyLatency;
+        size = sizeof(UInt32);
+        AudioObjectGetPropertyData(streamID, &addr, 0, 0, &size, &streamLatency);
+    }
+
+    return deviceLatency + streamLatency;
 }
 
 void AudioSessionMac::handleMutedStateChange()
@@ -485,45 +505,68 @@ void AudioSessionMac::handleMutedStateChange()
     });
 }
 
-void AudioSessionMac::addConfigurationChangeObserver(ConfigurationChangeObserver& observer)
+const AudioObjectPropertyAddress& AudioSessionMac::muteAddress()
+{
+    static const AudioObjectPropertyAddress muteAddress = {
+        kAudioDevicePropertyMute,
+        kAudioDevicePropertyScopeOutput,
+        kAudioObjectPropertyElementMain
+    };
+    return muteAddress;
+}
+
+void AudioSessionMac::addConfigurationChangeObserver(AudioSessionConfigurationChangeObserver& observer)
 {
     m_configurationChangeObservers.add(observer);
 
     if (m_configurationChangeObservers.computeSize() > 1)
         return;
 
-    AudioObjectPropertyAddress muteAddress = {
-        kAudioDevicePropertyMute,
-        kAudioDevicePropertyScopeOutput,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
-        kAudioObjectPropertyElementMain
-#else
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-        kAudioObjectPropertyElementMaster
-        ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
-    };
-    AudioObjectAddPropertyListener(defaultDevice(), &muteAddress, handleMutePropertyChange, this);
+    addMuteChangeObserverIfNeeded();
 }
 
-void AudioSessionMac::removeConfigurationChangeObserver(ConfigurationChangeObserver& observer)
+void AudioSessionMac::removeConfigurationChangeObserver(AudioSessionConfigurationChangeObserver& observer)
 {
-    if (m_configurationChangeObservers.computeSize() == 1) {
-        AudioObjectPropertyAddress muteAddress = {
-            kAudioDevicePropertyMute,
-            kAudioDevicePropertyScopeOutput,
-#if HAVE(AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN)
-            kAudioObjectPropertyElementMain
-#else
-            ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-            kAudioObjectPropertyElementMaster
-            ALLOW_DEPRECATED_DECLARATIONS_END
-#endif
-        };
-        AudioObjectRemovePropertyListener(defaultDevice(), &muteAddress, handleMutePropertyChange, this);
-    }
+    if (m_configurationChangeObservers.computeSize() == 1)
+        removeMuteChangeObserverIfNeeded();
 
     m_configurationChangeObservers.remove(observer);
+}
+
+void AudioSessionMac::addMuteChangeObserverIfNeeded() const
+{
+    if (hasMuteChangeObserver())
+        return;
+
+    m_handleMutedStateChangeBlock = makeBlockPtr([weakSession = ThreadSafeWeakPtr { *this }](UInt32, const AudioObjectPropertyAddress[]) {
+        if (RefPtr session = weakSession.get())
+            session->handleMutedStateChange();
+    });
+    AudioObjectAddPropertyListenerBlock(defaultDevice(), &muteAddress(), dispatch_get_main_queue(), m_handleMutedStateChangeBlock.get());
+}
+
+void AudioSessionMac::removeMuteChangeObserverIfNeeded() const
+{
+    if (!hasMuteChangeObserver())
+        return;
+
+    AudioObjectRemovePropertyListenerBlock(defaultDevice(), &muteAddress(), dispatch_get_main_queue(), m_handleMutedStateChangeBlock.get());
+    m_handleMutedStateChangeBlock = nullptr;
+}
+
+WTFLogChannel& AudioSessionMac::logChannel() const
+{
+    return LogMedia;
+}
+
+uint64_t AudioSessionMac::logIdentifier() const
+{
+#if ENABLE(ROUTING_ARBITRATION)
+    if (m_routingArbitrationClient)
+        return m_routingArbitrationClient->logIdentifier();
+#endif
+
+    return 0;
 }
 
 }

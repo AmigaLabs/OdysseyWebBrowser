@@ -28,6 +28,21 @@
 
 #include "pas_config_prefix.h"
 
+#include "stdbool.h"
+
+#define PAS_LOG_NONE (0)
+#define PAS_LOG_HEAP_INFRASTRUCTURE (1 << 0)
+#define PAS_LOG_BOOTSTRAP_HEAPS (1 << 1)
+#define PAS_LOG_IMMORTAL_HEAPS (1 << 2)
+#define PAS_LOG_SEGREGATED_HEAPS (1 << 3)
+#define PAS_LOG_BITFIT_HEAPS (1 << 4)
+#define PAS_LOG_LARGE_HEAPS (1 << 5)
+#define PAS_LOG_JIT_HEAPS (1 << 6)
+#define PAS_LOG_OTHER (1 << 7)  /* Heap-type agnostic */
+
+#define PAS_LOG_LEVEL (PAS_LOG_NONE)
+#define PAS_SHOULD_LOG(level) (PAS_LOG_LEVEL & level)
+
 #define LIBPAS_ENABLED 1
 
 #if defined(PAS_BMALLOC)
@@ -38,6 +53,11 @@
 #endif
 #endif
 
+#if ((PAS_OS(DARWIN) && __PAS_ARM64 && !__PAS_ARM64E) || PAS_PLATFORM(PLAYSTATION)) && defined(NDEBUG)
+#define PAS_ENABLE_ASSERT 0
+#else
+#define PAS_ENABLE_ASSERT 1
+#endif
 #define PAS_ENABLE_TESTING __PAS_ENABLE_TESTING
 
 #define PAS_ARM64 __PAS_ARM64
@@ -45,9 +65,11 @@
 
 #define PAS_ARM __PAS_ARM
 
+#define PAS_RISCV __PAS_RISCV
+
 #define PAS_ADDRESS_BITS                 48
 
-#if PAS_ARM
+#if PAS_ARM || PAS_PLATFORM(PLAYSTATION)
 #define PAS_MAX_GRANULES                 256
 #else
 #define PAS_MAX_GRANULES                 1024
@@ -90,12 +112,12 @@
 #define PAS_COMPACT_PTR_MASK             ((uintptr_t)(((uint64_t)1 \
                                                        << (PAS_COMPACT_PTR_BITS & 63)) - 1))
 
-#define PAS_ALLOCATOR_INDEX_BYTES        2
+#define PAS_ALLOCATOR_INDEX_BYTES        4
 
-#ifdef PAS_BMALLOC
-#define PAS_USE_SPINLOCKS                1
-#else
+#if PAS_OS(DARWIN) || PAS_PLATFORM(PLAYSTATION)
 #define PAS_USE_SPINLOCKS                0
+#else
+#define PAS_USE_SPINLOCKS                1
 #endif
 
 #endif /* PAS_CONFIG_H */

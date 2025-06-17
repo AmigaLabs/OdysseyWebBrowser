@@ -38,6 +38,7 @@
 #include "GStreamerEMEUtilities.h"
 #include "MediaKeyStatus.h"
 #include "SharedBuffer.h"
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakPtr.h>
 
 namespace WebCore {
@@ -53,13 +54,13 @@ using UniqueThunderSystem = std::unique_ptr<OpenCDMSystem, ThunderSystemDeleter>
 } // namespace Thunder
 
 class CDMFactoryThunder final : public CDMFactory, public CDMProxyFactory {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(CDMFactoryThunder);
 public:
     static CDMFactoryThunder& singleton();
 
     virtual ~CDMFactoryThunder() = default;
 
-    std::unique_ptr<CDMPrivate> createCDM(const String&) final;
+    std::unique_ptr<CDMPrivate> createCDM(const String& keySystem, const String& mediaKeysHashSalt, const CDMPrivateClient&) final;
     RefPtr<CDMProxy> createCDMProxy(const String&) final;
     bool supportsKeySystem(const String&) final;
     const Vector<String>& supportedKeySystems() const;
@@ -70,7 +71,7 @@ private:
 };
 
 class CDMPrivateThunder final : public CDMPrivate {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(CDMPrivateThunder);
 public:
     CDMPrivateThunder(const String& keySystem);
     virtual ~CDMPrivateThunder() = default;
@@ -94,7 +95,6 @@ public:
     bool supportsServerCertificates() const final;
     bool supportsSessions() const final;
     bool supportsInitData(const AtomString&, const SharedBuffer&) const final;
-    RefPtr<SharedBuffer> sanitizeInitData(const AtomString& initDataType, const SharedBuffer& initData) const final;
     RefPtr<SharedBuffer> sanitizeResponse(const SharedBuffer&) const final;
     std::optional<String> sanitizeSessionId(const String&) const final;
 
@@ -127,7 +127,7 @@ class CDMInstanceSessionThunder final : public CDMInstanceSessionProxy {
 public:
     CDMInstanceSessionThunder(CDMInstanceThunder&);
 
-    void requestLicense(LicenseType, const AtomString& initDataType, Ref<SharedBuffer>&& initData, LicenseCallback&&) final;
+    void requestLicense(LicenseType, KeyGroupingStrategy, const AtomString& initDataType, Ref<SharedBuffer>&& initData, LicenseCallback&&) final;
     void updateLicense(const String&, LicenseType, Ref<SharedBuffer>&&, LicenseUpdateCallback&&) final;
     void loadSession(LicenseType, const String&, const String&, LoadSessionCallback&&) final;
     void closeSession(const String&, CloseSessionCallback&&) final;

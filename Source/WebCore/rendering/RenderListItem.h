@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003-2018 Apple Inc. All rights reserved.
+ * Copyright (C) 2003-2023 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -30,7 +30,8 @@ namespace WebCore {
 class HTMLOListElement;
 
 class RenderListItem final : public RenderBlockFlow {
-    WTF_MAKE_ISO_ALLOCATED(RenderListItem);
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(RenderListItem);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(RenderListItem);
 public:
     RenderListItem(Element&, RenderStyle&&);
     virtual ~RenderListItem();
@@ -40,14 +41,8 @@ public:
     int value() const;
     void updateValue();
 
-    std::optional<int> explicitValue() const { return m_valueWasSetExplicitly ? m_value : std::nullopt; }
-    void setExplicitValue(std::optional<int>);
-
-    void setNotInList(bool notInList) { m_notInList = notInList; }
-    bool notInList() const { return m_notInList; }
-
-    WEBCORE_EXPORT StringView markerTextWithoutSuffix() const;
-    StringView markerTextWithSuffix() const;
+    WEBCORE_EXPORT String markerTextWithoutSuffix() const;
+    String markerTextWithSuffix() const;
 
     void updateListMarkerNumbers();
 
@@ -57,34 +52,24 @@ public:
     RenderStyle computeMarkerStyle() const;
 
     RenderListMarker* markerRenderer() const { return m_marker.get(); }
-    void setMarkerRenderer(RenderListMarker& marker) { m_marker = makeWeakPtr(marker); }
+    void setMarkerRenderer(RenderListMarker& marker) { m_marker = marker; }
 
     bool isInReversedOrderedList() const;
 
 private:
-    const char* renderName() const final { return "RenderListItem"; }
-
-    bool isListItem() const final { return true; }
+    ASCIILiteral renderName() const final { return "RenderListItem"_s; }
     
-    void insertedIntoTree(IsInternalMove) final;
-    void willBeRemovedFromTree(IsInternalMove) final;
-
     void paint(PaintInfo&, const LayoutPoint&) final;
 
-    void layout() final;
+    void styleDidChange(StyleDifference, const RenderStyle* oldStyle) final;
 
-    void positionListMarker();
-
-    void addOverflowFromChildren() final;
     void computePreferredLogicalWidths() final;
 
     void updateValueNow() const;
-    void explicitValueChanged();
+    void counterDirectivesChanged();
 
-    WeakPtr<RenderListMarker> m_marker;
+    SingleThreadWeakPtr<RenderListMarker> m_marker;
     mutable std::optional<int> m_value;
-    bool m_valueWasSetExplicitly { false };
-    bool m_notInList { false };
 };
 
 bool isHTMLListElement(const Node&);
@@ -98,4 +83,4 @@ inline int RenderListItem::value() const
 
 } // namespace WebCore
 
-SPECIALIZE_TYPE_TRAITS_RENDER_OBJECT(RenderListItem, isListItem())
+SPECIALIZE_TYPE_TRAITS_RENDER_OBJECT(RenderListItem, isRenderListItem())

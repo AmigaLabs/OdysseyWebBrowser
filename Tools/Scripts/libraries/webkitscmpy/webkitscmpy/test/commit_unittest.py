@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Apple Inc. All rights reserved.
+# Copyright (C) 2020-2023 Apple Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -21,13 +21,21 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json
+import logging
+import os
 import unittest
 
+from mock import patch
 from datetime import datetime
-from webkitscmpy import Commit, Contributor
+from webkitbugspy import bugzilla, mocks as bmocks, Tracker, radar
+from webkitcorepy import OutputCapture, testing
+from webkitcorepy.mocks import Environment
+from webkitscmpy import Contributor, Commit, program, mocks
 
 
 class TestCommit(unittest.TestCase):
+    BUGZILLA = 'https://bugs.example.com'
+
     def test_parse_hash(self):
         self.assertEqual(
             '1a2e41e3f7cdf51b1e1d02880cfb65eab9327ef2',
@@ -52,6 +60,7 @@ class TestCommit(unittest.TestCase):
         self.assertEqual(None, Commit._parse_revision('-1'))
         self.assertEqual(None, Commit._parse_revision('3.141592'))
         self.assertEqual(None, Commit._parse_revision(3.141592))
+        self.assertEqual(None, Commit._parse_revision('12345678901'))
 
     def test_parse_identifier(self):
         self.assertEqual((None, 1234, None), Commit._parse_identifier('1234'))
@@ -72,6 +81,7 @@ class TestCommit(unittest.TestCase):
         self.assertEqual(None, Commit._parse_identifier('r266896'))
         self.assertEqual(None, Commit._parse_identifier('c3bd784f8b88bd03'))
         self.assertEqual(None, Commit._parse_identifier(3.141592))
+        self.assertEqual(None, Commit._parse_identifier('12345678901'))
 
     def test_parse(self):
         self.assertEqual(Commit.parse('123@main'), Commit(identifier=123, branch='main'))
@@ -82,6 +92,10 @@ class TestCommit(unittest.TestCase):
         self.assertEqual(
             Commit.parse('c3bd784f8b88bd03f64467ddd3304ed8be28acbe'),
             Commit(hash='c3bd784f8b88bd03f64467ddd3304ed8be28acbe'),
+        )
+        self.assertEqual(
+            Commit.parse('12345678901'),
+            Commit(hash='12345678901'),
         )
 
     def test_pretty_print(self):
@@ -298,3 +312,302 @@ PRINTED
                 message='Message'
             ),
         )
+
+    def test_parse_issues(self):
+        contributor = Contributor.from_scm_log('Author: jbedard@apple.com <jbedard@apple.com>')
+        commit = Commit(
+            revision=1,
+            hash='c3bd784f8b88bd03f64467ddd3304ed8be28acbe',
+            identifier='1@main',
+            timestamp=1000,
+            author=Contributor.Encoder().default(contributor),
+            message='Commit title\n'
+                    'https://bugs.example.com/show_bug.cgi?id=1\n'
+                    '<rdar://problem/2>\n\n'
+                    'Reviewed by NOBODY (OOPS!)\n\n'
+                    'Will fix this in https://bugs.example.com/show_bug.cgi?id=3 and <rdar://problem/4>\n',
+        )
+
+        with patch('webkitbugspy.Tracker._trackers', []):
+            self.assertEqual([], commit.issues)
+
+        with bmocks.Bugzilla(
+            self.BUGZILLA.split('://')[-1],
+            projects=bmocks.PROJECTS, issues=bmocks.ISSUES,
+        ), patch('webkitbugspy.Tracker._trackers', [bugzilla.Tracker(self.BUGZILLA)]):
+            self.assertEqual([
+                Tracker.from_string('https://bugs.example.com/show_bug.cgi?id=1'),
+            ], commit.issues)
+
+        with bmocks.Radar(), patch('webkitbugspy.Tracker._trackers', [radar.Tracker()]):
+            self.assertEqual([
+                Tracker.from_string('<rdar://problem/2>'),
+            ], commit.issues)
+
+        with bmocks.Bugzilla(
+            self.BUGZILLA.split('://')[-1],
+            projects=bmocks.PROJECTS, issues=bmocks.ISSUES,
+        ), bmocks.Radar(), patch('webkitbugspy.Tracker._trackers', [bugzilla.Tracker(self.BUGZILLA), radar.Tracker()]):
+            self.assertEqual([
+                Tracker.from_string('https://bugs.example.com/show_bug.cgi?id=1'),
+                Tracker.from_string('<rdar://problem/2>'),
+            ], commit.issues)
+
+    def test_parse_issue_ignore_reference(self):
+        contributor = Contributor.from_scm_log('Author: jbedard@apple.com <jbedard@apple.com>')
+        commit = Commit(
+            revision=1,
+            hash='c3bd784f8b88bd03f64467ddd3304ed8be28acbe',
+            identifier='1@main',
+            timestamp=1000,
+            author=Contributor.Encoder().default(contributor),
+            message='Remove something added in rdar://1\n'
+                    'https://bugs.example.com/show_bug.cgi?id=1\n'
+                    '<rdar://problem/2>\n\n'
+                    'Reviewed by NOBODY (OOPS!)\n\n'
+                    'Will fix this in https://bugs.example.com/show_bug.cgi?id=3 and <rdar://problem/4>\n',
+        )
+
+        with bmocks.Bugzilla(
+            self.BUGZILLA.split('://')[-1],
+            projects=bmocks.PROJECTS, issues=bmocks.ISSUES,
+        ), bmocks.Radar(), patch('webkitbugspy.Tracker._trackers', [bugzilla.Tracker(self.BUGZILLA), radar.Tracker()]):
+            self.assertEqual([
+                Tracker.from_string('https://bugs.example.com/show_bug.cgi?id=1'),
+                Tracker.from_string('<rdar://problem/2>'),
+                Tracker.from_string('<rdar://problem/1>'),
+            ], commit.issues)
+
+    def get_trailers(self, message):
+        contributor = Contributor.from_scm_log('Author: jbedard@apple.com <jbedard@apple.com>')
+        commit = Commit(
+            revision=1,
+            hash='c3bd784f8b88bd03f64467ddd3304ed8be28acbe',
+            identifier='1@main',
+            timestamp=1000,
+            author=Contributor.Encoder().default(contributor),
+            message=message,
+        )
+
+        return commit.trailers
+
+    def test_parse_trailers(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'Reviewed by NOBODY (OOPS!)\n\n'
+            'trailer-tag: information\n'
+            'other-tag: stuff\n',
+        )
+
+        self.assertEqual(actual, ['trailer-tag: information', 'other-tag: stuff'])
+
+    def test_parse_trailers_indented(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'Reviewed by NOBODY (OOPS!)\n\n'
+            '    trailer-tag: information\n'
+            'other-tag: stuff\n',
+        )
+
+        self.assertEqual(actual, ['other-tag: stuff'])
+
+    @unittest.expectedFailure
+    def test_parse_trailers_multiline_subject(self):
+        actual = self.get_trailers(
+            'Commit title\n'
+            'Canonical link: https://example.com\n'
+        )
+
+        self.assertEqual(actual, [])
+
+    @unittest.expectedFailure
+    def test_parse_trailers_only_subject(self):
+        actual = self.get_trailers(
+            'Canonical link: https://example.com\n'
+        )
+
+        self.assertEqual(actual, [])
+
+    def test_parse_trailers_whitepsace_in_key(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'Reviewed by NOBODY (OOPS!)\n\n'
+            'not a trailer: line\n'
+        )
+
+        self.assertEqual(actual, [])
+
+    def test_parse_trailers_canonical_link(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'Reviewed by NOBODY (OOPS!)\n\n'
+            'Canonical link: https://example.com\n'
+        )
+
+        self.assertEqual(actual, ['Canonical link: https://example.com'])
+
+    def test_parse_trailers_canonical_link_lowercase(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'Reviewed by NOBODY (OOPS!)\n\n'
+            'canonical link: https://example.com\n'
+        )
+
+        self.assertEqual(actual, [])
+
+    def test_parse_trailers_url_at_end(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'I proposed this in:\n\n'
+            'https://example.com\n'
+        )
+
+        self.assertEqual(actual, ['https: //example.com'])
+
+    def test_parse_trailers_empty_key(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'Upstream:\n'
+            'https://example.com\n'
+        )
+
+        self.assertEqual(actual, ['Upstream: ', 'https: //example.com'])
+
+    def test_parse_trailers_trailing_whitespace(self):
+        actual = self.get_trailers(
+            'Commit title\n\n'
+            'other-tag: stuff\x20\n'
+        )
+
+        self.assertEqual(actual, ['other-tag: stuff'])
+
+    @unittest.expectedFailure
+    def test_parse_trailers_folded(self):
+        actual = self.get_trailers('Title\n\na: a\n a')
+        self.assertEqual(actual, ['a: a\n a'])
+
+    def test_parse_trailers_CR_after_key(self):
+        actual = self.get_trailers('Title\n\na\r:')
+        self.assertEqual(actual, [])
+
+    def test_parse_trailers_CR_before_key(self):
+        actual = self.get_trailers('Title\n\n\ra:')
+        self.assertEqual(actual, [])
+
+    def test_parse_trailers_CR_in_value(self):
+        actual = self.get_trailers('Title\n\na::\r:')
+        self.assertEqual(actual, ['a: :\r:'])
+
+    @unittest.expectedFailure
+    def test_parse_trailers_comment_after_trailers(self):
+        actual = self.get_trailers('Title\n\nother-tag: stuff\n# this is a comment\n')
+        self.assertEqual(actual, ['other-tag: stuff'])
+
+    def test_parse_issue_in_trailers(self):
+        contributor = Contributor.from_scm_log('Author: jbedard@apple.com <jbedard@apple.com>')
+        commit = Commit(
+            revision=1,
+            hash='c3bd784f8b88bd03f64467ddd3304ed8be28acbe',
+            identifier='1@main',
+            timestamp=1000,
+            author=Contributor.Encoder().default(contributor),
+            message='Commit title\n'
+                    'https://bugs.example.com/show_bug.cgi?id=1\n\n'
+                    'Reviewed by NOBODY (OOPS!)\n\n'
+                    'trailer-tag: with https://bugs.example.com/show_bug.cgi?id=2\n',
+        )
+
+        with bmocks.Bugzilla(
+            self.BUGZILLA.split('://')[-1],
+            projects=bmocks.PROJECTS, issues=bmocks.ISSUES,
+        ), patch('webkitbugspy.Tracker._trackers', [bugzilla.Tracker(self.BUGZILLA)]):
+            self.assertEqual([
+                Tracker.from_string('https://bugs.example.com/show_bug.cgi?id=2'),
+                Tracker.from_string('https://bugs.example.com/show_bug.cgi?id=1'),
+            ], commit.issues)
+
+
+class TestDoCommit(testing.PathTestCase):
+    basepath = 'mock/repository'
+    BUGZILLA = 'https://bugs.example.com'
+
+    def setUp(self):
+        super(TestDoCommit, self).setUp()
+        os.mkdir(os.path.join(self.path, '.git'))
+        os.mkdir(os.path.join(self.path, '.svn'))
+
+    def test_svn(self):
+        with OutputCapture(level=logging.INFO) as captured, mocks.local.Git(), mocks.local.Svn(self.path), patch(
+                'webkitbugspy.Tracker._trackers', []):
+            self.assertEqual(1, program.main(
+                args=('commit',),
+                path=self.path,
+            ))
+        self.assertEqual(captured.root.log.getvalue(), '')
+        self.assertEqual(captured.stderr.getvalue(), "Can only 'commit' on a native Git repository\n")
+
+    def test_none(self):
+        with OutputCapture(level=logging.INFO) as captured, mocks.local.Git(), mocks.local.Svn(), patch(
+                'webkitbugspy.Tracker._trackers', []):
+            self.assertEqual(1, program.main(
+                args=('commit',),
+                path=self.path,
+            ))
+        self.assertEqual(captured.stderr.getvalue(), "Can only 'commit' on a native Git repository\n")
+
+    def test_commit(self):
+        with OutputCapture(level=logging.INFO) as captured, mocks.local.Git(self.path) as repo, mocks.local.Svn(), patch('webkitbugspy.Tracker._trackers', []):
+            repo.staged['added.txt'] = 'added'
+            self.assertEqual(0, program.main(
+                args=('commit',),
+                path=self.path,
+            ))
+            self.assertDictEqual(repo.staged, {})
+            self.assertEqual(repo.head.hash, 'c28f53f7fabd7bd9535af890cb7dc473cb342999')
+            self.assertEqual(
+                '[Testing] Creating commits\n'
+                'Reviewed by Jonathan Bedard\n\n'
+                ' * added.txt\n',
+                repo.head.message,
+            )
+
+        self.assertEqual(
+            '\n'.join([line for line in captured.root.log.getvalue().splitlines() if 'Mock process' not in line]),
+            '')
+        self.assertEqual(captured.stdout.getvalue(), "")
+        self.assertEqual(captured.stderr.getvalue(), "")
+
+    def test_commit_with_bug(self):
+        with OutputCapture(level=logging.INFO) as captured, mocks.remote.GitHub(
+                projects=bmocks.PROJECTS) as remote, bmocks.Bugzilla(
+                self.BUGZILLA.split('://')[-1],
+                projects=bmocks.PROJECTS, issues=bmocks.ISSUES,
+                environment=Environment(
+                    BUGS_EXAMPLE_COM_USERNAME='tcontributor@example.com',
+                    BUGS_EXAMPLE_COM_PASSWORD='password',
+                )), patch(
+            'webkitbugspy.Tracker._trackers', [bugzilla.Tracker(self.BUGZILLA)],
+        ), mocks.local.Git(
+            self.path, remote='https://{}'.format(remote.remote),
+            remotes=dict(fork='https://{}/Contributor/WebKit'.format(remote.hosts[0])),
+        ) as repo, mocks.local.Svn():
+            repo.staged['added.txt'] = 'added'
+            self.assertEqual(0, program.main(
+                args=('commit', '-i', '3', ),
+                path=self.path,
+            ))
+            self.assertDictEqual(repo.staged, {})
+            self.assertEqual(repo.head.hash, '0cc822a8ca16698e13363f917e3d9dad387141a4')
+            self.assertEqual(
+                'Example issue 2\n'
+                'https://bugs.example.com/show_bug.cgi?id=3\n'
+                'Reviewed by Jonathan Bedard\n\n'
+                ' * added.txt\n',
+                repo.head.message,
+            )
+
+        self.assertEqual(
+            '\n'.join([line for line in captured.root.log.getvalue().splitlines() if 'Mock process' not in line]),
+            '')
+        self.assertEqual(captured.stdout.getvalue(), "")
+        self.assertEqual(captured.stderr.getvalue(), "")

@@ -28,10 +28,13 @@
 
 #import "WKNSURLExtras.h"
 #import <WebCore/WebCoreObjCExtras.h>
+#import <wtf/AlignedStorage.h>
 
 @implementation WKBackForwardListItem {
-    API::ObjectStorage<WebKit::WebBackForwardListItem> _item;
+    AlignedStorage<WebKit::WebBackForwardListItem> _item;
 }
+
+WK_OBJECT_DISABLE_DISABLE_KVC_IVAR_ACCESS;
 
 - (void)dealloc
 {
@@ -73,9 +76,14 @@
     return nullptr;
 }
 
-- (CGPoint) _scrollPosition
+- (CGPoint)_scrollPosition
 {
-    return CGPointMake(_item->pageState().mainFrameState.scrollPosition.x(), _item->pageState().mainFrameState.scrollPosition.y());
+    return CGPointMake(_item->mainFrameState()->scrollPosition.x(), _item->mainFrameState()->scrollPosition.y());
+}
+
+- (BOOL)_wasCreatedByJSWithoutUserInteraction
+{
+    return _item->wasCreatedByJSWithoutUserInteraction();
 }
 
 #pragma mark WKObject protocol implementation

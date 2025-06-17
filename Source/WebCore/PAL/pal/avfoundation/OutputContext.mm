@@ -32,7 +32,8 @@
 #include <mutex>
 #include <pal/spi/cocoa/AVFoundationSPI.h>
 #include <wtf/NeverDestroyed.h>
-#include <wtf/text/StringBuilder.h>
+#include <wtf/text/MakeString.h>
+#include <wtf/text/StringConcatenate.h>
 
 #include <pal/cocoa/AVFoundationSoftLink.h>
 
@@ -74,18 +75,9 @@ String OutputContext::deviceName()
     if (!supportsMultipleOutputDevices())
         return [m_context deviceName];
 
-    StringBuilder builder;
-    auto devices = outputDevices();
-    auto iterator = devices.begin();
-
-    while (iterator != devices.end()) {
-        builder.append(iterator->name());
-
-        if (++iterator != devices.end())
-            builder.append(" + ");
-    }
-
-    return builder.toString();
+    return makeString(interleave(outputDevices(), [](auto& device) {
+        return device.name();
+    }, " + "_s));
 }
 
 Vector<OutputDevice> OutputContext::outputDevices() const
@@ -97,11 +89,9 @@ Vector<OutputDevice> OutputContext::outputDevices() const
     }
 
     auto *avOutputDevices = [m_context outputDevices];
-    Vector<OutputDevice> outputDevices;
-    outputDevices.reserveInitialCapacity(avOutputDevices.count);
-    for (AVOutputDevice *device in avOutputDevices)
-        outputDevices.uncheckedAppend({ retainPtr(device) });
-    return outputDevices;
+    return Vector<OutputDevice>(avOutputDevices.count, [&](size_t i) {
+        return OutputDevice { retainPtr((AVOutputDevice *)avOutputDevices[i]) };
+    });
 }
 
 

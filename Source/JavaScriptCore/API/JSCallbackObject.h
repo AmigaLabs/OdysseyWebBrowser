@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2006-2022 Apple Inc. All rights reserved.
  * Copyright (C) 2007 Eric Seidel <eric@webkit.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -118,7 +118,7 @@ public:
         }
 
     private:
-        typedef HashMap<RefPtr<UniquedStringImpl>, WriteBarrier<Unknown>, IdentifierRepHash> PrivatePropertyMap;
+        typedef UncheckedKeyHashMap<RefPtr<UniquedStringImpl>, WriteBarrier<Unknown>, IdentifierRepHash> PrivatePropertyMap;
         PrivatePropertyMap m_propertyMap;
         Lock m_lock;
     };
@@ -139,20 +139,20 @@ public:
     {
         VM& vm = getVM(globalObject);
         ASSERT_UNUSED(globalObject, !structure->globalObject() || structure->globalObject() == globalObject);
-        JSCallbackObject* callbackObject = new (NotNull, allocateCell<JSCallbackObject>(vm.heap)) JSCallbackObject(globalObject, structure, classRef, data);
+        JSCallbackObject* callbackObject = new (NotNull, allocateCell<JSCallbackObject>(vm)) JSCallbackObject(globalObject, structure, classRef, data);
         callbackObject->finishCreation(globalObject);
         return callbackObject;
     }
     static JSCallbackObject<Parent>* create(VM&, JSClassRef, Structure*);
 
-    static const bool needsDestruction;
+    static const DestructionMode needsDestruction;
     static void destroy(JSCell* cell)
     {
         static_cast<JSCallbackObject*>(cell)->JSCallbackObject::~JSCallbackObject();
     }
 
     template<typename CellType, SubspaceAccess mode>
-    static IsoSubspace* subspaceFor(VM& vm)
+    static GCClient::IsoSubspace* subspaceFor(VM& vm)
     {
         return subspaceForImpl(vm, mode);
     }
@@ -199,7 +199,7 @@ private:
     void finishCreation(JSGlobalObject*);
     void finishCreation(VM&);
 
-    static IsoSubspace* subspaceForImpl(VM&, SubspaceAccess);
+    static GCClient::IsoSubspace* subspaceForImpl(VM&, SubspaceAccess);
     static EncodedJSValue JSC_HOST_CALL_ATTRIBUTES customToPrimitive(JSGlobalObject*, CallFrame*);
 
     static bool getOwnPropertySlot(JSObject*, JSGlobalObject*, PropertyName, PropertySlot&);

@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
  * Copyright (C) Research In Motion Limited 2011. All rights reserved.
- * Copyright (C) 2018 Apple Inc. All rights reserved.
+ * Copyright (C) 2018-2021 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -51,17 +51,16 @@
 #include <wtf/SHA1.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/StringExtras.h>
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/Vector.h>
 #include <wtf/text/Base64.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/MakeString.h>
+#include <wtf/text/ParsingUtilities.h>
 #include <wtf/text/StringToIntegerConversion.h>
 #include <wtf/text/StringView.h>
 #include <wtf/text/WTFString.h>
 #include <wtf/unicode/CharacterNames.h>
-
-extern "C" {
-    void *memmem(const void *h0, size_t k, const void *n0, size_t l);
-}
 
 namespace WebCore {
 
@@ -70,7 +69,7 @@ static String resourceName(const URL& url)
     auto path = url.path();
     auto result = makeString(
         path,
-        path.isEmpty() ? "/" : "",
+        path.isEmpty() ? "/"_s : ""_s,
         url.queryWithLeadingQuestionMark()
     );
     ASSERT(!result.isEmpty());
@@ -80,50 +79,51 @@ static String resourceName(const URL& url)
 
 static String hostName(const URL& url, bool secure)
 {
-    ASSERT(url.protocolIs("wss") == secure);
-    String host = url.host().convertToASCIILowercase();
+    ASSERT(url.protocolIs("wss"_s) == secure);
     if (url.port() && ((!secure && url.port().value() != 80) || (secure && url.port().value() != 443)))
-        return makeString(host, ':', url.port().value());
-    return host;
+        return makeString(asASCIILowercase(url.host()), ':', url.port().value());
+    return url.host().convertToASCIILowercase();
 }
 
-static const size_t maxInputSampleSize = 128;
-static String trimInputSample(const uint8_t* p, size_t len)
+static constexpr size_t maxInputSampleSize = 128;
+static String trimInputSample(std::span<const uint8_t> input)
 {
-    String s = String(p, std::min<size_t>(len, maxInputSampleSize));
-    if (len > maxInputSampleSize)
-        s.append(horizontalEllipsis);
-    return s;
+    if (input.size() <= maxInputSampleSize)
+        return input;
+    return makeString(input.first(maxInputSampleSize), horizontalEllipsis);
 }
 
 static String generateSecWebSocketKey()
 {
-    static const size_t nonceSize = 16;
-    unsigned char key[nonceSize];
-    cryptographicallyRandomValues(key, nonceSize);
-    return base64EncodeToString(key, nonceSize);
+    constexpr size_t nonceSize = 16;
+    std::array<uint8_t, nonceSize> key;
+    cryptographicallyRandomValues(key);
+    return base64EncodeToString(key);
 }
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(WebSocketHandshake);
 
 String WebSocketHandshake::getExpectedWebSocketAccept(const String& secWebSocketKey)
 {
-    constexpr uint8_t webSocketKeyGUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    const auto webSocketKeyGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"_span;
     SHA1 sha1;
     CString keyData = secWebSocketKey.ascii();
-    sha1.addBytes(keyData.dataAsUInt8Ptr(), keyData.length());
-    sha1.addBytes(webSocketKeyGUID, std::size(webSocketKeyGUID) - 1);
+    sha1.addBytes(keyData.span());
+    sha1.addBytes(webSocketKeyGUID);
     SHA1::Digest hash;
     sha1.computeHash(hash);
-    return base64EncodeToString(hash.data(), SHA1::hashSize);
+    return base64EncodeToString(hash);
 }
 
-WebSocketHandshake::WebSocketHandshake(const URL& url, const String& protocol, const String& userAgent, const String& clientOrigin, bool allowCookies)
+WebSocketHandshake::WebSocketHandshake(const URL& url, const String& protocol, const String& userAgent, const String& clientOrigin, bool allowCookies, bool isAppInitiated)
     : m_url(url)
     , m_clientProtocol(protocol)
-    , m_secure(m_url.protocolIs("wss"))
+    , m_secure(m_url.protocolIs("wss"_s))
     , m_mode(Incomplete)
     , m_userAgent(userAgent)
     , m_clientOrigin(clientOrigin)
     , m_allowCookies(allowCookies)
+    , m_isAppInitiated(isAppInitiated)
 {
     m_secWebSocketKey = generateSecWebSocketKey();
     m_expectedAccept = getExpectedWebSocketAccept(m_secWebSocketKey);
@@ -134,11 +134,6 @@ WebSocketHandshake::~WebSocketHandshake() = default;
 const URL& WebSocketHandshake::url() const
 {
     return m_url;
-}
-
-void WebSocketHandshake::setURL(const URL& url)
-{
-    m_url = url.isolatedCopy();
 }
 
 // FIXME: Return type should just be String, not const String.
@@ -164,7 +159,7 @@ bool WebSocketHandshake::secure() const
 
 String WebSocketHandshake::clientLocation() const
 {
-    return makeString(m_secure ? "wss" : "ws", "://", hostName(m_url, m_secure), resourceName(m_url));
+    return makeString(m_secure ? "wss"_s : "ws"_s, "://"_s, hostName(m_url, m_secure), resourceName(m_url));
 }
 
 CString WebSocketHandshake::clientHandshakeMessage() const
@@ -179,22 +174,22 @@ CString WebSocketHandshake::clientHandshakeMessage() const
     // doesn't contain these headers.
 
     auto extensions = m_extensionDispatcher.createHeaderValue();
-    return makeString("GET ", resourceName(m_url), " HTTP/1.1\r\n"
+    return makeString("GET "_s, resourceName(m_url), " HTTP/1.1\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
-        "Host: ", hostName(m_url, m_secure), "\r\n"
-        "Origin: ", m_clientOrigin, "\r\n",
-        m_clientProtocol.isEmpty() ? "" : "Sec-WebSocket-Protocol: ", m_clientProtocol, m_clientProtocol.isEmpty() ? "" : "\r\n",
+        "Host: "_s, hostName(m_url, m_secure), "\r\n"
+        "Origin: "_s, m_clientOrigin, "\r\n"_s,
+        m_clientProtocol.isEmpty() ? ""_s : "Sec-WebSocket-Protocol: "_s, m_clientProtocol, m_clientProtocol.isEmpty() ? ""_s : "\r\n"_s,
         "Pragma: no-cache\r\n"
         "Cache-Control: no-cache\r\n"
-        "Sec-WebSocket-Key: ", m_secWebSocketKey, "\r\n"
-        "Sec-WebSocket-Version: 13\r\n",
-        extensions.isEmpty() ? "" : "Sec-WebSocket-Extensions: ", extensions, extensions.isEmpty() ? "" : "\r\n",
-        "User-Agent: ", m_userAgent, "\r\n"
-        "\r\n").utf8();
+        "Sec-WebSocket-Key: "_s, m_secWebSocketKey, "\r\n"
+        "Sec-WebSocket-Version: 13\r\n"_s,
+        extensions.isEmpty() ? ""_s : "Sec-WebSocket-Extensions: "_s, extensions, extensions.isEmpty() ? ""_s : "\r\n"_s,
+        "User-Agent: "_s, m_userAgent, "\r\n"
+        "\r\n"_s).utf8();
 }
 
-ResourceRequest WebSocketHandshake::clientHandshakeRequest(const Function<String(const URL&)>& cookieRequestHeaderFieldValue) const
+ResourceRequest WebSocketHandshake::clientHandshakeRequest(NOESCAPE const Function<String(const URL&)>& cookieRequestHeaderFieldValue) const
 {
     // Keep the following consistent with clientHandshakeMessage just above.
 
@@ -216,6 +211,7 @@ ResourceRequest WebSocketHandshake::clientHandshakeRequest(const Function<String
     if (!extensions.isEmpty())
         request.setHTTPHeaderField(HTTPHeaderName::SecWebSocketExtensions, extensions);
     request.setHTTPUserAgent(m_userAgent);
+    request.setIsAppInitiated(m_isAppInitiated);
     return request;
 }
 
@@ -225,49 +221,50 @@ void WebSocketHandshake::reset()
     m_extensionDispatcher.reset();
 }
 
-int WebSocketHandshake::readServerHandshake(const uint8_t* header, size_t len)
+int WebSocketHandshake::readServerHandshake(std::span<const uint8_t> header)
 {
+    ASSERT(header.size() <= static_cast<size_t>(std::numeric_limits<int>::max()));
     m_mode = Incomplete;
     int statusCode;
     String statusText;
-    int lineLength = readStatusLine(header, len, statusCode, statusText);
+    int lineLength = readStatusLine(header, statusCode, statusText);
     if (lineLength == -1)
         return -1;
     if (statusCode == -1) {
         m_mode = Failed; // m_failureReason is set inside readStatusLine().
-        return len;
+        return header.size();
     }
     LOG(Network, "WebSocketHandshake %p readServerHandshake() Status code is %d", this, statusCode);
 
     m_serverHandshakeResponse = ResourceResponse();
     m_serverHandshakeResponse.setHTTPStatusCode(statusCode);
-    m_serverHandshakeResponse.setHTTPStatusText(statusText);
+    m_serverHandshakeResponse.setHTTPStatusText(WTFMove(statusText));
 
     if (statusCode != 101) {
         m_mode = Failed;
-        m_failureReason = makeString("Unexpected response code: ", statusCode);
-        return len;
+        m_failureReason = makeString("Unexpected response code: "_s, statusCode);
+        return header.size();
     }
     m_mode = Normal;
-    if (!memmem(header, len, "\r\n\r\n", 4)) {
+    if (!WTF::contains(header, "\r\n\r\n"_span8)) {
         // Just hasn't been received fully yet.
         m_mode = Incomplete;
         return -1;
     }
-    auto p = readHTTPHeaders(header + lineLength, header + len);
-    if (!p) {
+    auto p = readHTTPHeaders(header.subspan(lineLength));
+    if (!p.data()) {
         LOG(Network, "WebSocketHandshake %p readServerHandshake() readHTTPHeaders() failed", this);
         m_mode = Failed; // m_failureReason is set inside readHTTPHeaders().
-        return len;
+        return header.size();
     }
     if (!checkResponseHeaders()) {
         LOG(Network, "WebSocketHandshake %p readServerHandshake() checkResponseHeaders() failed", this);
         m_mode = Failed;
-        return p - header;
+        return p.data() - header.data();
     }
 
     m_mode = Connected;
-    return p - header;
+    return p.data() - header.data();
 }
 
 WebSocketHandshake::Mode WebSocketHandshake::mode() const
@@ -323,7 +320,7 @@ void WebSocketHandshake::addExtensionProcessor(std::unique_ptr<WebSocketExtensio
 URL WebSocketHandshake::httpURLForAuthenticationAndCookies() const
 {
     URL url = m_url.isolatedCopy();
-    bool couldSetProtocol = url.setProtocol(m_secure ? "https" : "http");
+    bool couldSetProtocol = url.setProtocol(m_secure ? "https"_s : "http"_s);
     ASSERT_UNUSED(couldSetProtocol, couldSetProtocol);
     return url;
 }
@@ -332,12 +329,12 @@ URL WebSocketHandshake::httpURLForAuthenticationAndCookies() const
 // "The HTTP version MUST be at least 1.1."
 static inline bool headerHasValidHTTPVersion(StringView httpStatusLine)
 {
-    constexpr char preamble[] = "HTTP/";
+    constexpr auto preamble = "HTTP/"_s;
     if (!httpStatusLine.startsWith(preamble))
         return false;
 
     // Check that there is a version number which should be at least three characters after "HTTP/"
-    unsigned preambleLength = strlen(preamble);
+    unsigned preambleLength = preamble.length();
     if (httpStatusLine.length() < preambleLength + 3)
         return false;
 
@@ -365,93 +362,90 @@ static inline bool headerHasValidHTTPVersion(StringView httpStatusLine)
 // Returns the header length (including "\r\n"), or -1 if we have not received enough data yet.
 // If the line is malformed or the status code is not a 3-digit number,
 // statusCode and statusText will be set to -1 and a null string, respectively.
-int WebSocketHandshake::readStatusLine(const uint8_t* header, size_t headerLength, int& statusCode, String& statusText)
+int WebSocketHandshake::readStatusLine(std::span<const uint8_t> header, int& statusCode, String& statusText)
 {
     // Arbitrary size limit to prevent the server from sending an unbounded
     // amount of data with no newlines and forcing us to buffer it all.
     static const int maximumLength = 1024;
 
     statusCode = -1;
-    statusText = String();
+    statusText = nullAtom();
 
-    const uint8_t* space1 = nullptr;
-    const uint8_t* space2 = nullptr;
-    const uint8_t* p;
-    size_t consumedLength;
+    std::optional<size_t> firstSpaceIndex;
+    std::optional<size_t> secondSpaceIndex;
 
-    for (p = header, consumedLength = 0; consumedLength < headerLength; p++, consumedLength++) {
-        if (*p == ' ') {
-            if (!space1)
-                space1 = p;
-            else if (!space2)
-                space2 = p;
-        } else if (*p == '\0') {
+    size_t index = 0;
+    for (; index < header.size(); ++index) {
+        if (header[index] == ' ') {
+            if (!firstSpaceIndex)
+                firstSpaceIndex = index;
+            else if (!secondSpaceIndex)
+                secondSpaceIndex = index;
+        } else if (header[index] == '\0') {
             // The caller isn't prepared to deal with null bytes in status
             // line. WebSockets specification doesn't prohibit this, but HTTP
             // does, so we'll just treat this as an error.
             m_failureReason = "Status line contains embedded null"_s;
-            return p + 1 - header;
-        } else if (!isASCII(*p)) {
+            return index + 1;
+        } else if (!isASCII(header[index])) {
             m_failureReason = "Status line contains non-ASCII character"_s;
-            return p + 1 - header;
-        } else if (*p == '\n')
+            return index + 1;
+        } else if (header[index] == '\n')
             break;
     }
-    if (consumedLength == headerLength)
+    if (index == header.size())
         return -1; // We have not received '\n' yet.
 
-    auto end = p + 1;
-    int lineLength = end - header;
+    int lineLength = index + 1;
     if (lineLength > maximumLength) {
         m_failureReason = "Status line is too long"_s;
         return maximumLength;
     }
 
     // The line must end with "\r\n".
-    if (lineLength < 2 || *(end - 2) != '\r') {
+    if (lineLength < 2 || header[index - 1] != '\r') {
         m_failureReason = "Status line does not end with CRLF"_s;
         return lineLength;
     }
 
-    if (!space1 || !space2) {
-        m_failureReason = makeString("No response code found: ", trimInputSample(header, lineLength - 2));
+    if (!firstSpaceIndex || !secondSpaceIndex) {
+        m_failureReason = makeString("No response code found: "_s, trimInputSample(header.first(lineLength - 2)));
         return lineLength;
     }
 
-    StringView httpStatusLine(header, space1 - header);
+    StringView httpStatusLine(header.first(*firstSpaceIndex));
     if (!headerHasValidHTTPVersion(httpStatusLine)) {
-        m_failureReason = makeString("Invalid HTTP version string: ", httpStatusLine);
+        m_failureReason = makeString("Invalid HTTP version string: "_s, httpStatusLine);
         return lineLength;
     }
 
-    StringView statusCodeString(space1 + 1, space2 - space1 - 1);
+    StringView statusCodeString(header.subspan(*firstSpaceIndex + 1, *secondSpaceIndex - *firstSpaceIndex - 1));
     if (statusCodeString.length() != 3) // Status code must consist of three digits.
         return lineLength;
     for (int i = 0; i < 3; ++i) {
         if (!isASCIIDigit(statusCodeString[i])) {
-            m_failureReason = makeString("Invalid status code: ", statusCodeString);
+            m_failureReason = makeString("Invalid status code: "_s, statusCodeString);
             return lineLength;
         }
     }
 
     statusCode = parseInteger<int>(statusCodeString).value();
-    statusText = String(space2 + 1, end - space2 - 3); // Exclude "\r\n".
+    statusText = String(header.subspan(*secondSpaceIndex + 1, index - *secondSpaceIndex - 3)); // Exclude "\r\n".
     return lineLength;
 }
 
-const uint8_t* WebSocketHandshake::readHTTPHeaders(const uint8_t* start, const uint8_t* end)
+std::span<const uint8_t> WebSocketHandshake::readHTTPHeaders(std::span<const uint8_t> data)
 {
     StringView name;
     String value;
     bool sawSecWebSocketExtensionsHeaderField = false;
     bool sawSecWebSocketAcceptHeaderField = false;
     bool sawSecWebSocketProtocolHeaderField = false;
-    auto p = start;
-    for (; p < end; p++) {
-        size_t consumedLength = parseHTTPHeader(p, end - p, m_failureReason, name, value);
+    for (; !data.empty(); data = data.subspan(1)) {
+        size_t consumedLength = parseHTTPHeader(data, m_failureReason, name, value);
         if (!consumedLength)
-            return nullptr;
-        p += consumedLength;
+            return { };
+        skip(data, consumedLength);
 
         // Stop once we consumed an empty line.
         if (name.isEmpty())
@@ -460,7 +454,7 @@ const uint8_t* WebSocketHandshake::readHTTPHeaders(const uint8_t* start, const u
         HTTPHeaderName headerName;
         if (!findHTTPHeaderName(name, headerName)) {
             // Evidence in the wild shows that services make use of custom headers in the handshake
-            m_serverHandshakeResponse.addHTTPHeaderField(name.toString(), value);
+            m_serverHandshakeResponse.addUncommonHTTPHeaderField(name.toString(), value);
             continue;
         }
 
@@ -469,32 +463,32 @@ const uint8_t* WebSocketHandshake::readHTTPHeaders(const uint8_t* start, const u
         if ((headerName == HTTPHeaderName::SecWebSocketExtensions
             || headerName == HTTPHeaderName::SecWebSocketAccept
             || headerName == HTTPHeaderName::SecWebSocketProtocol)
-            && !value.isAllASCII()) {
-            m_failureReason = makeString(name, " header value should only contain ASCII characters");
-            return nullptr;
+            && !value.containsOnlyASCII()) {
+            m_failureReason = makeString(name, " header value should only contain ASCII characters"_s);
+            return { };
         }
         
         if (headerName == HTTPHeaderName::SecWebSocketExtensions) {
             if (sawSecWebSocketExtensionsHeaderField) {
                 m_failureReason = "The Sec-WebSocket-Extensions header must not appear more than once in an HTTP response"_s;
-                return nullptr;
+                return { };
             }
             if (!m_extensionDispatcher.processHeaderValue(value)) {
                 m_failureReason = m_extensionDispatcher.failureReason();
-                return nullptr;
+                return { };
             }
             sawSecWebSocketExtensionsHeaderField = true;
         } else {
             if (headerName == HTTPHeaderName::SecWebSocketAccept) {
                 if (sawSecWebSocketAcceptHeaderField) {
                     m_failureReason = "The Sec-WebSocket-Accept header must not appear more than once in an HTTP response"_s;
-                    return nullptr;
+                    return { };
                 }
                 sawSecWebSocketAcceptHeaderField = true;
             } else if (headerName == HTTPHeaderName::SecWebSocketProtocol) {
                 if (sawSecWebSocketProtocolHeaderField) {
                     m_failureReason = "The Sec-WebSocket-Protocol header must not appear more than once in an HTTP response"_s;
-                    return nullptr;
+                    return { };
                 }
                 sawSecWebSocketProtocolHeaderField = true;
             }
@@ -502,7 +496,7 @@ const uint8_t* WebSocketHandshake::readHTTPHeaders(const uint8_t* start, const u
             m_serverHandshakeResponse.addHTTPHeaderField(headerName, value);
         }
     }
-    return p;
+    return data;
 }
 
 bool WebSocketHandshake::checkResponseHeaders()
@@ -525,11 +519,11 @@ bool WebSocketHandshake::checkResponseHeaders()
         return false;
     }
 
-    if (!equalLettersIgnoringASCIICase(serverUpgrade, "websocket")) {
+    if (!equalLettersIgnoringASCIICase(serverUpgrade, "websocket"_s)) {
         m_failureReason = "Error during WebSocket handshake: 'Upgrade' header value is not 'WebSocket'"_s;
         return false;
     }
-    if (!equalLettersIgnoringASCIICase(serverConnection, "upgrade")) {
+    if (!equalLettersIgnoringASCIICase(serverConnection, "upgrade"_s)) {
         m_failureReason = "Error during WebSocket handshake: 'Connection' header value is not 'Upgrade'"_s;
         return false;
     }
@@ -543,7 +537,7 @@ bool WebSocketHandshake::checkResponseHeaders()
             m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Protocol mismatch"_s;
             return false;
         }
-        Vector<String> result = m_clientProtocol.split(WebSocket::subprotocolSeparator());
+        Vector<String> result = m_clientProtocol.split(StringView { WebSocket::subprotocolSeparator() });
         if (!result.contains(serverWebSocketProtocol)) {
             m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Protocol mismatch"_s;
             return false;

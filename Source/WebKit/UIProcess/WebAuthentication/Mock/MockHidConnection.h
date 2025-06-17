@@ -43,11 +43,14 @@ namespace WebKit {
 // There are indefinite stages for each U2F request:
 // FSM: Info::Init => Info::Msg => [Request::Init => Request::Msg]+
 // According to different combinations of error and stages, error will manifest differently.
-class MockHidConnection final : public CanMakeWeakPtr<MockHidConnection>, public HidConnection {
+class MockHidConnection final : public HidConnection {
 public:
-    MockHidConnection(IOHIDDeviceRef, const WebCore::MockWebAuthenticationConfiguration&);
+    static Ref<MockHidConnection> create(IOHIDDeviceRef, const WebCore::MockWebAuthenticationConfiguration&);
+    virtual ~MockHidConnection() = default;
 
 private:
+    MockHidConnection(IOHIDDeviceRef, const WebCore::MockWebAuthenticationConfiguration&);
+
     // HidConnection
     void initialize() final;
     void terminate() final;

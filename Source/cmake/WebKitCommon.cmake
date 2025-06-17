@@ -13,11 +13,22 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
         message(STATUS "The CMake build type is: ${CMAKE_BUILD_TYPE}")
     endif ()
 
-    set(ENABLE_JAVASCRIPTCORE ON)
-    set(ENABLE_WEBCORE ON)
+    # Exporting compile commands is available for Ninja and Makefile generators
+    # See https://cmake.org/cmake/help/latest/variable/CMAKE_EXPORT_COMPILE_COMMANDS.html
+    if (DEVELOPER_MODE AND (CMAKE_GENERATOR MATCHES "Makefile" OR CMAKE_GENERATOR MATCHES "Ninja"))
+        set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    endif ()
 
-    if (NOT DEFINED ENABLE_WEBKIT)
-        set(ENABLE_WEBKIT ON)
+    option(ENABLE_JAVASCRIPTCORE "Enable building JavaScriptCore" ON)
+    option(ENABLE_WEBCORE "Enable building JavaScriptCore" ON)
+    option(ENABLE_WEBKIT "Enable building WebKit" ON)
+
+    if (NOT ENABLE_JAVASCRIPTCORE)
+        set(ENABLE_WEBCORE OFF)
+    endif ()
+
+    if (NOT ENABLE_WEBCORE)
+        set(ENABLE_WEBKIT OFF)
     endif ()
 
     if (NOT DEFINED ENABLE_TOOLS AND EXISTS "${CMAKE_SOURCE_DIR}/Tools")
@@ -32,15 +43,12 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     # Determine which port will be built
     # -----------------------------------------------------------------------------
     set(ALL_PORTS
-        AppleWin
-        Efl
-        FTW
         GTK
         JSCOnly
         Mac
         PlayStation
         WPE
-        WinCairo
+        Win
         MorphOS
         MUI
     )
@@ -65,9 +73,14 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     endif ()
 
     if (${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
-        if (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS "7.3.0")
-            message(FATAL_ERROR "GCC 7.3 or newer is required to build WebKit. Use a newer GCC version or Clang.")
+        if (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS "11.2.0")
+            message(FATAL_ERROR "GCC 11.2 or newer is required to build WebKit. Use a newer GCC version or Clang.")
         endif ()
+    endif ()
+
+    if (${CMAKE_CXX_COMPILER_ID} STREQUAL "QCC")
+        set(COMPILER_IS_QCC ON)
+        set(COMPILER_IS_GCC_OR_CLANG ON)
     endif ()
 
     if (CMAKE_COMPILER_IS_GNUCXX OR COMPILER_IS_CLANG)
@@ -88,9 +101,9 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     else ()
         string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} LOWERCASE_CMAKE_SYSTEM_PROCESSOR)
     endif ()
-    if (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(^aarch64|^arm64)")
+    if (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(^aarch64|^arm64|^cortex-?[am][2-7][2-8])")
         set(WTF_CPU_ARM64 1)
-    elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
+    elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(^arm|^cortex)")
         set(WTF_CPU_ARM 1)
     elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "^mips64")
         set(WTF_CPU_MIPS64 1)
@@ -108,7 +121,7 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
         endif ()
     elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(i[3-6]86|x86)")
         set(WTF_CPU_X86 1)
-    elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "ppc")
+    elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(ppc|powerpc)")
         set(WTF_CPU_PPC 1)
     elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64")
         set(WTF_CPU_PPC64 1)
@@ -116,6 +129,8 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
         set(WTF_CPU_PPC64LE 1)
     elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv64")
         set(WTF_CPU_RISCV64 1)
+    elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "^loongarch64")
+        set(WTF_CPU_LOONGARCH64 1)
     else ()
         set(WTF_CPU_UNKNOWN 1)
     endif ()
@@ -125,7 +140,7 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     # -----------------------------------------------------------------------------
     if (UNIX)
         if (APPLE)
-            set(WTF_OS_MAC_OS_X 1)
+            set(WTF_OS_MACOS 1)
         elseif (CMAKE_SYSTEM_NAME MATCHES "Linux")
             set(WTF_OS_LINUX 1)
         else ()
@@ -137,8 +152,12 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
         set(WTF_OS_FUCHSIA 1)
     elseif (CMAKE_SYSTEM_NAME MATCHES "Generic")
         set(WTF_OS_LINUX 1)
+    elseif (CMAKE_SYSTEM_NAME MATCHES "AROS")
+        set(WTF_OS_AROS 1)
+    elseif (CMAKE_SYSTEM_NAME MATCHES "AmigaOS4")
+        set(WTF_OS_AMIGAOS 1)
     else ()
-#        message(FATAL_ERROR "Unknown OS '${CMAKE_SYSTEM_NAME}'")
+        message(FATAL_ERROR "Unknown OS '${CMAKE_SYSTEM_NAME}'")
     endif ()
 
     # -----------------------------------------------------------------------------
@@ -184,7 +203,7 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
 
     # TODO Enforce version requirement for perl
     find_package(Perl 5.10.0 REQUIRED)
-    find_package(PerlModules COMPONENTS JSON::PP REQUIRED)
+    find_package(PerlModules COMPONENTS English FindBin JSON::PP REQUIRED)
 
     # This module looks preferably for version 3 of Python. If not found, version 2 is searched.
     find_package(Python COMPONENTS Interpreter REQUIRED)
@@ -194,9 +213,9 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     # We cannot check for RUBY_FOUND because it is set only when the full package is installed and
     # the only thing we need is the interpreter. Unlike Python, cmake does not provide a macro
     # for finding only the Ruby interpreter.
-    find_package(Ruby 1.9)
-    if (NOT RUBY_EXECUTABLE OR RUBY_VERSION VERSION_LESS 1.9)
-        message(FATAL_ERROR "Ruby 1.9 or higher is required.")
+    find_package(Ruby 2.5)
+    if (NOT RUBY_EXECUTABLE OR RUBY_VERSION VERSION_LESS 2.5)
+        message(FATAL_ERROR "Ruby 2.5 or higher is required.")
     endif ()
 
     # -----------------------------------------------------------------------------
@@ -205,6 +224,7 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
 
     # To prevent multiple inclusion, most modules should be included once here.
     include(CheckCCompilerFlag)
+    include(CheckCSourceCompiles)
     include(CheckCXXCompilerFlag)
     include(CheckCXXSourceCompiles)
     include(CheckFunctionExists)
@@ -214,6 +234,7 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     include(CheckTypeSize)
     include(CMakeDependentOption)
     include(CMakeParseArguments)
+    include(CMakePushCheckState)
     include(ProcessorCount)
 
     include(WebKitPackaging)
@@ -236,14 +257,115 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     endif ()
 
     # -----------------------------------------------------------------------------
-    # Job pool to avoid running too many memory hungry linker processes
+    # Generate a usable compile_commands.json when using unified builds
     # -----------------------------------------------------------------------------
-    if (${CMAKE_BUILD_TYPE} STREQUAL "Release" OR ${CMAKE_BUILD_TYPE} STREQUAL "MinSizeRel")
-        set_property(GLOBAL PROPERTY JOB_POOLS link_pool_jobs=4)
+    # Ideally this would be done during configure or generation, but CMake doesn't
+    # produce compile_commands.json until generation has ended. Having a build
+    # target that processes it is the next best thing we can do.
+    if (CMAKE_EXPORT_COMPILE_COMMANDS AND ENABLE_UNIFIED_BUILDS)
+        # compile_commands.json
+        add_custom_command(
+            OUTPUT  ${CMAKE_BINARY_DIR}/DeveloperTools/compile_commands.json
+            DEPENDS ${CMAKE_SOURCE_DIR}/Tools/Scripts/rewrite-compile-commands
+                    ${CMAKE_BINARY_DIR}/compile_commands.json
+            COMMAND ${Python_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/Tools/Scripts/rewrite-compile-commands
+                    ${CMAKE_BINARY_DIR}/compile_commands.json
+                    ${CMAKE_BINARY_DIR}/DeveloperTools/compile_commands.json
+                    ${CMAKE_SOURCE_DIR}
+                    ${CMAKE_BINARY_DIR}
+            VERBATIM
+        )
+        add_custom_target(RewriteCompileCommands
+            ALL
+            DEPENDS ${CMAKE_BINARY_DIR}/DeveloperTools/compile_commands.json
+        )
+    elseif (CMAKE_EXPORT_COMPILE_COMMANDS)
+        # Create a simple symlink in DeveloperTools/compile_commands.json so that
+        # it can be relied upon regardless of unified or non-unified builds.
+        file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/DeveloperTools)
+        set(COMPILE_COMMANDS_PATH "../compile_commands.json")
+        cmake_path(NATIVE_PATH COMPILE_COMMANDS_PATH COMPILE_COMMANDS_PATH)
+        file(CREATE_LINK
+            ${COMPILE_COMMANDS_PATH}
+            ${CMAKE_BINARY_DIR}/DeveloperTools/compile_commands.json
+            SYMBOLIC
+        )
+    endif ()
+
+    # CLANGD_AUTO_SETUP defaults to ON if ENABLE_DEVELOPER_MODE or if building inside <SOURCE>/WebKitBuild
+    set(webkitbuild_dir ${CMAKE_SOURCE_DIR}/WebKitBuild)
+    cmake_path(IS_PREFIX webkitbuild_dir ${CMAKE_BINARY_DIR} NORMALIZE building_inside_WebKitBuild)
+    if (building_inside_WebKitBuild OR ENABLE_DEVELOPER_MODE)
+        set(clangd_auto_setup_default ON)
     else ()
-        set_property(GLOBAL PROPERTY JOB_POOLS link_pool_jobs=2)
+        set(clangd_auto_setup_default OFF)
+    endif ()
+    cmake_dependent_option(CLANGD_AUTO_SETUP
+        "Install a .clangd configuration file and a compile_commands.json symlink
+         in the root of the source tree to have out-of-the-box code completion
+         in editors."
+        ${clangd_auto_setup_default}
+        CMAKE_EXPORT_COMPILE_COMMANDS
+        OFF
+    )
+
+    if (CLANGD_AUTO_SETUP)
+        # update-compile-commands-symlink.conf
+        add_custom_command(
+            OUTPUT ${CMAKE_SOURCE_DIR}/update-compile-commands-symlink.conf
+            DEPENDS ${TOOLS_DIR}/clangd/update-compile-commands-symlink-conf
+                    ${TOOLS_DIR}/clangd/update-compile-commands-symlink.conf.example
+            COMMAND ${Python_EXECUTABLE}
+                    ${TOOLS_DIR}/clangd/update-compile-commands-symlink-conf
+                    ${TOOLS_DIR}/clangd/update-compile-commands-symlink.conf.example
+                    ${CMAKE_SOURCE_DIR}/update-compile-commands-symlink.conf
+            VERBATIM
+        )
+        # compile_commands.json
+        add_custom_target(UpdateCompileCommandsSymlink
+            ALL
+            DEPENDS ${CMAKE_BINARY_DIR}/DeveloperTools/compile_commands.json
+                    ${CMAKE_SOURCE_DIR}/update-compile-commands-symlink.conf
+            COMMAND ${Python_EXECUTABLE}
+                    ${TOOLS_DIR}/clangd/update-compile-commands-symlink
+                    ${CMAKE_SOURCE_DIR}/compile_commands.json
+                    ${CMAKE_SOURCE_DIR}/update-compile-commands-symlink.conf
+            VERBATIM
+        )
+        # .clangd
+        add_custom_command(
+            OUTPUT ${CMAKE_SOURCE_DIR}/.clangd
+            DEPENDS ${TOOLS_DIR}/clangd/update-clangd-config
+                    ${TOOLS_DIR}/clangd/clangd-config.yaml.tpl
+            COMMAND ${Python_EXECUTABLE}
+                    ${TOOLS_DIR}/clangd/update-clangd-config
+                    ${TOOLS_DIR}/clangd/clangd-config.yaml.tpl
+                    ${CMAKE_SOURCE_DIR}/.clangd
+            VERBATIM
+        )
+        add_custom_target(UpdateClangdConf
+            ALL
+            DEPENDS ${CMAKE_SOURCE_DIR}/.clangd
+        )
+    endif ()
+
+    # -----------------------------------------------------------------------------
+    # Job pool to avoid running too many memory hungry processes
+    # -----------------------------------------------------------------------------
+    if (DEFINED ENV{WEBKIT_NINJA_LINK_MAX})
+        list(APPEND WK_POOLS "link_pool_jobs=$ENV{WEBKIT_NINJA_LINK_MAX}")
+    elseif (${CMAKE_BUILD_TYPE} STREQUAL "Release" OR ${CMAKE_BUILD_TYPE} STREQUAL "MinSizeRel")
+        list(APPEND WK_POOLS link_pool_jobs=4)
+    else ()
+        list(APPEND WK_POOLS link_pool_jobs=2)
     endif ()
     set(CMAKE_JOB_POOL_LINK link_pool_jobs)
+    if (DEFINED ENV{WEBKIT_NINJA_COMPILE_MAX})
+        list(APPEND WK_POOLS "compile_pool_jobs=$ENV{WEBKIT_NINJA_COMPILE_MAX}")
+        set(CMAKE_JOB_POOL_COMPILE compile_pool_jobs)
+    endif ()
+    set_property(GLOBAL PROPERTY JOB_POOLS ${WK_POOLS})
 
     # -----------------------------------------------------------------------------
     # Create derived sources directories

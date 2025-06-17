@@ -28,21 +28,24 @@
 #include "WorkerOrWorkletGlobalScope.h"
 #include <JavaScriptCore/ConsoleClient.h>
 #include <wtf/Forward.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace JSC {
 class CallFrame;
 }
 
+using JSC::MessageType;
+
 namespace WebCore {
 
 class WorkerConsoleClient final : public JSC::ConsoleClient {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(WorkerConsoleClient);
 public:
     explicit WorkerConsoleClient(WorkerOrWorkletGlobalScope&);
     virtual ~WorkerConsoleClient();
 
 private:
-    void messageWithTypeAndLevel(MessageType, MessageLevel, JSC::JSGlobalObject*, Ref<Inspector::ScriptArguments>&&) override;
+    void messageWithTypeAndLevel(JSC::MessageType, MessageLevel, JSC::JSGlobalObject*, Ref<Inspector::ScriptArguments>&&) override;
     void count(JSC::JSGlobalObject*, const String& label) override;
     void countReset(JSC::JSGlobalObject*, const String& label) override;
     void profile(JSC::JSGlobalObject*, const String& title) override;

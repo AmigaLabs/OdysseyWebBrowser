@@ -32,6 +32,8 @@
 #include <wtf/Noncopyable.h>
 #include <wtf/Vector.h>
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace WTF {
 
 // This is a concurrent hash-based set for pointers. It's optimized for:
@@ -108,9 +110,9 @@ private:
         Atomic<void*> array[1];
     };
     
-    static unsigned hash(void* ptr)
+    static unsigned hash(const void* ptr)
     {
-        return PtrHash<void*>::hash(ptr);
+        return PtrHash<const void*>::hash(ptr);
     }
     
     void initialize();
@@ -182,3 +184,5 @@ private:
 } // namespace WTF
 
 using WTF::ConcurrentPtrHashSet;
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

@@ -25,6 +25,7 @@
 
 #import "config.h"
 
+#import "DeprecatedGlobalValues.h"
 #import "PlatformUtilities.h"
 #import "Test.h"
 #import "TestWKWebView.h"
@@ -37,12 +38,10 @@
 #import <WebKit/_WKProcessPoolConfiguration.h>
 #import <wtf/RetainPtr.h>
 
-static bool receivedScriptMessage;
 static bool receivedAtLeastOneOpenError;
 static bool receivedAtLeastOneDeleteError;
 static bool openRequestUpgradeNeeded;
 static bool databaseErrorReceived;
-static RetainPtr<NSString> lastScriptMessage;
 
 @interface DatabaseProcessKillMessageHandler : NSObject <WKScriptMessageHandler>
 @end
@@ -73,7 +72,7 @@ static RetainPtr<NSString> lastScriptMessage;
         return;
     }
 
-    lastScriptMessage = [message body];
+    lastScriptMessage = message;
 }
 
 @end
@@ -86,7 +85,7 @@ TEST(IndexedDB, DatabaseProcessKill)
 
     RetainPtr<WKWebView> webView = adoptNS([[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 800, 600) configuration:configuration.get()]);
 
-    NSURLRequest *request = [NSURLRequest requestWithURL:[[NSBundle mainBundle] URLForResource:@"IndexedDBDatabaseProcessKill-1" withExtension:@"html" subdirectory:@"TestWebKitAPI.resources"]];
+    NSURLRequest *request = [NSURLRequest requestWithURL:[NSBundle.test_resourcesBundle URLForResource:@"IndexedDBDatabaseProcessKill-1" withExtension:@"html"]];
     [webView loadRequest:request];
 
     bool killedDBProcess = false;
@@ -137,7 +136,7 @@ TEST(IndexedDB, OneVMPerThread)
     receivedScriptMessage = false;
     [webView evaluateJavaScript:@"openDatabase()" completionHandler:nil];
     TestWebKitAPI::Util::run(&receivedScriptMessage);
-    EXPECT_WK_STREQ(@"Opened", lastScriptMessage.get());
+    EXPECT_WK_STREQ(@"Opened", [lastScriptMessage body]);
 
     kill([webView _webProcessIdentifier], SIGKILL);
 
@@ -145,5 +144,5 @@ TEST(IndexedDB, OneVMPerThread)
     [secondWebView evaluateJavaScript:@"openDatabase()" completionHandler:nil];
     lastScriptMessage = nil;
     TestWebKitAPI::Util::run(&receivedScriptMessage);
-    EXPECT_WK_STREQ(@"Opened", lastScriptMessage.get());
+    EXPECT_WK_STREQ(@"Opened", [lastScriptMessage body]);
 }

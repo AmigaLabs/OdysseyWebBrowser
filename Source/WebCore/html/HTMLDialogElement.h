@@ -26,11 +26,15 @@
 #pragma once
 
 #include "HTMLElement.h"
+#include "ToggleEventTask.h"
 
 namespace WebCore {
 
+class ToggleEventTask;
+
 class HTMLDialogElement final : public HTMLElement {
-    WTF_MAKE_ISO_ALLOCATED(HTMLDialogElement);
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(HTMLDialogElement);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(HTMLDialogElement);
 public:
     template<typename... Args> static Ref<HTMLDialogElement> create(Args&&... args) { return adoptRef(*new HTMLDialogElement(std::forward<Args>(args)...)); }
 
@@ -39,19 +43,34 @@ public:
     const String& returnValue() const { return m_returnValue; }
     void setReturnValue(String&& value) { m_returnValue = WTFMove(value); }
 
-    void show();
+    ExceptionOr<void> show();
     ExceptionOr<void> showModal();
     void close(const String&);
+    void requestClose(const String&);
 
     bool isModal() const { return m_isModal; };
 
     void queueCancelTask();
 
+    void runFocusingSteps();
+
+    bool isValidCommandType(const CommandType) final;
+    bool handleCommandInternal(const HTMLButtonElement& invoker, const CommandType&) final;
+
+    void queueDialogToggleEventTask(ToggleState oldState, ToggleState newState);
+
 private:
     HTMLDialogElement(const QualifiedName&, Document&);
 
+    void removedFromAncestor(RemovalType, ContainerNode& oldParentOfRemovedTree) final;
+    void setIsModal(bool newValue);
+    bool supportsFocus() const final;
+
     String m_returnValue;
     bool m_isModal { false };
+    WeakPtr<Element, WeakPtrImplWithEventTargetData> m_previouslyFocusedElement;
+
+    RefPtr<ToggleEventTask> m_toggleEventTask;
 };
 
 } // namespace WebCore

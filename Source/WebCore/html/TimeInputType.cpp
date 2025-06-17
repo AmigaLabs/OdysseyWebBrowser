@@ -29,12 +29,12 @@
  */
 
 #include "config.h"
-#if ENABLE(INPUT_TYPE_TIME)
 #include "TimeInputType.h"
 
 #include "DateComponents.h"
 #include "DateTimeFieldsState.h"
 #include "Decimal.h"
+#include "ElementInlines.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "InputTypeNames.h"
@@ -42,8 +42,12 @@
 #include "StepRange.h"
 #include <wtf/DateMath.h>
 #include <wtf/MathExtras.h>
+#include <wtf/TZoneMalloc.h>
+#include <wtf/text/MakeString.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(TimeInputType);
 
 using namespace HTMLNames;
 
@@ -85,14 +89,14 @@ Decimal TimeInputType::defaultValueForStepUp() const
 StepRange TimeInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     ASSERT(element());
-    const Decimal stepBase = parseToNumber(element()->attributeWithoutSynchronization(minAttr), 0);
+    const Decimal stepBase = findStepBase(timeDefaultStepBase);
     const Decimal minimum = parseToNumber(element()->attributeWithoutSynchronization(minAttr), Decimal::fromDouble(DateComponents::minimumTime()));
     const Decimal maximum = parseToNumber(element()->attributeWithoutSynchronization(maxAttr), Decimal::fromDouble(DateComponents::maximumTime()));
     const Decimal step = StepRange::parseStep(anyStepHandling, timeStepDescription, element()->attributeWithoutSynchronization(stepAttr));
-    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, timeStepDescription);
+    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, timeStepDescription, StepRange::IsReversible::Yes);
 }
 
-std::optional<DateComponents> TimeInputType::parseToDateComponents(const StringView& source) const
+std::optional<DateComponents> TimeInputType::parseToDateComponents(StringView source) const
 {
     return DateComponents::fromParsingTime(source);
 }
@@ -103,6 +107,10 @@ std::optional<DateComponents> TimeInputType::setMillisecondToDateComponents(doub
 }
 
 void TimeInputType::handleDOMActivateEvent(Event&)
+{
+}
+
+void TimeInputType::showPicker()
 {
 }
 
@@ -141,5 +149,3 @@ void TimeInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters&
 }
 
 } // namespace WebCore
-
-#endif

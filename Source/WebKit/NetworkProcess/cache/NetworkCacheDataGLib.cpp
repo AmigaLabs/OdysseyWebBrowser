@@ -28,7 +28,7 @@
 
 #if USE(GLIB)
 
-#include "SharedMemory.h"
+#include <WebCore/SharedMemory.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -39,22 +39,22 @@
 #include <gio/gfiledescriptorbased.h>
 #endif
 
+#include <wtf/glib/GSpanExtras.h>
+
 namespace WebKit {
 namespace NetworkCache {
 
-Data::Data(const uint8_t* data, size_t size)
-    : m_size(size)
+Data::Data(std::span<const uint8_t> data)
 {
-    uint8_t* copiedData = static_cast<uint8_t*>(fastMalloc(size));
-    memcpy(copiedData, data, size);
-    m_buffer = adoptGRef(g_bytes_new_with_free_func(copiedData, size, fastFree, copiedData));
+    uint8_t* copiedData = static_cast<uint8_t*>(fastMalloc(data.size()));
+    memcpy(copiedData, data.data(), data.size());
+    m_buffer = adoptGRef(g_bytes_new_with_free_func(copiedData, data.size(), fastFree, copiedData));
 }
 
 Data::Data(GRefPtr<GBytes>&& buffer, FileSystem::PlatformFileHandle fd)
     : m_buffer(WTFMove(buffer))
     , m_fileDescriptor(fd)
-    , m_size(m_buffer ? g_bytes_get_size(m_buffer.get()) : 0)
-    , m_isMap(m_size && FileSystem::isHandleValid(fd))
+    , m_isMap(m_buffer && g_bytes_get_size(m_buffer.get()) && FileSystem::isHandleValid(fd))
 {
 }
 
@@ -63,9 +63,16 @@ Data Data::empty()
     return { adoptGRef(g_bytes_new(nullptr, 0)) };
 }
 
-const uint8_t* Data::data() const
+std::span<const uint8_t> Data::span() const
 {
-    return m_buffer ? reinterpret_cast<const uint8_t*>(g_bytes_get_data(m_buffer.get(), nullptr)) : nullptr;
+    if (!m_buffer)
+        return { };
+    return WTF::span(m_buffer);
+}
+
+size_t Data::size() const
+{
+    return m_buffer ? g_bytes_get_size(m_buffer.get()) : 0;
 }
 
 bool Data::isNull() const
@@ -73,14 +80,12 @@ bool Data::isNull() const
     return !m_buffer;
 }
 
-bool Data::apply(const Function<bool(Span<const uint8_t>)>& applier) const
+bool Data::apply(NOESCAPE const Function<bool(std::span<const uint8_t>)>& applier) const
 {
-    if (!m_size)
+    if (!size())
         return false;
 
-    gsize length;
-    const auto* data = g_bytes_get_data(m_buffer.get(), &length);
-    return applier({ reinterpret_cast<const uint8_t*>(data), length });
+    return applier(span());
 }
 
 Data Data::subrange(size_t offset, size_t size) const
@@ -99,7 +104,9 @@ Data concatenate(const Data& a, const Data& b)
         return a;
 
     size_t size = a.size() + b.size();
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN // GTK/WPE port
     uint8_t* data = static_cast<uint8_t*>(fastMalloc(size));
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     gsize aLength;
     const auto* aData = g_bytes_get_data(a.bytes(), &aLength);
     memcpy(data, aData, aLength);
@@ -130,23 +137,22 @@ static void deleteMapWrapper(MapWrapper* wrapper)
 Data Data::adoptMap(FileSystem::MappedFileData&& mappedFile, FileSystem::PlatformFileHandle fd)
 {
     size_t size = mappedFile.size();
-    const void* map = mappedFile.data();
+    auto* map = mappedFile.span().data();
     ASSERT(map);
     ASSERT(map != MAP_FAILED);
     MapWrapper* wrapper = new MapWrapper { WTFMove(mappedFile), fd };
     return { adoptGRef(g_bytes_new_with_free_func(map, size, reinterpret_cast<GDestroyNotify>(deleteMapWrapper), wrapper)), fd };
 }
 
-RefPtr<SharedMemory> Data::tryCreateSharedMemory() const
+RefPtr<WebCore::SharedMemory> Data::tryCreateSharedMemory() const
 {
     if (isNull() || !isMap())
         return nullptr;
 
-    GInputStream* inputStream = g_io_stream_get_input_stream(G_IO_STREAM(m_fileDescriptor));
-    int fd = g_file_descriptor_based_get_fd(G_FILE_DESCRIPTOR_BASED(inputStream));
+    int fd = FileSystem::posixFileDescriptor(m_fileDescriptor);
     gsize length;
     const auto* data = g_bytes_get_data(m_buffer.get(), &length);
-    return SharedMemory::wrapMap(const_cast<void*>(data), length, fd);
+    return WebCore::SharedMemory::wrapMap(const_cast<void*>(data), length, fd);
 }
 
 } // namespace NetworkCache

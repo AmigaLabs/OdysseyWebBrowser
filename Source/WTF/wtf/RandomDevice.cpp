@@ -29,15 +29,10 @@
 
 #include <stdlib.h>
 
-#if (!OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX)) || OS(AMIGAOS)
+#if !OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX) || OS(AMIGAOS)
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
-#if !OS(AMIGAOS)
-#define DEV_URANDOM "/dev/urandom"
-#else
-#define DEV_URANDOM "RANDOM:"
-#endif
 #endif
 
 #if OS(WINDOWS)
@@ -46,6 +41,7 @@
 #endif
 
 #if OS(DARWIN)
+#include <CommonCrypto/CommonCryptor.h>
 #include <CommonCrypto/CommonRandom.h>
 #endif
 
@@ -59,7 +55,7 @@
 
 namespace WTF {
 
-#if (!OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX)) || OS(AMIGAOS)
+#if !OS(DARWIN) && !OS(FUCHSIA) && OS(UNIX) || OS(AMIGAOS)
 NEVER_INLINE NO_RETURN_DUE_TO_CRASH static void crashUnableToOpenURandom()
 {
     CRASH();
@@ -71,21 +67,12 @@ NEVER_INLINE NO_RETURN_DUE_TO_CRASH static void crashUnableToReadFromURandom()
 }
 #endif
 
-#if OS(AROS)
-RandomDevice::RandomDevice()
-{
-}
-RandomDevice::~RandomDevice()
-{
-}
-#endif
-
-#if !OS(DARWIN) && !OS(FUCHSIA) && !OS(WINDOWS) && !OS(MORPHOS) && !OS(AROS)
+#if !OS(DARWIN) && !OS(FUCHSIA) && !OS(WINDOWS) && !OS(MORPHOS)
 RandomDevice::RandomDevice()
 {
     int ret = 0;
     do {
-        ret = open(DEV_URANDOM, O_RDONLY, 0);
+        ret = open("/dev/urandom", O_RDONLY, 0);
     } while (ret == -1 && errno == EINTR);
     m_fd = ret;
     if (m_fd < 0)
@@ -93,7 +80,7 @@ RandomDevice::RandomDevice()
 }
 #endif
 
-#if !OS(DARWIN) && !OS(FUCHSIA) && !OS(WINDOWS) && !OS(MORPHOS) && !OS(AROS)
+#if !OS(DARWIN) && !OS(FUCHSIA) && !OS(WINDOWS) && !OS(MORPHOS)
 RandomDevice::~RandomDevice()
 {
     close(m_fd);
@@ -102,18 +89,20 @@ RandomDevice::~RandomDevice()
 
 // FIXME: Make this call fast by creating the pool in RandomDevice.
 // https://bugs.webkit.org/show_bug.cgi?id=170190
-void RandomDevice::cryptographicallyRandomValues(unsigned char* buffer, size_t length)
+void RandomDevice::cryptographicallyRandomValues(std::span<uint8_t> buffer)
 {
 #if OS(DARWIN)
-    RELEASE_ASSERT(!CCRandomGenerateBytes(buffer, length));
+    RELEASE_ASSERT(!CCRandomGenerateBytes(buffer.data(), buffer.size()));
 #elif OS(FUCHSIA)
-    zx_cprng_draw(buffer, length);
+    zx_cprng_draw(buffer.data(), buffer.size());
 #elif OS(MORPHOS)
-	RandomBytes((APTR)buffer, length);
+	RandomBytes((APTR)buffer.data(), buffer.size());
 #elif OS(UNIX) || OS(AMIGAOS)
     ssize_t amountRead = 0;
-    while (static_cast<size_t>(amountRead) < length) {
-        ssize_t currentRead = read(m_fd, buffer + amountRead, length - amountRead);
+    while (static_cast<size_t>(amountRead) < buffer.size()) {
+        WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+        ssize_t currentRead = read(m_fd, buffer.data() + amountRead, buffer.size() - amountRead);
+        WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
         // We need to check for both EAGAIN and EINTR since on some systems /dev/urandom
         // is blocking and on others it is non-blocking.
         if (currentRead == -1) {
@@ -128,10 +117,9 @@ void RandomDevice::cryptographicallyRandomValues(unsigned char* buffer, size_t l
     HCRYPTPROV hCryptProv = 0;
     if (!CryptAcquireContext(&hCryptProv, nullptr, MS_DEF_PROV, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
         CRASH();
-    if (!CryptGenRandom(hCryptProv, length, buffer))
+    if (!CryptGenRandom(hCryptProv, buffer.size(), buffer.data()))
         CRASH();
     CryptReleaseContext(hCryptProv, 0);
-#elif OS(AROS)
 #else
 #error "This configuration doesn't have a strong source of randomness."
 // WARNING: When adding new sources of OS randomness, the randomness must

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2020-2021 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,113 +27,69 @@
 
 #import "WebKitVersionChecks.h"
 #import <Foundation/NSBundle.h>
-#import <WebCore/RuntimeApplicationChecks.h>
-#import <WebCore/VersionChecks.h>
 #import <mach-o/dyld.h>
 #import <pal/spi/cf/CFUtilitiesSPI.h>
-#import <pal/spi/cocoa/FeatureFlagsSPI.h>
 #import <wtf/cocoa/RuntimeApplicationChecksCocoa.h>
 #import <wtf/spi/darwin/dyldSPI.h>
 #import <wtf/text/WTFString.h>
 
 #if PLATFORM(IOS_FAMILY)
-#import <WebCore/Device.h>
+#import <pal/system/ios/Device.h>
 #endif
 
 namespace WebKit {
-
-#if PLATFORM(COCOA)
-
-// Because of <rdar://problem/60608008>, WebKit has to parse the feature flags plist file
-bool isFeatureFlagEnabled(const char* featureName, bool defaultValue)
-{
-#if HAVE(SYSTEM_FEATURE_FLAGS)
-
-#if PLATFORM(MAC)
-    static bool isSystemWebKit = [] {
-        auto *bundle = [NSBundle bundleForClass:NSClassFromString(@"WebResource")];
-        return [bundle.bundlePath hasPrefix:@"/System/"];
-    }();
-
-    return isSystemWebKit ? _os_feature_enabled_impl("WebKit", featureName) : defaultValue;
-#else
-    UNUSED_PARAM(defaultValue);
-    return _os_feature_enabled_impl("WebKit", featureName);
-#endif // PLATFORM(MAC)
-
-#else
-
-    UNUSED_PARAM(featureName);
-    return defaultValue;
-
-#endif // HAVE(SYSTEM_FEATURE_FLAGS)
-}
-
-#endif
-
-#if HAVE(INCREMENTAL_PDF_APIS)
-
-bool defaultIncrementalPDFEnabled()
-{
-    return isFeatureFlagEnabled("incremental_pdf", false);
-}
-
-#endif
-
-#if ENABLE(WEBXR)
-
-bool defaultWebXREnabled()
-{
-    return isFeatureFlagEnabled("WebXR", false);
-}
-
-#endif // ENABLE(WEBXR)
 
 #if PLATFORM(IOS_FAMILY)
 
 bool defaultAllowsInlineMediaPlayback()
 {
-    return WebCore::deviceClass() == MGDeviceClassiPad;
+    return !PAL::deviceClassIsSmallScreen();
 }
 
 bool defaultAllowsInlineMediaPlaybackAfterFullscreen()
 {
-    return WebCore::deviceClass() != MGDeviceClassiPad;
+    return PAL::deviceClassIsSmallScreen();
 }
 
 bool defaultAllowsPictureInPictureMediaPlayback()
 {
-    static bool shouldAllowPictureInPictureMediaPlayback = dyld_get_program_sdk_version() >= DYLD_IOS_VERSION_9_0;
+    static bool shouldAllowPictureInPictureMediaPlayback = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::PictureInPictureMediaPlayback);
     return shouldAllowPictureInPictureMediaPlayback;
 }
 
 bool defaultJavaScriptCanOpenWindowsAutomatically()
 {
-    static bool shouldAllowWindowOpenWithoutUserGesture = WebCore::IOSApplication::isTheSecretSocietyHiddenMystery() && dyld_get_program_sdk_version() < DYLD_IOS_VERSION_10_0;
+    static bool shouldAllowWindowOpenWithoutUserGesture = WTF::IOSApplication::isTheSecretSocietyHiddenMystery() && !linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::NoTheSecretSocietyHiddenMysteryWindowOpenQuirk);
     return shouldAllowWindowOpenWithoutUserGesture;
 }
 
 bool defaultInlineMediaPlaybackRequiresPlaysInlineAttribute()
 {
-    return WebCore::deviceClass() != MGDeviceClassiPad;
+    return PAL::deviceClassIsSmallScreen();
 }
 
 bool defaultPassiveTouchListenersAsDefaultOnDocument()
 {
-    static bool result = linkedOnOrAfter(WebCore::SDKVersion::FirstThatDefaultsToPassiveTouchListenersOnDocument);
+    static bool result = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::DefaultsToPassiveTouchListenersOnDocument);
     return result;
+}
+
+bool defaultShowModalDialogEnabled()
+{
+    static bool newSDK = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::NoShowModalDialog);
+    return !newSDK;
 }
 
 bool defaultRequiresUserGestureToLoadVideo()
 {
-    static bool shouldRequireUserGestureToLoadVideo = dyld_get_program_sdk_version() >= DYLD_IOS_VERSION_10_0;
+    static bool shouldRequireUserGestureToLoadVideo = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::RequiresUserGestureToLoadVideo);
     return shouldRequireUserGestureToLoadVideo;
 }
 
 bool defaultWebSQLEnabled()
 {
     // For backward compatibility, keep WebSQL working until apps are rebuilt with the iOS 14 SDK.
-    static bool webSQLEnabled = dyld_get_program_sdk_version() < DYLD_IOS_VERSION_14_0;
+    static bool webSQLEnabled = !linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::WebSQLDisabledByDefaultInLegacyWebKit);
     return webSQLEnabled;
 }
 
@@ -149,29 +105,18 @@ bool defaultAllowContentSecurityPolicySourceStarToMatchAnyProtocol()
 
 bool defaultLoadDeferringEnabled()
 {
-    return !WebCore::MacApplication::isAdobeInstaller();
+    return !WTF::MacApplication::isAdobeInstaller();
 }
 
 bool defaultWindowFocusRestricted()
 {
-    return !WebCore::MacApplication::isHRBlock();
+    return !WTF::MacApplication::isHRBlock();
 }
 
 bool defaultUsePreHTML5ParserQuirks()
 {
-    // AOL Instant Messenger and Microsoft My Day contain markup incompatible
-    // with the new HTML5 parser. If these applications were linked against a
-    // version of WebKit prior to the introduction of the HTML5 parser, enable
-    // parser quirks to maintain compatibility. For details, see
-    // <https://bugs.webkit.org/show_bug.cgi?id=46134> and
-    // <https://bugs.webkit.org/show_bug.cgi?id=46334>.
-    static bool isApplicationNeedingParserQuirks = !WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITH_HTML5_PARSER)
-        && (WebCore::MacApplication::isAOLInstantMessenger() || WebCore::MacApplication::isMicrosoftMyDay());
-
     // Mail.app must continue to display HTML email that contains quirky markup.
-    static bool isAppleMail = WebCore::MacApplication::isAppleMail();
-
-    return isApplicationNeedingParserQuirks || isAppleMail;
+    return WTF::MacApplication::isAppleMail();
 }
 
 bool defaultNeedsAdobeFrameReloadingQuirk()
@@ -190,6 +135,12 @@ bool defaultNeedsAdobeFrameReloadingQuirk()
     return needsQuirk;
 }
 
+bool defaultScrollAnimatorEnabled()
+{
+    static bool enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"NSScrollAnimationEnabled"];
+    return enabled;
+}
+
 bool defaultTreatsAnyTextCSSLinkAsStylesheet()
 {
     static bool needsQuirk = !WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITHOUT_LINK_ELEMENT_TEXT_CSS_QUIRK)
@@ -205,7 +156,7 @@ bool defaultNeedsFrameNameFallbackToIdQuirk()
 
 bool defaultNeedsKeyboardEventDisambiguationQuirks()
 {
-    static bool needsQuirks = !WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITH_IE_COMPATIBLE_KEYBOARD_EVENT_DISPATCH) && !WebCore::MacApplication::isSafari();
+    static bool needsQuirks = !WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITH_IE_COMPATIBLE_KEYBOARD_EVENT_DISPATCH) && !WTF::MacApplication::isSafari();
     return needsQuirks;
 }
 
@@ -214,27 +165,16 @@ bool defaultNeedsKeyboardEventDisambiguationQuirks()
 bool defaultAttachmentElementEnabled()
 {
 #if PLATFORM(IOS_FAMILY)
-    return WebCore::IOSApplication::isMobileMail();
+    return WTF::IOSApplication::isMobileMail();
 #else
-    return WebCore::MacApplication::isAppleMail();
+    return WTF::MacApplication::isAppleMail();
 #endif
 }
 
 bool defaultShouldRestrictBaseURLSchemes()
 {
-    static bool shouldRestrictBaseURLSchemes = linkedOnOrAfter(WebCore::SDKVersion::FirstThatRestrictsBaseURLSchemes);
+    static bool shouldRestrictBaseURLSchemes = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::RestrictsBaseURLSchemes);
     return shouldRestrictBaseURLSchemes;
-}
-
-bool defaultUseLegacyBackgroundSizeShorthandBehavior()
-{
-#if PLATFORM(IOS_FAMILY)
-    static bool shouldUseLegacyBackgroundSizeShorthandBehavior = !WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITHOUT_LEGACY_BACKGROUNDSIZE_SHORTHAND_BEHAVIOR);
-#else
-    static bool shouldUseLegacyBackgroundSizeShorthandBehavior = WebCore::MacApplication::isVersions()
-        && !WebKitLinkedOnOrAfter(WEBKIT_FIRST_VERSION_WITHOUT_LEGACY_BACKGROUNDSIZE_SHORTHAND_BEHAVIOR);
-#endif
-    return shouldUseLegacyBackgroundSizeShorthandBehavior;
 }
 
 bool defaultAllowDisplayOfInsecureContent()
@@ -251,56 +191,39 @@ bool defaultAllowRunningOfInsecureContent()
 
 bool defaultShouldConvertInvalidURLsToBlank()
 {
-#if PLATFORM(IOS_FAMILY)
-    static bool shouldConvertInvalidURLsToBlank = dyld_get_program_sdk_version() >= DYLD_IOS_VERSION_10_0;
-#else
-    static bool shouldConvertInvalidURLsToBlank = dyld_get_program_sdk_version() >= DYLD_MACOSX_VERSION_10_12;
-#endif
+    static bool shouldConvertInvalidURLsToBlank = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::ConvertsInvalidURLsToBlank);
     return shouldConvertInvalidURLsToBlank;
+}
+
+bool defaultPopoverAttributeEnabled()
+{
+    static bool newSDK = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::PopoverAttributeEnabled);
+    return newSDK;
 }
 
 #if PLATFORM(MAC)
 
 bool defaultPassiveWheelListenersAsDefaultOnDocument()
 {
-    static bool result = linkedOnOrAfter(WebCore::SDKVersion::FirstThatDefaultsToPassiveWheelListenersOnDocument);
+    static bool result = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::DefaultsToPassiveWheelListenersOnDocument);
     return result;
 }
 
 bool defaultWheelEventGesturesBecomeNonBlocking()
 {
-    static bool result = linkedOnOrAfter(WebCore::SDKVersion::FirstThatAllowsWheelEventGesturesToBecomeNonBlocking);
+    static bool result = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::AllowsWheelEventGesturesToBecomeNonBlocking);
     return result;
 }
 
 #endif
 
-#if ENABLE(MEDIA_SOURCE)
+#if ENABLE(MEDIA_SOURCE) && PLATFORM(IOS_FAMILY)
 
-bool defaultWebMParserEnabled()
+bool defaultMediaSourceEnabled()
 {
-    return isFeatureFlagEnabled("webm_parser", true);
+    return !PAL::deviceClassIsSmallScreen();
 }
 
-bool defaultWebMWebAudioEnabled()
-{
-    return isFeatureFlagEnabled("webm_webaudio", false);
-}
-
-#endif // ENABLE(MEDIA_SOURCE)
-
-#if ENABLE(VP9)
-
-bool defaultVP8DecoderEnabled()
-{
-    return isFeatureFlagEnabled("vp8_decoder", true);
-}
-
-bool defaultVP9DecoderEnabled()
-{
-    return isFeatureFlagEnabled("vp9_decoder", true);
-}
-
-#endif // ENABLE(VP9)
+#endif
 
 } // namespace WebKit

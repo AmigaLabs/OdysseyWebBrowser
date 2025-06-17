@@ -28,6 +28,8 @@
 
 #if !OS(AMIGAOS)
 extern "C" { void dprintf(const char *,...); }
+#else
+#define dprintf DebugPrintF
 #endif
 
 namespace WebCore {

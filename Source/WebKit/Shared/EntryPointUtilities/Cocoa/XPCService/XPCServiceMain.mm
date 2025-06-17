@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2022 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,49 +25,108 @@
 
 #import "config.h"
 
-#import "HandleXPCEndpointMessages.h"
 #import "Logging.h"
 #import "WKCrashReporter.h"
+#import "XPCEndpointMessages.h"
 #import "XPCServiceEntryPoint.h"
+#import "XPCUtilities.h"
 #import <CoreFoundation/CoreFoundation.h>
+#import <mach/mach.h>
 #import <pal/spi/cf/CFUtilitiesSPI.h>
 #import <pal/spi/cocoa/LaunchServicesSPI.h>
 #import <sys/sysctl.h>
+#import <wtf/BlockPtr.h>
+#import <wtf/Language.h>
 #import <wtf/OSObjectPtr.h>
 #import <wtf/RetainPtr.h>
+#import <wtf/StdLibExtras.h>
+#import <wtf/WTFProcess.h>
+#import <wtf/spi/cocoa/OSLogSPI.h>
+#import <wtf/spi/darwin/SandboxSPI.h>
 #import <wtf/spi/darwin/XPCSPI.h>
+#import <wtf/text/MakeString.h>
+
+#if __has_include(<WebKitAdditions/DyldCallbackAdditions.h>)
+#import <WebKitAdditions/DyldCallbackAdditions.h>
+#endif
 
 namespace WebKit {
 
-static void setAppleLanguagesPreference()
+static Vector<String>& overrideLanguagesFromBootstrap()
 {
-    auto bootstrap = adoptOSObject(xpc_copy_bootstrap());
-    if (!bootstrap)
-        return;
-
-    if (xpc_object_t languages = xpc_dictionary_get_value(bootstrap.get(), "OverrideLanguages")) {
-        @autoreleasepool {
-            NSDictionary *existingArguments = [[NSUserDefaults standardUserDefaults] volatileDomainForName:NSArgumentDomain];
-            auto newArguments = adoptNS([existingArguments mutableCopy]);
-            RetainPtr<NSMutableArray> newLanguages = adoptNS([[NSMutableArray alloc] init]);
-            xpc_array_apply(languages, ^(size_t index, xpc_object_t value) {
-                [newLanguages addObject:[NSString stringWithCString:xpc_string_get_string_ptr(value) encoding:NSUTF8StringEncoding]];
-                return true;
-            });
-
-            LOG_WITH_STREAM(Language, stream << "Bootstrap message contains OverrideLanguages: " << newLanguages.get());
-
-            [newArguments setValue:newLanguages.get() forKey:@"AppleLanguages"];
-            [[NSUserDefaults standardUserDefaults] setVolatileDomain:newArguments.get() forName:NSArgumentDomain];
-        }
-    } else
-        LOG(Language, "Bootstrap message does not contain OverrideLanguages");
+    static NeverDestroyed<Vector<String>> languages;
+    return languages;
 }
 
-static void XPCServiceEventHandler(xpc_connection_t peer)
+static void stageOverrideLanguagesForMainThread(Vector<String>&& languages)
 {
-    static NeverDestroyed<OSObjectPtr<xpc_object_t>> priorityBoostMessage;
+    RELEASE_ASSERT(overrideLanguagesFromBootstrap().isEmpty());
+    overrideLanguagesFromBootstrap().swap(languages);
+}
 
+static void setAppleLanguagesPreference()
+{
+    if (overrideLanguagesFromBootstrap().isEmpty())
+        return;
+    LOG_WITH_STREAM(Language, stream << "Overriding user prefered language: " << overrideLanguagesFromBootstrap());
+    overrideUserPreferredLanguages(overrideLanguagesFromBootstrap());
+}
+
+static void initializeCFPrefs()
+{
+#if ENABLE(CFPREFS_DIRECT_MODE)
+    // Enable CFPrefs direct mode to avoid unsuccessfully attempting to connect to the daemon and getting blocked by the sandbox.
+    _CFPrefsSetDirectModeEnabled(YES);
+#if HAVE(CF_PREFS_SET_READ_ONLY)
+    _CFPrefsSetReadOnly(YES);
+#endif
+#endif // ENABLE(CFPREFS_DIRECT_MODE)
+}
+
+static void initializeLogd(bool disableLogging)
+{
+#if ENABLE(LOGD_BLOCKING_IN_WEBCONTENT)
+    if (disableLogging) {
+        os_trace_set_mode(OS_TRACE_MODE_OFF);
+        return;
+    }
+#else
+    UNUSED_PARAM(disableLogging);
+#endif
+
+    os_trace_set_mode(OS_TRACE_MODE_INFO | OS_TRACE_MODE_DEBUG);
+
+    // Log a long message to make sure the XPC connection to the log daemon for oversized messages is opened.
+    // This is needed to block launchd after the WebContent process has launched, since access to launchd is
+    // required when opening new XPC connections.
+    std::array<char, 1024> stringWithSpaces;
+    memsetSpan(std::span { stringWithSpaces }, ' ');
+    stringWithSpaces.back() = '\0';
+    RELEASE_LOG(Process, "Initialized logd %s", stringWithSpaces.data());
+}
+
+#if PLATFORM(MAC) || PLATFORM(MACCATALYST)
+
+NEVER_INLINE NO_RETURN_DUE_TO_CRASH static void crashDueWebKitFrameworkVersionMismatch()
+{
+    CRASH();
+}
+static void checkFrameworkVersion(xpc_object_t message)
+{
+    auto uiProcessWebKitBundleVersion = xpc_dictionary_get_wtfstring(message, "WebKitBundleVersion"_s);
+    auto webkitBundleVersion = ASCIILiteral::fromLiteralUnsafe(WEBKIT_BUNDLE_VERSION);
+    if (!uiProcessWebKitBundleVersion.isNull() && uiProcessWebKitBundleVersion != webkitBundleVersion) {
+        auto errorMessage = makeString("WebKit framework version mismatch: "_s, uiProcessWebKitBundleVersion, " != "_s, webkitBundleVersion);
+        logAndSetCrashLogMessage(errorMessage.utf8().data());
+        crashDueWebKitFrameworkVersionMismatch();
+    }
+}
+#endif // PLATFORM(MAC)
+
+static bool s_isWebProcess = false;
+
+void XPCServiceEventHandler(xpc_connection_t peer)
+{
     OSObjectPtr<xpc_connection_t> retainedPeerConnection(peer);
 
     xpc_connection_set_target_queue(peer, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
@@ -77,50 +136,87 @@ static void XPCServiceEventHandler(xpc_connection_t peer)
             RELEASE_LOG_ERROR(IPC, "XPCServiceEventHandler: Received unexpected XPC event type: %{public}s", xpc_type_get_name(type));
             if (type == XPC_TYPE_ERROR) {
                 if (event == XPC_ERROR_CONNECTION_INVALID || event == XPC_ERROR_TERMINATION_IMMINENT) {
-                    RELEASE_LOG_ERROR(IPC, "Exiting: Received XPC event type: %{public}s", event == XPC_ERROR_CONNECTION_INVALID ? "XPC_ERROR_CONNECTION_INVALID" : "XPC_ERROR_TERMINATION_IMMINENT");
+                    RELEASE_LOG_FAULT(IPC, "Exiting: Received XPC event type: %{public}s", event == XPC_ERROR_CONNECTION_INVALID ? "XPC_ERROR_CONNECTION_INVALID" : "XPC_ERROR_TERMINATION_IMMINENT");
+#if ENABLE(CLOSE_WEBCONTENT_XPC_CONNECTION_POST_LAUNCH)
+                    if (s_isWebProcess)
+                        return;
+#endif
                     // FIXME: Handle this case more gracefully.
                     [[NSRunLoop mainRunLoop] performBlock:^{
-                        exit(EXIT_FAILURE);
+                        exitProcess(EXIT_FAILURE);
                     }];
                 }
             }
             return;
         }
 
-        auto* messageName = xpc_dictionary_get_string(event, "message-name");
+#if USE(EXIT_XPC_MESSAGE_WORKAROUND)
+        handleXPCExitMessage(event);
+#endif
+
+        String messageName = xpc_dictionary_get_wtfstring(event, "message-name"_s);
         if (!messageName) {
             RELEASE_LOG_ERROR(IPC, "XPCServiceEventHandler: 'message-name' is not present in the XPC dictionary");
             return;
         }
-        if (!strcmp(messageName, "bootstrap")) {
-            const char* serviceName = xpc_dictionary_get_string(event, "service-name");
+        if (messageName == "bootstrap"_s) {
+            WTF::initialize();
+
+            bool disableLogging = xpc_dictionary_get_bool(event, "disable-logging");
+            initializeLogd(disableLogging);
+
+            if (xpc_object_t languages = xpc_dictionary_get_value(event, "OverrideLanguages")) {
+                Vector<String> newLanguages;
+                @autoreleasepool {
+                    xpc_array_apply(languages, makeBlockPtr([&newLanguages](size_t index, xpc_object_t value) {
+                        newLanguages.append(String::fromUTF8(xpc_string_get_string_ptr(value)));
+                        return true;
+                    }).get());
+                }
+                LOG_WITH_STREAM(Language, stream << "Bootstrap message contains OverrideLanguages: " << newLanguages);
+                stageOverrideLanguagesForMainThread(WTFMove(newLanguages));
+            } else
+                LOG(Language, "Bootstrap message does not contain OverrideLanguages");
+
+#if __has_include(<WebKitAdditions/DyldCallbackAdditions.h>) && PLATFORM(IOS)
+            register_for_dlsym_callbacks();
+#endif
+
+#if PLATFORM(IOS_FAMILY)
+            auto containerEnvironmentVariables = xpc_dictionary_get_value(event, "ContainerEnvironmentVariables");
+            xpc_dictionary_apply(containerEnvironmentVariables, ^(const char *key, xpc_object_t value) {
+                setenv(key, xpc_string_get_string_ptr(value), 1);
+                return true;
+            });
+#endif
+
+            String serviceName = xpc_dictionary_get_wtfstring(event, "service-name"_s);
             if (!serviceName) {
                 RELEASE_LOG_ERROR(IPC, "XPCServiceEventHandler: 'service-name' is not present in the XPC dictionary");
                 return;
             }
             CFStringRef entryPointFunctionName = nullptr;
-            if (!strncmp(serviceName, "com.apple.WebKit.WebContent", strlen("com.apple.WebKit.WebContent")))
+            if (serviceName.startsWith("com.apple.WebKit.WebContent"_s)) {
+                s_isWebProcess = true;
                 entryPointFunctionName = CFSTR(STRINGIZE_VALUE_OF(WEBCONTENT_SERVICE_INITIALIZER));
-            else if (!strcmp(serviceName, "com.apple.WebKit.Networking"))
+            } else if (serviceName == "com.apple.WebKit.Networking"_s)
                 entryPointFunctionName = CFSTR(STRINGIZE_VALUE_OF(NETWORK_SERVICE_INITIALIZER));
-            else if (!strcmp(serviceName, "com.apple.WebKit.Plugin.64"))
-                entryPointFunctionName = CFSTR(STRINGIZE_VALUE_OF(PLUGIN_SERVICE_INITIALIZER));
-            else if (!strcmp(serviceName, "com.apple.WebKit.GPU"))
+            else if (serviceName == "com.apple.WebKit.GPU"_s)
                 entryPointFunctionName = CFSTR(STRINGIZE_VALUE_OF(GPU_SERVICE_INITIALIZER));
-            else if (!strcmp(serviceName, "com.apple.WebKit.WebAuthn"))
-                entryPointFunctionName = CFSTR(STRINGIZE_VALUE_OF(WEBAUTHN_SERVICE_INITIALIZER));
+            else if (serviceName == "com.apple.WebKit.Model"_s)
+                entryPointFunctionName = CFSTR(STRINGIZE_VALUE_OF(MODEL_SERVICE_INITIALIZER));
             else {
-                RELEASE_LOG_ERROR(IPC, "XPCServiceEventHandler: Unexpected 'service-name': %{public}s", serviceName);
+                RELEASE_LOG_ERROR(IPC, "XPCServiceEventHandler: Unexpected 'service-name': %{public}s", serviceName.utf8().data());
                 return;
             }
 
             CFBundleRef webKitBundle = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.WebKit"));
-            typedef void (*InitializerFunction)(xpc_connection_t, xpc_object_t, xpc_object_t);
+            typedef void (*InitializerFunction)(xpc_connection_t, xpc_object_t);
             InitializerFunction initializerFunctionPtr = reinterpret_cast<InitializerFunction>(CFBundleGetFunctionPointerForName(webKitBundle, entryPointFunctionName));
             if (!initializerFunctionPtr) {
                 RELEASE_LOG_FAULT(IPC, "Exiting: Unable to find entry point in WebKit.framework with name: %s", [(__bridge NSString *)entryPointFunctionName UTF8String]);
                 [[NSRunLoop mainRunLoop] performBlock:^{
-                    exit(EXIT_FAILURE);
+                    exitProcess(EXIT_FAILURE);
                 }];
                 return;
             }
@@ -137,85 +233,39 @@ static void XPCServiceEventHandler(xpc_connection_t peer)
             if (fd != -1)
                 dup2(fd, STDERR_FILENO);
 
-            WorkQueue::main().dispatchSync([initializerFunctionPtr, event = OSObjectPtr<xpc_object_t>(event), retainedPeerConnection] {
-                initializerFunctionPtr(retainedPeerConnection.get(), event.get(), priorityBoostMessage.get().get());
+            WorkQueue::protectedMain()->dispatchSync([initializerFunctionPtr, event = OSObjectPtr<xpc_object_t>(event), retainedPeerConnection] {
+                WTF::initializeMainThread();
+
+                initializeCFPrefs();
+#if PLATFORM(MAC) || PLATFORM(MACCATALYST)
+                checkFrameworkVersion(event.get());
+#endif
+                initializerFunctionPtr(retainedPeerConnection.get(), event.get());
 
                 setAppleLanguagesPreference();
             });
 
-            priorityBoostMessage.get() = nullptr;
             return;
         }
 
-        // Leak a boost onto the NetworkProcess.
-        if (!strcmp(messageName, "pre-bootstrap")) {
-            assert(!priorityBoostMessage.get());
-            priorityBoostMessage.get() = event;
-            return;
-        }
-
-        handleXPCEndpointMessages(event, messageName);
+        handleXPCEndpointMessage(event, messageName);
     });
 
     xpc_connection_resume(peer);
 }
 
-#if PLATFORM(MAC)
-
-NEVER_INLINE NO_RETURN_DUE_TO_CRASH static void crashDueWebKitFrameworkVersionMismatch()
+int XPCServiceMain(int, const char**)
 {
-    CRASH();
-}
-
-#endif // PLATFORM(MAC)
-
-#if ENABLE(CFPREFS_DIRECT_MODE)
-static bool shouldEnableCFPrefsDirectMode(int argc, const char** argv)
-{
-    if (argc <= 0 || !argv[0])
-        return false;
-    if (strstr(argv[0], "com.apple.WebKit.WebContent"))
-        return true;
-    if (strstr(argv[0], "com.apple.WebKit.GPU"))
-        return true;
-    return false;
-}
-#endif
-
-int XPCServiceMain(int argc, const char** argv)
-{
-    ASSERT(argc >= 1);
-    ASSERT(argv[0]);
-#if ENABLE(CFPREFS_DIRECT_MODE)
-    if (shouldEnableCFPrefsDirectMode(argc, argv)) {
-        // Enable CFPrefs direct mode to avoid unsuccessfully attempting to connect to the daemon and getting blocked by the sandbox.
-        _CFPrefsSetDirectModeEnabled(YES);
-#if HAVE(CF_PREFS_SET_READ_ONLY)
-        _CFPrefsSetReadOnly(YES);
-#endif
-    }
-#else
-    UNUSED_PARAM(argc);
-    UNUSED_PARAM(argv);
-#endif
-
-    WTF::initializeMainThread();
-
     auto bootstrap = adoptOSObject(xpc_copy_bootstrap());
 
     if (bootstrap) {
-#if PLATFORM(IOS_FAMILY)
-        auto containerEnvironmentVariables = xpc_dictionary_get_value(bootstrap.get(), "ContainerEnvironmentVariables");
-        xpc_dictionary_apply(containerEnvironmentVariables, ^(const char *key, xpc_object_t value) {
-            setenv(key, xpc_string_get_string_ptr(value), 1);
-            return true;
-        });
-#endif
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || PLATFORM(MACCATALYST)
 #if ASAN_ENABLED
         // EXC_RESOURCE on ASAN builds freezes the process for several minutes: rdar://65027596
         if (char *disableFreezingOnExcResource = getenv("DISABLE_FREEZING_ON_EXC_RESOURCE")) {
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
             if (!strcasecmp(disableFreezingOnExcResource, "yes") || !strcasecmp(disableFreezingOnExcResource, "true") || !strcasecmp(disableFreezingOnExcResource, "1")) {
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
                 int val = 1;
                 int rc = sysctlbyname("debug.toggle_address_reuse", nullptr, 0, &val, sizeof(val));
                 if (rc < 0)
@@ -225,20 +275,8 @@ int XPCServiceMain(int argc, const char** argv)
             }
         }
 #endif
-        String webKitBundleVersion = xpc_dictionary_get_string(bootstrap.get(), "WebKitBundleVersion");
-        String expectedBundleVersion = [NSBundle bundleWithIdentifier:@"com.apple.WebKit"].infoDictionary[(__bridge NSString *)kCFBundleVersionKey];
-        if (!webKitBundleVersion.isNull() && !expectedBundleVersion.isNull() && webKitBundleVersion != expectedBundleVersion) {
-            auto errorMessage = makeString("WebKit framework version mismatch: ", webKitBundleVersion, " != ", expectedBundleVersion);
-            logAndSetCrashLogMessage(errorMessage.utf8().data());
-            crashDueWebKitFrameworkVersionMismatch();
-        }
 #endif
     }
-
-#if PLATFORM(MAC)
-    // Don't allow Apple Events in WebKit processes. This can be removed when <rdar://problem/14012823> is fixed.
-    setenv("__APPLEEVENTSSERVICENAME", "", 1);
-#endif
 
     xpc_main(XPCServiceEventHandler);
     return 0;

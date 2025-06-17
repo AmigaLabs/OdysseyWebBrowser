@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright (c) 2014-2016 Apple Inc. All rights reserved.
 # Copyright (c) 2014 University of Washington. All rights reserved.
@@ -70,7 +70,7 @@ class CppFrontendDispatcherImplementationGenerator(CppGenerator):
 
     def _generate_secondary_header_includes(self):
         header_includes = [
-            (["JavaScriptCore", "WebKit"], ("JavaScriptCore", "inspector/InspectorFrontendRouter.h")),
+            (["JavaScriptCore", "WebKit", "WebDriverBidi"], ("JavaScriptCore", "inspector/InspectorFrontendRouter.h")),
         ]
         return '\n'.join(self.generate_includes_from_entries(header_includes))
 

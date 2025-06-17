@@ -28,20 +28,29 @@
 
 #if PLATFORM(MAC)
 
+#import "Chrome.h"
+#import "ChromeClient.h"
 #import "DataDetection.h"
 #import "DataDetectionResultsStorage.h"
 #import "DataDetectorElementInfo.h"
-#import "FrameView.h"
+#import "ElementInlines.h"
+#import "GraphicsLayer.h"
+#import "GraphicsLayerClient.h"
 #import "HTMLElement.h"
 #import "HTMLNames.h"
+#import "ImageOverlay.h"
 #import "ImageOverlayDataDetectionResultIdentifier.h"
 #import "IntRect.h"
+#import "LocalFrameView.h"
 #import "Page.h"
 #import "PlatformMouseEvent.h"
+#import "ShadowRoot.h"
 #import "SimpleRange.h"
-#import "TypedElementDescendantIterator.h"
+#import "TypedElementDescendantIteratorInlines.h"
 #import <QuartzCore/QuartzCore.h>
 #import <wtf/HashSet.h>
+#import <wtf/OptionSet.h>
+#import <wtf/RefPtr.h>
 #import <wtf/text/StringToIntegerConversion.h>
 #import <pal/mac/DataDetectorsSoftLink.h>
 
@@ -49,19 +58,19 @@ namespace WebCore {
 
 void ImageOverlayController::updateDataDetectorHighlights(const HTMLElement& overlayHost)
 {
-    if (!overlayHost.hasImageOverlay()) {
+    if (!ImageOverlay::hasOverlay(overlayHost)) {
         ASSERT_NOT_REACHED();
         clearDataDetectorHighlights();
         return;
     }
 
     Vector<Ref<HTMLElement>> dataDetectorResultElements;
-    for (auto& child : descendantsOfType<HTMLElement>(*overlayHost.userAgentShadowRoot())) {
-        if (child.isImageOverlayDataDetectorResult() && child.renderer())
-            dataDetectorResultElements.append(makeRef(child));
+    for (auto& child : descendantsOfType<HTMLElement>(*overlayHost.protectedUserAgentShadowRoot())) {
+        if (ImageOverlay::isDataDetectorResult(child) && child.renderer())
+            dataDetectorResultElements.append(child);
     }
 
-    HashSet<Ref<HTMLElement>> dataDetectorResultElementsWithHighlights;
+    UncheckedKeyHashSet<Ref<HTMLElement>> dataDetectorResultElementsWithHighlights;
     for (auto& containerAndHighlight : m_dataDetectorContainersAndHighlights) {
         if (containerAndHighlight.first)
             dataDetectorResultElementsWithHighlights.add(*containerAndHighlight.first);
@@ -70,35 +79,28 @@ void ImageOverlayController::updateDataDetectorHighlights(const HTMLElement& ove
     if (dataDetectorResultElementsWithHighlights == dataDetectorResultElements)
         return;
 
-    auto mainFrameView = makeRefPtr(m_page->mainFrame().view());
+    RefPtr mainFrameView = m_page->mainFrame().virtualView();
     if (!mainFrameView)
         return;
 
-    auto frameView = makeRefPtr(overlayHost.document().view());
+    RefPtr frameView = overlayHost.document().view();
     if (!frameView)
         return;
 
     m_activeDataDetectorHighlight = nullptr;
-    m_dataDetectorContainersAndHighlights.clear();
-    m_dataDetectorContainersAndHighlights.reserveInitialCapacity(dataDetectorResultElements.size());
-
-    for (auto& element : dataDetectorResultElements) {
+    m_dataDetectorContainersAndHighlights = WTF::map(dataDetectorResultElements, [&](auto& element) {
         CGRect elementBounds = element->renderer()->absoluteBoundingBoxRect();
         elementBounds.origin = mainFrameView->windowToContents(frameView->contentsToWindow(roundedIntPoint(elementBounds.origin)));
 
         // FIXME: We should teach DataDetectorHighlight to render quads instead of always falling back to axis-aligned bounding rects.
-#if HAVE(DD_HIGHLIGHT_CREATE_WITH_SCALE)
-        auto highlight = adoptCF(PAL::softLink_DataDetectors_DDHighlightCreateWithRectsInVisibleRectWithStyleScaleAndDirection(nullptr, &elementBounds, 1, mainFrameView->visibleContentRect(), DDHighlightStyleBubbleStandard | DDHighlightStyleStandardIconArrow, YES, NSWritingDirectionNatural, NO, YES, 0));
-#else
-        auto highlight = adoptCF(PAL::softLink_DataDetectors_DDHighlightCreateWithRectsInVisibleRectWithStyleAndDirection(nullptr, &elementBounds, 1, mainFrameView->visibleContentRect(), DDHighlightStyleBubbleStandard | DDHighlightStyleStandardIconArrow, YES, NSWritingDirectionNatural, NO, YES));
-#endif
-        m_dataDetectorContainersAndHighlights.append({ makeWeakPtr(element.get()), DataDetectorHighlight::createForImageOverlay(*m_page, *this, WTFMove(highlight), *makeRangeSelectingNode(element.get())) });
-    }
+        auto highlight = adoptCF(PAL::softLink_DataDetectors_DDHighlightCreateWithRectsInVisibleRectWithStyleScaleAndDirection(nullptr, &elementBounds, 1, mainFrameView->visibleContentRect(), static_cast<DDHighlightStyle>(DDHighlightStyleBubbleStandard) | static_cast<DDHighlightStyle>(DDHighlightStyleStandardIconArrow), YES, NSWritingDirectionNatural, NO, YES, 0));
+        return ContainerAndHighlight { element, DataDetectorHighlight::createForImageOverlay(*this, WTFMove(highlight), *makeRangeSelectingNode(element.get())) };
+    });
 }
 
 bool ImageOverlayController::platformHandleMouseEvent(const PlatformMouseEvent& event)
 {
-    auto mainFrameView = makeRefPtr(m_page->mainFrame().view());
+    RefPtr mainFrameView = m_page->mainFrame().virtualView();
     if (!mainFrameView)
         return false;
 
@@ -117,7 +119,7 @@ bool ImageOverlayController::platformHandleMouseEvent(const PlatformMouseEvent& 
 
         mouseIsOverActiveDataDetectorHighlightButton = isOverButton;
         m_activeDataDetectorHighlight = highlight.copyRef();
-        activeDataDetectorElement = makeRefPtr(*element);
+        activeDataDetectorElement = element.get();
         break;
     }
 
@@ -131,7 +133,7 @@ bool ImageOverlayController::platformHandleMouseEvent(const PlatformMouseEvent& 
         }
     }
 
-    if (event.type() == PlatformEvent::MousePressed && mouseIsOverActiveDataDetectorHighlightButton)
+    if (event.type() == PlatformEvent::Type::MousePressed && mouseIsOverActiveDataDetectorHighlightButton)
         return handleDataDetectorAction(*activeDataDetectorElement, mousePositionInContents);
 
     return false;
@@ -142,21 +144,19 @@ bool ImageOverlayController::handleDataDetectorAction(const HTMLElement& element
     if (!m_page)
         return false;
 
-    auto frame = makeRefPtr(element.document().frame());
+    RefPtr frame = element.document().frame();
     if (!frame)
         return false;
 
-    auto frameView = makeRefPtr(element.document().view());
+    RefPtr frameView = element.document().view();
     if (!frameView)
         return false;
 
     auto identifierValue = parseInteger<uint64_t>(element.attributeWithoutSynchronization(HTMLNames::x_apple_data_detectors_resultAttr));
-    if (!identifierValue)
+    if (!identifierValue || !*identifierValue)
         return false;
 
-    auto identifier = makeObjectIdentifier<ImageOverlayDataDetectionResultIdentifierType>(*identifierValue);
-    if (!identifier.isValid())
-        return false;
+    auto identifier = ObjectIdentifier<ImageOverlayDataDetectionResultIdentifierType>(*identifierValue);
 
     auto* dataDetectionResults = frame->dataDetectionResultsIfExists();
     if (!dataDetectionResults)
@@ -170,7 +170,7 @@ bool ImageOverlayController::handleDataDetectorAction(const HTMLElement& element
     if (!renderer)
         return false;
 
-    m_page->chrome().client().handleClickForDataDetectionResult({ WTFMove(dataDetectionResult), frameView->contentsToWindow(renderer->absoluteBoundingBoxRect()) }, frameView->contentsToWindow(locationInContents));
+    protectedPage()->chrome().client().handleClickForDataDetectionResult({ WTFMove(dataDetectionResult), frameView->contentsToWindow(renderer->absoluteBoundingBoxRect()) }, frameView->contentsToWindow(locationInContents));
     return true;
 }
 
@@ -181,7 +181,21 @@ void ImageOverlayController::clearDataDetectorHighlights()
     m_activeDataDetectorHighlight = nullptr;
 }
 
-void ImageOverlayController::elementUnderMouseDidChange(Frame& frame, Element* elementUnderMouse)
+void ImageOverlayController::textRecognitionResultsChanged(HTMLElement& element)
+{
+    if (m_hostElementForDataDetectors != &element)
+        return;
+
+    clearDataDetectorHighlights();
+    uninstallPageOverlayIfNeeded();
+}
+
+bool ImageOverlayController::hasActiveDataDetectorHighlightForTesting() const
+{
+    return !!m_activeDataDetectorHighlight;
+}
+
+void ImageOverlayController::elementUnderMouseDidChange(LocalFrame& frame, Element* elementUnderMouse)
 {
     if (m_activeDataDetectorHighlight)
         return;
@@ -189,32 +203,31 @@ void ImageOverlayController::elementUnderMouseDidChange(Frame& frame, Element* e
     if (!elementUnderMouse && m_hostElementForDataDetectors && frame.document() != &m_hostElementForDataDetectors->document())
         return;
 
-    if (!elementUnderMouse || !HTMLElement::isInsideImageOverlay(*elementUnderMouse)) {
+    if (!elementUnderMouse || !ImageOverlay::isInsideOverlay(*elementUnderMouse)) {
         m_hostElementForDataDetectors = nullptr;
         uninstallPageOverlayIfNeeded();
         return;
     }
 
-    auto shadowHost = elementUnderMouse->shadowHost();
-    if (!is<HTMLElement>(shadowHost)) {
+    RefPtr imageOverlayHost = dynamicDowncast<HTMLElement>(elementUnderMouse->shadowHost());
+    if (!imageOverlayHost) {
         ASSERT_NOT_REACHED();
         m_hostElementForDataDetectors = nullptr;
         uninstallPageOverlayIfNeeded();
         return;
     }
 
-    auto imageOverlayHost = makeRef(downcast<HTMLElement>(*shadowHost));
-    if (!imageOverlayHost->hasImageOverlay()) {
+    if (!ImageOverlay::hasOverlay(*imageOverlayHost)) {
         ASSERT_NOT_REACHED();
         m_hostElementForDataDetectors = nullptr;
         uninstallPageOverlayIfNeeded();
         return;
     }
 
-    if (m_hostElementForDataDetectors == imageOverlayHost.ptr())
+    if (m_hostElementForDataDetectors == imageOverlayHost.get())
         return;
 
-    updateDataDetectorHighlights(imageOverlayHost.get());
+    updateDataDetectorHighlights(*imageOverlayHost);
 
     if (m_dataDetectorContainersAndHighlights.isEmpty()) {
         m_hostElementForDataDetectors = nullptr;
@@ -222,9 +235,39 @@ void ImageOverlayController::elementUnderMouseDidChange(Frame& frame, Element* e
         return;
     }
 
-    m_hostElementForDataDetectors = makeWeakPtr(imageOverlayHost.get());
+    m_hostElementForDataDetectors = imageOverlayHost.releaseNonNull();
     installPageOverlayIfNeeded();
 }
+
+#pragma mark - DataDetectorHighlightClient
+
+#if ENABLE(DATA_DETECTION)
+
+void ImageOverlayController::scheduleRenderingUpdate(OptionSet<RenderingUpdateStep> requestedSteps)
+{
+    if (!m_page)
+        return;
+
+    protectedPage()->scheduleRenderingUpdate(requestedSteps);
+}
+
+float ImageOverlayController::deviceScaleFactor() const
+{
+    if (!m_page)
+        return 1;
+
+    return protectedPage()->deviceScaleFactor();
+}
+
+RefPtr<GraphicsLayer> ImageOverlayController::createGraphicsLayer(GraphicsLayerClient& client)
+{
+    if (!m_page)
+        return nullptr;
+
+    return GraphicsLayer::create(protectedPage()->chrome().client().graphicsLayerFactory(), client);
+}
+
+#endif
 
 } // namespace WebCore
 

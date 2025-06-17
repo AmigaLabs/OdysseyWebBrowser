@@ -27,9 +27,10 @@
 #import "WKNSArray.h"
 
 #import <WebCore/WebCoreObjCExtras.h>
+#import <wtf/AlignedStorage.h>
 
 @implementation WKNSArray {
-    API::ObjectStorage<API::Array> _array;
+    AlignedStorage<API::Array> _array;
 }
 
 - (void)dealloc
@@ -51,8 +52,13 @@
 
 - (id)objectAtIndex:(NSUInteger)i
 {
-    API::Object* object = _array->at(i);
-    return object ? object->wrapper() : [NSNull null];
+    RefPtr object = self._protectedArray->at(i);
+    return object ? (id)object->wrapper() : [NSNull null];
+}
+
+- (RefPtr<API::Array>)_protectedArray
+{
+    return _array.get();
 }
 
 #pragma mark NSCopying protocol implementation

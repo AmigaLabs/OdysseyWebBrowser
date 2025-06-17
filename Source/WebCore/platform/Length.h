@@ -1,6 +1,6 @@
 /*
     Copyright (C) 1999 Lars Knoll (knoll@kde.org)
-    Copyright (C) 2006, 2008, 2014 Apple Inc. All rights reserved.
+    Copyright (C) 2006-2024 Apple Inc. All rights reserved.
     Copyright (C) 2011 Rik Cabanier (cabanier@adobe.com)
     Copyright (C) 2011 Adobe Systems Incorporated. All rights reserved.
 
@@ -23,11 +23,10 @@
 #pragma once
 
 #include "AnimationUtilities.h"
-#include <memory>
 #include <string.h>
 #include <wtf/Assertions.h>
-#include <wtf/FastMalloc.h>
 #include <wtf/Forward.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/UniqueArray.h>
 
 namespace WTF {
@@ -37,10 +36,19 @@ class TextStream;
 namespace WebCore {
 
 enum class LengthType : uint8_t {
-    Auto, Relative, Percent, Fixed,
-    Intrinsic, MinIntrinsic,
-    MinContent, MaxContent, FillAvailable, FitContent,
+    Auto,
+    Normal,
+    Relative,
+    Percent,
+    Fixed,
+    Intrinsic,
+    MinIntrinsic,
+    MinContent,
+    MaxContent,
+    FillAvailable,
+    FitContent,
     Calculated,
+    Content,
     Undefined
 };
 
@@ -53,10 +61,69 @@ struct BlendingContext;
 class CalculationValue;
 
 struct Length {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(Length);
 public:
     Length(LengthType = LengthType::Auto);
 
+    using FloatOrInt = std::variant<float, int>;
+    struct AutoData { };
+    struct NormalData { };
+    struct RelativeData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct PercentData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct FixedData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct IntrinsicData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct MinIntrinsicData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct MinContentData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct MaxContentData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct FillAvailableData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct FitContentData {
+        FloatOrInt value;
+        bool hasQuirk;
+    };
+    struct ContentData { };
+    struct UndefinedData { };
+    using IPCData = std::variant<
+        AutoData,
+        NormalData,
+        RelativeData,
+        PercentData,
+        FixedData,
+        IntrinsicData,
+        MinIntrinsicData,
+        MinContentData,
+        MaxContentData,
+        FillAvailableData,
+        FitContentData,
+        ContentData,
+        UndefinedData
+        // LengthType::Calculated is intentionally not serialized.
+    >;
+
+    WEBCORE_EXPORT Length(IPCData&&);
     Length(int value, LengthType, bool hasQuirk = false);
     Length(LayoutUnit value, LengthType, bool hasQuirk = false);
     Length(float value, LengthType, bool hasQuirk = false);
@@ -76,31 +143,35 @@ public:
     void setValue(LengthType, LayoutUnit value);
     Length& operator*=(float);
 
-    void setHasQuirk(bool);
-
     bool operator==(const Length&) const;
-    bool operator!=(const Length&) const;
 
     float value() const;
     int intValue() const;
     float percent() const;
     CalculationValue& calculationValue() const;
+    Ref<CalculationValue> protectedCalculationValue() const;
 
     LengthType type() const;
+    WEBCORE_EXPORT IPCData ipcData() const;
 
     bool isAuto() const;
     bool isCalculated() const;
     bool isFixed() const;
     bool isMaxContent() const;
     bool isMinContent() const;
+    bool isNormal() const;
     bool isPercent() const;
     bool isRelative() const;
     bool isUndefined() const;
     bool isFillAvailable() const;
     bool isFitContent() const;
     bool isMinIntrinsic() const;
+    bool isContent() const;
+
+    bool isEmptyValue() const { return m_isEmptyValue; }
 
     bool hasQuirk() const;
+    void setHasQuirk(bool);
 
     // FIXME calc: https://bugs.webkit.org/show_bug.cgi?id=80357. A calculated Length
     // always contains a percentage, and without a maxValue passed to these functions
@@ -110,6 +181,8 @@ public:
     bool isPositive() const;
     bool isNegative() const;
 
+    bool isFloat() const;
+
     bool isPercentOrCalculated() const; // Returns true for both Percent and Calculated.
 
     bool isIntrinsic() const;
@@ -117,75 +190,99 @@ public:
     bool isSpecified() const;
     bool isSpecifiedOrIntrinsic() const;
 
-    float nonNanCalculatedValue(float maxValue) const;
+    WEBCORE_EXPORT float nonNanCalculatedValue(float maxValue) const;
 
     bool isLegacyIntrinsic() const;
 
+    struct MarkableTraits {
+        static bool isEmptyValue(const Length& length) { return length.isEmptyValue(); }
+        static Length emptyValue() { return Length::createEmptyValue(); }
+    };
+
 private:
+    static Length createEmptyValue()
+    {
+        auto result = Length(LengthType::Undefined);
+        result.m_isEmptyValue = true;
+        return result;
+    }
+
     bool isCalculatedEqual(const Length&) const;
+
+    void initialize(const Length&);
+    void initialize(Length&&);
 
     WEBCORE_EXPORT void ref() const;
     WEBCORE_EXPORT void deref() const;
-    
+    FloatOrInt floatOrInt() const;
+    static LengthType typeFromIndex(const IPCData&);
+
     union {
-        int m_intValue;
+        int m_intValue { 0 };
         float m_floatValue;
         unsigned m_calculationValueHandle;
     };
-    bool m_hasQuirk;
     LengthType m_type;
-    bool m_isFloat;
+    bool m_hasQuirk { false };
+    bool m_isFloat { false };
+    bool m_isEmptyValue { false };
 };
 
 // Blend two lengths to produce a new length that is in between them. Used for animation.
 Length blend(const Length& from, const Length& to, const BlendingContext&);
 Length blend(const Length& from, const Length& to, const BlendingContext&, ValueRange);
 
-UniqueArray<Length> newCoordsArray(const String&, int& length);
 UniqueArray<Length> newLengthArray(const String&, int& length);
 
 inline Length::Length(LengthType type)
-    : m_intValue(0), m_hasQuirk(false), m_type(type), m_isFloat(false)
+    : m_type(type)
 {
     ASSERT(type != LengthType::Calculated);
 }
 
 inline Length::Length(int value, LengthType type, bool hasQuirk)
-    : m_intValue(value), m_hasQuirk(hasQuirk), m_type(type), m_isFloat(false)
+    : m_intValue(value)
+    , m_type(type)
+    , m_hasQuirk(hasQuirk)
 {
     ASSERT(type != LengthType::Calculated);
 }
 
 inline Length::Length(LayoutUnit value, LengthType type, bool hasQuirk)
-    : m_floatValue(value.toFloat()), m_hasQuirk(hasQuirk), m_type(type), m_isFloat(true)
+    : m_floatValue(value.toFloat())
+    , m_type(type)
+    , m_hasQuirk(hasQuirk)
+    , m_isFloat(true)
 {
     ASSERT(type != LengthType::Calculated);
 }
 
 inline Length::Length(float value, LengthType type, bool hasQuirk)
-    : m_floatValue(value), m_hasQuirk(hasQuirk), m_type(type), m_isFloat(true)
+    : m_floatValue(value)
+    , m_type(type)
+    , m_hasQuirk(hasQuirk)
+    , m_isFloat(true)
 {
     ASSERT(type != LengthType::Calculated);
 }
 
 inline Length::Length(double value, LengthType type, bool hasQuirk)
-    : m_floatValue(static_cast<float>(value)), m_hasQuirk(hasQuirk), m_type(type), m_isFloat(true)
+    : m_floatValue(static_cast<float>(value))
+    , m_type(type)
+    , m_hasQuirk(hasQuirk)
+    , m_isFloat(true)
 {
     ASSERT(type != LengthType::Calculated);
 }
 
 inline Length::Length(const Length& other)
 {
-    if (other.isCalculated())
-        other.ref();
-
-    memcpy(static_cast<void*>(this), static_cast<void*>(const_cast<Length*>(&other)), sizeof(Length));
+    initialize(other);
 }
 
 inline Length::Length(Length&& other)
 {
-    memcpy(static_cast<void*>(this), static_cast<void*>(&other), sizeof(Length));
-    other.m_type = LengthType::Auto;
+    initialize(WTFMove(other));
 }
 
 inline Length& Length::operator=(const Length& other)
@@ -193,12 +290,10 @@ inline Length& Length::operator=(const Length& other)
     if (this == &other)
         return *this;
 
-    if (other.isCalculated())
-        other.ref();
     if (isCalculated())
         deref();
 
-    memcpy(static_cast<void*>(this), static_cast<void*>(const_cast<Length*>(&other)), sizeof(Length));
+    initialize(other);
     return *this;
 }
 
@@ -210,9 +305,79 @@ inline Length& Length::operator=(Length&& other)
     if (isCalculated())
         deref();
 
-    memcpy(static_cast<void*>(this), static_cast<void*>(&other), sizeof(Length));
-    other.m_type = LengthType::Auto;
+    initialize(WTFMove(other));
     return *this;
+}
+
+inline void Length::initialize(const Length& other)
+{
+    m_type = other.m_type;
+    m_hasQuirk = other.m_hasQuirk;
+    m_isEmptyValue = other.m_isEmptyValue;
+
+    switch (m_type) {
+    case LengthType::Auto:
+    case LengthType::Normal:
+    case LengthType::Content:
+    case LengthType::Undefined:
+        m_intValue = 0;
+        break;
+    case LengthType::Fixed:
+    case LengthType::Relative:
+    case LengthType::Intrinsic:
+    case LengthType::MinIntrinsic:
+    case LengthType::MinContent:
+    case LengthType::MaxContent:
+    case LengthType::FillAvailable:
+    case LengthType::FitContent:
+    case LengthType::Percent:
+        m_isFloat = other.m_isFloat;
+        if (m_isFloat)
+            m_floatValue = other.m_floatValue;
+        else
+            m_intValue = other.m_intValue;
+        break;
+    case LengthType::Calculated:
+        m_calculationValueHandle = other.m_calculationValueHandle;
+        ref();
+        break;
+    }
+}
+
+inline void Length::initialize(Length&& other)
+{
+    m_type = other.m_type;
+    m_hasQuirk = other.m_hasQuirk;
+    m_isEmptyValue = other.m_isEmptyValue;
+
+    switch (m_type) {
+    case LengthType::Auto:
+    case LengthType::Normal:
+    case LengthType::Content:
+    case LengthType::Undefined:
+        m_intValue = 0;
+        break;
+    case LengthType::Fixed:
+    case LengthType::Relative:
+    case LengthType::Intrinsic:
+    case LengthType::MinIntrinsic:
+    case LengthType::MinContent:
+    case LengthType::MaxContent:
+    case LengthType::FillAvailable:
+    case LengthType::FitContent:
+    case LengthType::Percent:
+        m_isFloat = other.m_isFloat;
+        if (m_isFloat)
+            m_floatValue = other.m_floatValue;
+        else
+            m_intValue = other.m_intValue;
+        break;
+    case LengthType::Calculated:
+        m_calculationValueHandle = std::exchange(other.m_calculationValueHandle, 0);
+        break;
+    }
+
+    other.m_type = LengthType::Auto;
 }
 
 inline Length::~Length()
@@ -226,16 +391,13 @@ inline bool Length::operator==(const Length& other) const
     // FIXME: This might be too long to be inline.
     if (type() != other.type() || hasQuirk() != other.hasQuirk())
         return false;
+    if (isEmptyValue() || other.isEmptyValue())
+        return isEmptyValue() && other.isEmptyValue();
     if (isUndefined())
         return true;
     if (isCalculated())
         return isCalculatedEqual(other);
     return value() == other.value();
-}
-
-inline bool Length::operator!=(const Length& other) const
-{
-    return !(*this == other);
 }
 
 inline Length& Length::operator*=(float value)
@@ -255,6 +417,7 @@ inline Length& Length::operator*=(float value)
 inline float Length::value() const
 {
     ASSERT(!isUndefined());
+    ASSERT(!isEmptyValue());
     ASSERT(!isCalculated());
     return m_isFloat ? m_floatValue : m_intValue;
 }
@@ -285,6 +448,11 @@ inline bool Length::hasQuirk() const
     return m_hasQuirk;
 }
 
+inline bool Length::isFloat() const
+{
+    return m_isFloat;
+}
+
 inline void Length::setHasQuirk(bool hasQuirk)
 {
     m_hasQuirk = hasQuirk;
@@ -292,7 +460,7 @@ inline void Length::setHasQuirk(bool hasQuirk)
 
 inline void Length::setValue(LengthType type, int value)
 {
-    ASSERT(m_type != LengthType::Calculated);
+    ASSERT(!isCalculated());
     ASSERT(type != LengthType::Calculated);
     m_type = type;
     m_intValue = value;
@@ -301,7 +469,7 @@ inline void Length::setValue(LengthType type, int value)
 
 inline void Length::setValue(LengthType type, float value)
 {
-    ASSERT(m_type != LengthType::Calculated);
+    ASSERT(!isCalculated());
     ASSERT(type != LengthType::Calculated);
     m_type = type;
     m_floatValue = value;
@@ -310,11 +478,16 @@ inline void Length::setValue(LengthType type, float value)
 
 inline void Length::setValue(LengthType type, LayoutUnit value)
 {
-    ASSERT(m_type != LengthType::Calculated);
+    ASSERT(!isCalculated());
     ASSERT(type != LengthType::Calculated);
     m_type = type;
     m_floatValue = value;
     m_isFloat = true;
+}
+
+inline bool Length::isNormal() const
+{
+    return type() == LengthType::Normal;
 }
 
 inline bool Length::isAuto() const
@@ -339,6 +512,7 @@ inline bool Length::isMinContent() const
 
 inline bool Length::isNegative() const
 {
+    ASSERT(!isEmptyValue());
     if (isUndefined() || isCalculated())
         return false;
     return m_isFloat ? (m_floatValue < 0) : (m_intValue < 0);
@@ -366,6 +540,7 @@ inline bool Length::isPercentOrCalculated() const
 
 inline bool Length::isPositive() const
 {
+    ASSERT(!isEmptyValue());
     if (isUndefined())
         return false;
     if (isCalculated())
@@ -376,6 +551,7 @@ inline bool Length::isPositive() const
 inline bool Length::isZero() const
 {
     ASSERT(!isUndefined());
+    ASSERT(!isEmptyValue());
     if (isCalculated() || isAuto())
         return false;
     return m_isFloat ? !m_floatValue : !m_intValue;
@@ -427,7 +603,13 @@ inline bool Length::isMinIntrinsic() const
     return type() == LengthType::MinIntrinsic;
 }
 
+inline bool Length::isContent() const
+{
+    return type() == LengthType::Content;
+}
+
 Length convertTo100PercentMinusLength(const Length&);
+Length convertTo100PercentMinusLengthSum(const Length&, const Length&);
 
 WTF::TextStream& operator<<(WTF::TextStream&, Length);
 

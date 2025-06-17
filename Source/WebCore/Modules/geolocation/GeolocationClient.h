@@ -26,6 +26,7 @@
 #pragma once
 
 #include <optional>
+#include <wtf/CheckedPtr.h>
 #include <wtf/Forward.h>
 
 namespace WebCore {
@@ -34,11 +35,13 @@ class Geolocation;
 class GeolocationPositionData;
 class Page;
 
-class GeolocationClient {
+class GeolocationClient : public CanMakeCheckedPtr<GeolocationClient> {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(GeolocationClient);
 public:
     virtual void geolocationDestroyed() = 0;
 
-    virtual void startUpdating(const String& authorizationToken) = 0;
+    virtual void startUpdating(const String& authorizationToken, bool needsHighAccuracy) = 0;
     virtual void stopUpdating() = 0;
     virtual void revokeAuthorizationToken(const String&) { }
 

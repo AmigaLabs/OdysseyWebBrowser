@@ -28,6 +28,10 @@
 
 #pragma once
 
+#include <wtf/Compiler.h>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 #include <mutex>
 #include <wtf/Assertions.h>
 #include <wtf/Atomics.h>
@@ -35,6 +39,8 @@
 #include <wtf/ForbidHeapAllocation.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/ThreadSanitizerSupport.h>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
 
 namespace WTF {
 
@@ -58,8 +64,8 @@ template<typename T> class DropLockForScope;
 using AdoptLockTag = std::adopt_lock_t;
 constexpr AdoptLockTag AdoptLock;
 
-template<typename T>
-class Locker : public AbstractLocker {
+template<typename T, typename = void>
+class [[nodiscard]] Locker : public AbstractLocker { // NOLINT
 public:
     explicit Locker(T& lockable) : m_lockable(&lockable) { lock(); }
     explicit Locker(T* lockable) : m_lockable(lockable) { lock(); }

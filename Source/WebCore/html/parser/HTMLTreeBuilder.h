@@ -21,13 +21,14 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #pragma once
 
 #include "HTMLConstructionSite.h"
 #include "HTMLParserOptions.h"
+#include <wtf/TZoneMalloc.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/TextPosition.h>
 
@@ -37,22 +38,25 @@ class JSCustomElementInterface;
 class HTMLDocumentParser;
 class ScriptElement;
 
+enum class TagName : uint16_t;
+
 struct CustomElementConstructionData {
     WTF_MAKE_STRUCT_FAST_ALLOCATED;
 
-    CustomElementConstructionData(Ref<JSCustomElementInterface>&&, const AtomString& name, Vector<Attribute>&&);
+    CustomElementConstructionData(Ref<JSCustomElementInterface>&&, Ref<CustomElementRegistry>&&, const AtomString& name, Vector<Attribute>&&);
     ~CustomElementConstructionData();
 
     Ref<JSCustomElementInterface> elementInterface;
+    Ref<CustomElementRegistry> registry;
     AtomString name;
     Vector<Attribute> attributes;
 };
 
 class HTMLTreeBuilder {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(HTMLTreeBuilder);
 public:
-    HTMLTreeBuilder(HTMLDocumentParser&, HTMLDocument&, ParserContentPolicy, const HTMLParserOptions&);
-    HTMLTreeBuilder(HTMLDocumentParser&, DocumentFragment&, Element& contextElement, ParserContentPolicy, const HTMLParserOptions&);
+    HTMLTreeBuilder(HTMLDocumentParser&, HTMLDocument&, OptionSet<ParserContentPolicy>, const HTMLParserOptions&);
+    HTMLTreeBuilder(HTMLDocumentParser&, DocumentFragment&, Element& contextElement, OptionSet<ParserContentPolicy>, const HTMLParserOptions&, CustomElementRegistry*);
     void setShouldSkipLeadingNewline(bool);
 
     ~HTMLTreeBuilder();
@@ -67,12 +71,15 @@ public:
     // Must be called to take the parser-blocking script before calling the parser again.
     RefPtr<ScriptElement> takeScriptToProcess(TextPosition& scriptStartPosition);
     const ScriptElement* scriptToProcess() const { return m_scriptToProcess.get(); }
+    RefPtr<const ScriptElement> protectedScriptToProcess() const;
 
     std::unique_ptr<CustomElementConstructionData> takeCustomElementConstructionData() { return WTFMove(m_customElementToConstruct); }
     void didCreateCustomOrFallbackElement(Ref<Element>&&, CustomElementConstructionData&);
 
     // Done, close any open tags, etc.
     void finished();
+
+    bool isOnStackOfOpenElements(Element&) const;
 
 private:
     class ExternalCharacterTokenBuffer;
@@ -109,7 +116,7 @@ private:
 
 #if ENABLE(TELEPHONE_NUMBER_DETECTION) && PLATFORM(IOS_FAMILY)
     void insertPhoneNumberLink(const String&);
-    void linkifyPhoneNumbers(const String&, WhitespaceMode);
+    void linkifyPhoneNumbers(const String&);
 #endif
 
     void processToken(AtomHTMLToken&&);
@@ -139,12 +146,13 @@ private:
 
     void processAnyOtherEndTagForInBody(AtomHTMLToken&&);
 
+    inline bool consumeAndInsertWhitespace(ExternalCharacterTokenBuffer&);
     void processCharacterBuffer(ExternalCharacterTokenBuffer&);
     inline void processCharacterBufferForInBody(ExternalCharacterTokenBuffer&);
 
-    void processFakeStartTag(const QualifiedName&, Vector<Attribute>&& attributes = Vector<Attribute>());
-    void processFakeEndTag(const QualifiedName&);
-    void processFakeEndTag(const AtomString&);
+    void processFakeStartTag(TagName, Vector<Attribute>&& attributes = Vector<Attribute>());
+    void processFakeEndTag(TagName);
+    void processFakeEndTag(const HTMLStackItem&);
     void processFakeCharacters(const String&);
     void processFakePEndTagIfPInButtonScope();
 
@@ -163,8 +171,8 @@ private:
 
     bool shouldProcessTokenInForeignContent(const AtomHTMLToken&);
     void processTokenInForeignContent(AtomHTMLToken&&);
-    
-    HTMLStackItem& adjustedCurrentStackItem() const;
+
+    HTMLStackItem& adjustedCurrentStackItem();
 
     void callTheAdoptionAgency(AtomHTMLToken&);
 
@@ -188,17 +196,17 @@ private:
         FragmentParsingContext(DocumentFragment&, Element& contextElement);
 
         DocumentFragment* fragment() const;
-        Element& contextElement() const;
-        HTMLStackItem& contextElementStackItem() const;
+        Element& contextElement();
+        HTMLStackItem& contextElementStackItem();
 
     private:
         DocumentFragment* m_fragment { nullptr };
-        RefPtr<HTMLStackItem> m_contextElementStackItem;
+        HTMLStackItem m_contextElementStackItem;
     };
 
     HTMLDocumentParser& m_parser;
     const HTMLParserOptions m_options;
-    const FragmentParsingContext m_fragmentContext;
+    FragmentParsingContext m_fragmentContext;
 
     HTMLConstructionSite m_tree;
 

@@ -32,13 +32,13 @@ extern "C" {
 
 #define AC_BUFSIZE (1024 * 4)
 
+#ifndef AVSEEK_SIZE
+#define AVSEEK_SIZE 0x10000
+#endif
+
 #ifndef INT64_MAX
 #define INT64_MAX 9223372036854775807LL
-#endif
-#ifndef INT64_MIN
 #define INT64_MIN (-INT64_MAX-1)
-#endif
-#ifndef UINT64_MAX
 #define UINT64_MAX 18446744073709551615ULL
 #endif
 
@@ -542,6 +542,28 @@ EXTERN lp_ac_proberesult CALL_CONVT
     ac_probe_input_buffer(uint8_t *buf, int bufsize, char *filename,
                           int *score_max);
 
+struct ac_initialization_segment_stream {
+    ac_stream_type type;
+    char codecName[128];
+    double duration;
+    int bitrate;
+    union {
+        struct ac_initialization_audio_data {
+            int channels;
+            int frequency;
+            int bits;
+        } audio;
+        struct ac_initialization_video_data {
+            int width;
+            int height;
+        } video;
+    } typeData;
+};
+
+EXTERN int CALL_CONVT
+    ac_is_initialization_segment(uint8_t *buf, int bufsize,
+        struct ac_initialization_segment_stream *stream, int streamsMax);
+
 /*
  * Additional support functions
  */
@@ -554,13 +576,10 @@ EXTERN int CALL_CONVT ac_set_output_format(lp_ac_decoder pDecoder, ac_output_for
 void ac_set_audio_output_format(lp_ac_instance pacInstance, ac_audio_output_format fmt, int rate);
 struct AVFrame;
 EXTERN AVFrame * CALL_CONVT ac_get_frame(lp_ac_decoder decoder);
-EXTERN AVFrame * CALL_CONVT ac_get_frame_scaled(lp_ac_decoder decoder);
 EXTERN AVFrame * CALL_CONVT ac_get_frame_real(lp_ac_decoder_frame pFrame);
 
 EXTERN lp_ac_decoder_frame ac_alloc_decoder_frame(lp_ac_decoder decoder);
 EXTERN void ac_free_decoder_frame(lp_ac_decoder_frame pFrame);
-
-EXTERN void ac_scale_to_scaled_rgb_decoder_frame(lp_ac_decoder_frame pFrame, lp_ac_decoder pDecoder, int dst_width, int dst_height);
 
 EXTERN int CALL_CONVT ac_get_audio_rate(lp_ac_decoder pDecoder);
 

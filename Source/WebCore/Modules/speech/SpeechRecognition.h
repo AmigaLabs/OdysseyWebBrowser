@@ -36,13 +36,15 @@ namespace WebCore {
 class Document;
 class SpeechRecognitionResult;
 
-class SpeechRecognition : public SpeechRecognitionConnectionClient, public ActiveDOMObject, public RefCounted<SpeechRecognition>, public EventTargetWithInlineData  {
-    WTF_MAKE_ISO_ALLOCATED(SpeechRecognition);
+class SpeechRecognition final : public SpeechRecognitionConnectionClient, public ActiveDOMObject, public RefCounted<SpeechRecognition>, public EventTarget  {
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(SpeechRecognition);
 public:
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
+
     static Ref<SpeechRecognition> create(Document&);
 
-    using SpeechRecognitionConnectionClient::weakPtrFactory;
-    using WeakValueType = SpeechRecognitionConnectionClient::WeakValueType;
+    USING_CAN_MAKE_WEAKPTR(SpeechRecognitionConnectionClient);
 
     const String& lang() const { return m_lang; }
     void setLang(String&& lang) { m_lang = WTFMove(lang); }
@@ -60,8 +62,7 @@ public:
     void stopRecognition();
     void abortRecognition();
 
-    using RefCounted::ref;
-    using RefCounted::deref;
+    virtual ~SpeechRecognition();
 
 private:
     enum class State {
@@ -88,15 +89,15 @@ private:
     void didEnd() final;
 
     // ActiveDOMObject
-    const char* activeDOMObjectName() const final;
     void suspend(ReasonForSuspension) final;
     void stop() final;
 
     // EventTarget
     ScriptExecutionContext* scriptExecutionContext() const final { return ActiveDOMObject::scriptExecutionContext(); }
-    EventTargetInterface eventTargetInterface() const final { return SpeechRecognitionEventTargetInterfaceType; }
+    enum EventTargetInterfaceType eventTargetInterface() const final { return EventTargetInterfaceType::SpeechRecognition; }
     void refEventTarget() final { ref(); }
     void derefEventTarget() final { deref(); }
+    bool virtualHasPendingActivity() const final;
 
     String m_lang;
     bool m_continuous { false };

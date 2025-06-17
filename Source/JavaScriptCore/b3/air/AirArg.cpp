@@ -96,12 +96,14 @@ unsigned Arg::jsHash() const
     switch (m_kind) {
     case Invalid:
     case Special:
+    case SIMDInfo:
         break;
     case Tmp:
         result += m_base.internalValue();
         break;
     case Imm:
     case BitImm:
+    case FPImm32:
     case ZeroReg:
     case CallArg:
     case RelCond:
@@ -113,6 +115,7 @@ unsigned Arg::jsHash() const
         break;
     case BigImm:
     case BitImm64:
+    case FPImm64:
         result += static_cast<unsigned>(m_offset);
         result += static_cast<unsigned>(m_offset >> 32);
         break;
@@ -163,6 +166,12 @@ void Arg::dump(PrintStream& out) const
         out.print("$", m_offset);
         return;
     case BitImm64:
+        out.printf("$0x%llx", static_cast<long long unsigned>(m_offset));
+        return;
+    case FPImm32:
+        out.print("$", m_offset);
+        return;
+    case FPImm64:
         out.printf("$0x%llx", static_cast<long long unsigned>(m_offset));
         return;
     case ZeroReg:
@@ -219,6 +228,9 @@ void Arg::dump(PrintStream& out) const
     case WidthArg:
         out.print(width());
         return;
+    case SIMDInfo:
+        out.print("{ ", simdInfo().lane, ", ", simdInfo().signMode, " }");
+        return;
     }
 
     RELEASE_ASSERT_NOT_REACHED();
@@ -250,6 +262,12 @@ void printInternal(PrintStream& out, Arg::Kind kind)
         return;
     case Arg::BitImm64:
         out.print("BitImm64");
+        return;
+    case Arg::FPImm32:
+        out.print("FPImm32");
+        return;
+    case Arg::FPImm64:
+        out.print("FPImm64");
         return;
     case Arg::ZeroReg:
         out.print("ZeroReg");
@@ -295,6 +313,9 @@ void printInternal(PrintStream& out, Arg::Kind kind)
         return;
     case Arg::WidthArg:
         out.print("WidthArg");
+        return;
+    case Arg::SIMDInfo:
+        out.print("SIMDInfo");
         return;
     }
 

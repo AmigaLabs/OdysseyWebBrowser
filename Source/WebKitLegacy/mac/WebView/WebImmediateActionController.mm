@@ -42,22 +42,24 @@
 #import <WebCore/EventHandler.h>
 #import <WebCore/FocusController.h>
 #import <WebCore/FontMetrics.h>
-#import <WebCore/Frame.h>
-#import <WebCore/FrameView.h>
 #import <WebCore/GeometryUtilities.h>
 #import <WebCore/HTMLConverter.h>
+#import <WebCore/ImmediateActionStage.h>
+#import <WebCore/LocalFrame.h>
+#import <WebCore/LocalFrameView.h>
 #import <WebCore/NodeRenderStyle.h>
 #import <WebCore/Page.h>
 #import <WebCore/Range.h>
 #import <WebCore/RenderElement.h>
 #import <WebCore/RenderObject.h>
-#import <WebCore/RuntimeApplicationChecks.h>
 #import <WebCore/TextIndicator.h>
 #import <WebCore/TextIterator.h>
 #import <objc/objc-class.h>
 #import <objc/objc.h>
 #import <pal/spi/mac/LookupSPI.h>
 #import <pal/spi/mac/NSMenuSPI.h>
+#import <wtf/RuntimeApplicationChecks.h>
+
 #import <pal/mac/DataDetectorsSoftLink.h>
 #import <pal/mac/QuickLookUISoftLink.h>
 
@@ -165,9 +167,13 @@
     if (!coreFrame)
         return;
 
+    auto* localMainFrame = dynamicDowncast<LocalFrame>(coreFrame->mainFrame());
+    if (!localMainFrame)
+        return;
+
     constexpr OptionSet<HitTestRequest::Type> hitType { HitTestRequest::Type::ReadOnly, HitTestRequest::Type::Active, HitTestRequest::Type::DisallowUserAgentShadowContent, HitTestRequest::Type::AllowChildFrameContent };
     _hitTestResult = coreFrame->eventHandler().hitTestResultAtPoint(WebCore::IntPoint(viewPoint), hitType);
-    coreFrame->mainFrame().eventHandler().setImmediateActionStage(WebCore::ImmediateActionStage::PerformedHitTest);
+    localMainFrame->eventHandler().setImmediateActionStage(WebCore::ImmediateActionStage::PerformedHitTest);
 
     if (auto* element = _hitTestResult.targetElement())
         _contentPreventsDefault = element->dispatchMouseForceWillBegin();
@@ -197,7 +203,7 @@
 
     if (![_immediateActionRecognizer animationController]) {
         // FIXME: We should be able to remove the dispatch_async when rdar://problem/19502927 is resolved.
-        RunLoop::main().dispatch([self, strongSelf = retainPtr(self)] {
+        RunLoop::protectedMain()->dispatch([self, strongSelf = retainPtr(self)] {
             [self _cancelImmediateAction];
         });
     }
@@ -223,7 +229,7 @@
     if (immediateActionRecognizer != _immediateActionRecognizer)
         return;
 
-    if (WebCore::Frame* coreFrame = [_webView _mainCoreFrame])
+    if (auto* coreFrame = [_webView _mainCoreFrame])
         coreFrame->eventHandler().setImmediateActionStage(WebCore::ImmediateActionStage::ActionUpdated);
 
     if (_contentPreventsDefault)
@@ -237,7 +243,7 @@
     if (immediateActionRecognizer != _immediateActionRecognizer)
         return;
 
-    if (WebCore::Frame* coreFrame = [_webView _mainCoreFrame]) {
+    if (auto* coreFrame = [_webView _mainCoreFrame]) {
         WebCore::ImmediateActionStage lastStage = coreFrame->eventHandler().immediateActionStage();
         if (lastStage == WebCore::ImmediateActionStage::ActionUpdated)
             coreFrame->eventHandler().setImmediateActionStage(WebCore::ImmediateActionStage::ActionCancelledAfterUpdate);
@@ -256,7 +262,7 @@
     if (immediateActionRecognizer != _immediateActionRecognizer)
         return;
 
-    if (WebCore::Frame* coreFrame = [_webView _mainCoreFrame])
+    if (auto* coreFrame = [_webView _mainCoreFrame])
         coreFrame->eventHandler().setImmediateActionStage(WebCore::ImmediateActionStage::ActionCompleted);
 
     [_webView _setTextIndicatorAnimationProgress:1];
@@ -273,12 +279,12 @@
     NSURL *url = _hitTestResult.absoluteLinkURL();
     String absoluteURLString = [url absoluteString];
     if (url && _hitTestResult.URLElement()) {
-        if (WTF::protocolIs(absoluteURLString, "mailto")) {
+        if (WTF::protocolIs(absoluteURLString, "mailto"_s)) {
             _type = WebImmediateActionMailtoLink;
             return [self _animationControllerForDataDetectedLink];
         }
 
-        if (WTF::protocolIs(absoluteURLString, "tel")) {
+        if (WTF::protocolIs(absoluteURLString, "tel"_s)) {
             _type = WebImmediateActionTelLink;
             return [self _animationControllerForDataDetectedLink];
         }
@@ -338,14 +344,6 @@
         return;
     }
 
-#if PLATFORM(MAC)
-    // FIXME: We should not permanently disable this for iTunes. rdar://problem/19461358
-    if (WebCore::MacApplication::isITunes()) {
-        [self _cancelImmediateAction];
-        return;
-    }
-#endif
-
     if (customClientAnimationController && [customClientAnimationController conformsToProtocol:@protocol(NSImmediateActionAnimationController)])
         [_immediateActionRecognizer setAnimationController:(id <NSImmediateActionAnimationController>)customClientAnimationController];
     else
@@ -383,15 +381,15 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
     if (!node)
         return { };
 
-    WebCore::Frame* frame = node->document().frame();
+    auto* frame = node->document().frame();
     if (!frame)
         return { };
 
-    WebCore::FrameView* view = frame->view();
+    auto* view = frame->view();
     if (!view)
         return { };
 
-    WebCore::RenderObject* renderer = node->renderer();
+    auto* renderer = node->renderer();
     if (!renderer)
         return { };
 
@@ -436,7 +434,7 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
             range:&customDataDetectorsRange];
         if (actionContext && customDataDetectorsRange) {
             detectedItem = { {
-                actionContext,
+                (WKDDActionContext *)actionContext,
                 { }, // FIXME: Seems like an empty rect isn't really OK.
                 makeSimpleRange(*core(customDataDetectorsRange))
             } };
@@ -479,7 +477,7 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
     if (!PAL::isDataDetectorsFrameworkAvailable())
         return nil;
 
-    auto actionContext = adoptNS([PAL::allocDDActionContextInstance() init]);
+    auto actionContext = adoptNS([PAL::allocWKDDActionContextInstance() init]);
 
     if (!actionContext)
         return nil;
@@ -509,7 +507,7 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
 
 #pragma mark Text action
 
-+ (WebCore::DictionaryPopupInfo)_dictionaryPopupInfoForRange:(const WebCore::SimpleRange&)range inFrame:(WebCore::Frame*)frame withLookupOptions:(NSDictionary *)lookupOptions indicatorOptions:(OptionSet<WebCore::TextIndicatorOption>)indicatorOptions transition:(WebCore::TextIndicatorPresentationTransition)presentationTransition
++ (WebCore::DictionaryPopupInfo)_dictionaryPopupInfoForRange:(const WebCore::SimpleRange&)range inFrame:(WebCore::LocalFrame*)frame indicatorOptions:(OptionSet<WebCore::TextIndicatorOption>)indicatorOptions transition:(WebCore::TextIndicatorPresentationTransition)presentationTransition
 {
     auto& editor = frame->editor();
     editor.setIsGettingDictionaryPopupInfo(true);
@@ -517,13 +515,13 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
     // Dictionary API will accept a whitespace-only string and display UI as if it were real text,
     // so bail out early to avoid that.
     WebCore::DictionaryPopupInfo popupInfo;
-    if (plainText(range).stripWhiteSpace().isEmpty()) {
+    if (plainText(range).find(deprecatedIsNotSpaceOrNewline) == notFound) {
         editor.setIsGettingDictionaryPopupInfo(false);
         return popupInfo;
     }
 
     auto style = range.start.container->renderStyle();
-    float scaledDescent = style ? style->fontMetrics().descent() * frame->page()->pageScaleFactor() : 0;
+    float scaledDescent = style ? style->metricsOfPrimaryFont().intDescent() * frame->page()->pageScaleFactor() : 0;
 
     auto quads = WebCore::RenderObject::absoluteTextQuads(range);
     if (quads.isEmpty()) {
@@ -534,9 +532,8 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
     auto rangeRect = frame->view()->contentsToWindow(quads[0].enclosingBoundingBox());
 
     popupInfo.origin = NSMakePoint(rangeRect.x(), rangeRect.y() + scaledDescent);
-    popupInfo.options = lookupOptions;
 
-    auto attributedString = editingAttributedString(range, WebCore::IncludeImages::No).string;
+    auto attributedString = editingAttributedString(range, { }).nsAttributedString();
     auto scaledAttributedString = adoptNS([[NSMutableAttributedString alloc] initWithString:[attributedString string]]);
     NSFontManager *fontManager = [NSFontManager sharedFontManager];
 
@@ -550,7 +547,7 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
         [scaledAttributedString addAttributes:scaledAttributes.get() range:attributeRange];
     }];
 
-    popupInfo.attributedString = scaledAttributedString.get();
+    popupInfo.platformData.attributedString = WebCore::AttributedString::fromNSAttributedString(scaledAttributedString.get());
 
     if (auto textIndicator = WebCore::TextIndicator::createWithRange(range, indicatorOptions, presentationTransition))
         popupInfo.textIndicator = textIndicator->data();
@@ -576,9 +573,9 @@ static WebCore::IntRect elementBoundingBoxInWindowCoordinatesFromNode(WebCore::N
     if (!range)
         return nil;
 
-    auto [dictionaryRange, options] = WTFMove(*range);
-    auto dictionaryPopupInfo = [WebImmediateActionController _dictionaryPopupInfoForRange:dictionaryRange inFrame:frame withLookupOptions:options indicatorOptions: { } transition: WebCore::TextIndicatorPresentationTransition::FadeIn];
-    if (!dictionaryPopupInfo.attributedString)
+    auto dictionaryRange = WTFMove(*range);
+    auto dictionaryPopupInfo = [WebImmediateActionController _dictionaryPopupInfoForRange:dictionaryRange inFrame:frame indicatorOptions: { } transition: WebCore::TextIndicatorPresentationTransition::FadeIn];
+    if (!dictionaryPopupInfo.platformData.attributedString.nsAttributedString())
         return nil;
 
     return [_webView _animationControllerForDictionaryLookupPopupInfo:dictionaryPopupInfo];

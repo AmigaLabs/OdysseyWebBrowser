@@ -30,6 +30,7 @@
 
 #import "AVAssetMIMETypeCache.h"
 #import "AffineTransform.h"
+#import "CVUtilities.h"
 #import "ContentType.h"
 #import "FloatQuad.h"
 #import "FloatRect.h"
@@ -52,7 +53,9 @@
 #import <wtf/MainThread.h>
 #import <wtf/MediaTime.h>
 #import <wtf/NeverDestroyed.h>
+#import <wtf/TZoneMallocInlines.h>
 #import <wtf/Vector.h>
+#import <wtf/cf/TypeCastsCF.h>
 
 #import "CoreVideoSoftLink.h"
 #import "VideoToolboxSoftLink.h"
@@ -62,7 +65,7 @@
 #pragma mark -
 
 @interface WebCoreSharedBufferResourceLoaderDelegate : NSObject<AVAssetResourceLoaderDelegate> {
-    WebCore::ImageDecoderAVFObjC* _parent;
+    ThreadSafeWeakPtr<WebCore::ImageDecoderAVFObjC> _parent;
     long long _expectedContentSize;
     RetainPtr<NSData> _data;
     bool _complete;
@@ -154,7 +157,9 @@
 - (void)fulfillRequest:(AVAssetResourceLoadingRequest *)request
 {
     if (auto infoRequest = request.contentInformationRequest) {
-        infoRequest.contentType = _parent->uti();
+        RefPtr parent = _parent.get();
+        RELEASE_ASSERT(parent);
+        infoRequest.contentType = parent->uti();
         infoRequest.byteRangeAccessSupported = YES;
         infoRequest.contentLength = _complete ? _data.get().length : _expectedContentSize;
     }
@@ -272,24 +277,62 @@ private:
     {
     }
 
+    bool isImageDecoderAVFObjCSample() const final { return true; }
+
+    std::optional<ByteRange> byteRangeForAttachment(CFStringRef key) const
+    {
+        auto byteOffsetCF = dynamic_cf_cast<CFNumberRef>(PAL::CMGetAttachment(m_sample.get(), key, nullptr));
+        if (!byteOffsetCF)
+            return std::nullopt;
+
+        int64_t byteOffset = 0;
+        if (!CFNumberGetValue(byteOffsetCF, kCFNumberSInt64Type, &byteOffset))
+            return std::nullopt;
+
+        CMItemCount sizeArrayEntries = 0;
+        PAL::CMSampleBufferGetSampleSizeArray(m_sample.get(), 0, nullptr, &sizeArrayEntries);
+        if (sizeArrayEntries != 1)
+            return std::nullopt;
+
+        size_t singleSizeEntry = 0;
+        PAL::CMSampleBufferGetSampleSizeArray(m_sample.get(), 1, &singleSizeEntry, nullptr);
+        return { { CheckedSize(byteOffset), singleSizeEntry } };
+    }
+
     RetainPtr<CGImageRef> m_image;
     bool m_hasAlpha { false };
 };
 
-static ImageDecoderAVFObjCSample* toSample(const PresentationOrderSampleMap::value_type& pair)
+} // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::ImageDecoderAVFObjCSample)
+    static bool isType(const WebCore::MediaSample& sample) { return sample.isImageDecoderAVFObjCSample(); }
+SPECIALIZE_TYPE_TRAITS_END()
+
+namespace WebCore {
+
+static RefPtr<ImageDecoderAVFObjCSample> toProtectedSample(const PresentationOrderSampleMap::value_type& pair)
 {
-    return (ImageDecoderAVFObjCSample*)pair.second.get();
+    return downcast<ImageDecoderAVFObjCSample>(pair.second.ptr());
 }
 
 template <typename Iterator>
 ImageDecoderAVFObjCSample* toSample(Iterator iter)
 {
-    return (ImageDecoderAVFObjCSample*)iter->second.get();
+    return downcast<ImageDecoderAVFObjCSample>(iter->second.ptr());
+}
+
+template <typename Iterator>
+RefPtr<ImageDecoderAVFObjCSample> toProtectedSample(Iterator iter)
+{
+    return downcast<ImageDecoderAVFObjCSample>(iter->second.ptr());
 }
 
 #pragma mark - ImageDecoderAVFObjC
 
-RefPtr<ImageDecoderAVFObjC> ImageDecoderAVFObjC::create(SharedBuffer& data, const String& mimeType, AlphaOption alphaOption, GammaAndColorProfileOption gammaAndColorProfileOption)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(ImageDecoderAVFObjC);
+
+RefPtr<ImageDecoderAVFObjC> ImageDecoderAVFObjC::create(const FragmentedSharedBuffer& data, const String& mimeType, AlphaOption alphaOption, GammaAndColorProfileOption gammaAndColorProfileOption, ProcessIdentity resourceOwner)
 {
     // AVFoundation may not be available at runtime.
     if (!AVAssetMIMETypeCache::singleton().isAvailable())
@@ -298,21 +341,23 @@ RefPtr<ImageDecoderAVFObjC> ImageDecoderAVFObjC::create(SharedBuffer& data, cons
     if (!canLoad_VideoToolbox_VTCreateCGImageFromCVPixelBuffer())
         return nullptr;
 
-    return adoptRef(*new ImageDecoderAVFObjC(data, mimeType, alphaOption, gammaAndColorProfileOption));
+    return adoptRef(*new ImageDecoderAVFObjC(data, mimeType, alphaOption, gammaAndColorProfileOption, WTFMove(resourceOwner)));
 }
 
-ImageDecoderAVFObjC::ImageDecoderAVFObjC(SharedBuffer& data, const String& mimeType, AlphaOption, GammaAndColorProfileOption)
+ImageDecoderAVFObjC::ImageDecoderAVFObjC(const FragmentedSharedBuffer& data, const String& mimeType, AlphaOption, GammaAndColorProfileOption, ProcessIdentity resourceOwner)
     : ImageDecoder()
     , m_mimeType(mimeType)
     , m_uti(WebCore::UTIFromMIMEType(mimeType))
     , m_asset(adoptNS([PAL::allocAVURLAssetInstance() initWithURL:customSchemeURL() options:imageDecoderAssetOptions()]))
     , m_loader(adoptNS([[WebCoreSharedBufferResourceLoaderDelegate alloc] initWithParent:this]))
     , m_decompressionSession(WebCoreDecompressionSession::createRGB())
+    , m_resourceOwner(WTFMove(resourceOwner))
 {
-    [m_loader updateData:data.createNSData().get() complete:NO];
+    m_decompressionSession->setResourceOwner(m_resourceOwner);
+    [m_loader updateData:data.makeContiguous()->createNSData().get() complete:NO];
 
     [m_asset.get().resourceLoader setDelegate:m_loader.get() queue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)];
-    [m_asset loadValuesAsynchronouslyForKeys:@[@"tracks"] completionHandler:[protectedThis = makeRefPtr(this)] () mutable {
+    [m_asset loadValuesAsynchronouslyForKeys:@[@"tracks"] completionHandler:[protectedThis = Ref { *this }] () mutable {
         callOnMainThread([protectedThis = WTFMove(protectedThis)] {
             protectedThis->setTrack(protectedThis->firstEnabledTrack());
         });
@@ -338,7 +383,9 @@ bool ImageDecoderAVFObjC::canDecodeType(const String& mimeType)
 
 AVAssetTrack *ImageDecoderAVFObjC::firstEnabledTrack()
 {
+ALLOW_DEPRECATED_DECLARATIONS_BEGIN
     NSArray<AVAssetTrack *> *videoTracks = [m_asset tracksWithMediaCharacteristic:AVMediaCharacteristicVisual];
+ALLOW_DEPRECATED_DECLARATIONS_END
     NSUInteger firstEnabledIndex = [videoTracks indexOfObjectPassingTest:^(AVAssetTrack *track, NSUInteger, BOOL*) {
         return track.enabled;
     }];
@@ -402,11 +449,22 @@ bool ImageDecoderAVFObjC::storeSampleBuffer(CMSampleBufferRef sampleBuffer)
         return false;
     }
 
+    // Set the ownership of the original even though we might end up using the rotated.
+    // For some duration, the original is alive and it has to be attributed to the owner.
+    if (m_resourceOwner)
+        setOwnershipIdentityForCVPixelBuffer(pixelBuffer.get(), m_resourceOwner);
+
     auto presentationTime = PAL::toMediaTime(PAL::CMSampleBufferGetOutputPresentationTimeStamp(sampleBuffer));
     auto iter = m_sampleData.presentationOrder().findSampleWithPresentationTime(presentationTime);
+    if (iter == m_sampleData.presentationOrder().end()) {
+        RELEASE_LOG_ERROR(Images, "ImageDecoderAVFObjC::storeSampleBuffer(%p) - could not find sample buffer entry with specified presentation time", this);
+        return false;
+    }
 
-    if (m_imageRotationSession)
+    if (m_imageRotationSession) {
         pixelBuffer = m_imageRotationSession->rotate(pixelBuffer.get());
+        setOwnershipIdentityForCVPixelBuffer(pixelBuffer.get(), m_resourceOwner);
+    }
 
     CGImageRef rawImage = nullptr;
     if (noErr != VTCreateCGImageFromCVPixelBuffer(pixelBuffer.get(), nullptr, &rawImage)) {
@@ -414,12 +472,12 @@ bool ImageDecoderAVFObjC::storeSampleBuffer(CMSampleBufferRef sampleBuffer)
         return false;
     }
 
-    if (iter == m_sampleData.presentationOrder().end()) {
-        RELEASE_LOG_ERROR(Images, "ImageDecoderAVFObjC::storeSampleBuffer(%p) - could not find sample buffer entry with specified presentation time", this);
-        return false;
-    }
+    // FIXME(rdar://115887662): The pixel buffer being passed to the VTCreateCGImageFromCVPixelBuffer may
+    // not be the pixel buffer that will be used. It is unclear if the request to
+    // obtain RGBA IOSurface-backed CVPixelBuffer from the decoding session is enough
+    // to ensure the pixel buffer is not replaced in VTCreateCGImageFromCVPixelBuffer.
 
-    toSample(iter)->setImage(adoptCF(rawImage));
+    toProtectedSample(iter)->setImage(adoptCF(rawImage));
 
     return true;
 }
@@ -442,7 +500,7 @@ void ImageDecoderAVFObjC::setTrack(AVAssetTrack *track)
     m_cursor = m_sampleData.decodeOrder().end();
     m_imageRotationSession = nullptr;
 
-    [track loadValuesAsynchronouslyForKeys:@[@"naturalSize", @"preferredTransform"] completionHandler:[protectedThis = makeRefPtr(this)] () mutable {
+    [track loadValuesAsynchronouslyForKeys:@[@"naturalSize", @"preferredTransform"] completionHandler:[protectedThis = Ref { *this }] () mutable {
         callOnMainThread([protectedThis = WTFMove(protectedThis)] {
             protectedThis->readTrackMetadata();
             protectedThis->readSamples();
@@ -503,21 +561,13 @@ IntSize ImageDecoderAVFObjC::frameSizeAtIndex(size_t, SubsamplingLevel) const
 
 bool ImageDecoderAVFObjC::frameIsCompleteAtIndex(size_t index) const
 {
-    auto* sampleData = sampleAtIndex(index);
-    if (!sampleData)
-        return false;
-
-    return sampleIsComplete(*sampleData);
-}
-
-ImageDecoder::FrameMetadata ImageDecoderAVFObjC::frameMetadataAtIndex(size_t) const
-{
-    return { };
+    RefPtr sampleData = sampleAtIndex(index);
+    return sampleData && sampleIsComplete(*sampleData);
 }
 
 Seconds ImageDecoderAVFObjC::frameDurationAtIndex(size_t index) const
 {
-    auto* sampleData = sampleAtIndex(index);
+    RefPtr sampleData = sampleAtIndex(index);
     if (!sampleData)
         return { };
 
@@ -526,8 +576,8 @@ Seconds ImageDecoderAVFObjC::frameDurationAtIndex(size_t index) const
 
 bool ImageDecoderAVFObjC::frameHasAlphaAtIndex(size_t index) const
 {
-    auto* sampleData = sampleAtIndex(index);
-    return sampleData ? sampleData->hasAlpha() : false;
+    RefPtr sampleData = sampleAtIndex(index);
+    return sampleData && sampleData->hasAlpha();
 }
 
 Vector<ImageDecoder::FrameInfo> ImageDecoderAVFObjC::frameInfos() const
@@ -535,18 +585,10 @@ Vector<ImageDecoder::FrameInfo> ImageDecoderAVFObjC::frameInfos() const
     if (m_sampleData.empty())
         return { };
 
-    Vector<ImageDecoder::FrameInfo> infos;
-    for (auto& sample : m_sampleData.presentationOrder()) {
-        auto* imageSample = (ImageDecoderAVFObjCSample*)sample.second.get();
-        infos.append({ imageSample->hasAlpha(), Seconds(imageSample->duration().toDouble())});
-    }
-
-    return infos;
-}
-
-bool ImageDecoderAVFObjC::frameAllowSubsamplingAtIndex(size_t index) const
-{
-    return index <= m_sampleData.size();
+    return WTF::map(m_sampleData.presentationOrder(), [](auto& sample) {
+        Ref imageSample = downcast<ImageDecoderAVFObjCSample>(sample.second.get());
+        return ImageDecoder::FrameInfo { imageSample->hasAlpha(), Seconds(imageSample->duration().toDouble()) };
+    });
 }
 
 unsigned ImageDecoderAVFObjC::frameBytesAtIndex(size_t index, SubsamplingLevel subsamplingLevel) const
@@ -562,7 +604,7 @@ PlatformImagePtr ImageDecoderAVFObjC::createFrameImageAtIndex(size_t index, Subs
 {
     Locker locker { m_sampleGeneratorLock };
 
-    auto* sampleData = sampleAtIndex(index);
+    RefPtr sampleData = sampleAtIndex(index);
     if (!sampleData)
         return nullptr;
 
@@ -574,20 +616,20 @@ PlatformImagePtr ImageDecoderAVFObjC::createFrameImageAtIndex(size_t index, Subs
 
     auto decodeTime = sampleData->decodeTime();
 
-    if (decodeTime < m_cursor->second->decodeTime()) {
+    if (decodeTime < Ref { m_cursor->second }->decodeTime()) {
         // Rewind cursor to the last sync sample to begin decoding
         m_cursor = m_sampleData.decodeOrder().findSampleWithDecodeKey({decodeTime, sampleData->presentationTime()});
         do {
-            if (m_cursor->second->isSync())
+            if (Ref { m_cursor->second }->isSync())
                 break;
         } while (--m_cursor != m_sampleData.decodeOrder().begin());
     }
 
     while (true) {
-        if (decodeTime < m_cursor->second->decodeTime())
+        if (decodeTime < Ref { m_cursor->second }->decodeTime())
             return nullptr;
 
-        auto cursorSample = toSample(m_cursor);
+        RefPtr cursorSample = toSample(m_cursor);
         if (!cursorSample)
             return nullptr;
 
@@ -612,9 +654,9 @@ PlatformImagePtr ImageDecoderAVFObjC::createFrameImageAtIndex(size_t index, Subs
             if (!rawBlockBuffer)
                 return nullptr;
 
-            if (noErr != PAL::CMSampleBufferSetDataBuffer(cursorSample->sampleBuffer(), rawBlockBuffer))
+            auto blockBuffer = adoptCF(rawBlockBuffer);
+            if (noErr != PAL::CMSampleBufferSetDataBuffer(cursorSample->sampleBuffer(), blockBuffer.get()))
                 return nullptr;
-            CFRelease(rawBlockBuffer);
 
             PAL::CMRemoveAttachment(cursorSample->sampleBuffer(), PAL::kCMSampleBufferAttachmentKey_SampleReferenceByteOffset);
             PAL::CMRemoveAttachment(cursorSample->sampleBuffer(), PAL::kCMSampleBufferAttachmentKey_SampleReferenceURL);
@@ -641,9 +683,9 @@ void ImageDecoderAVFObjC::setExpectedContentSize(long long expectedContentSize)
     m_loader.get().expectedContentSize = expectedContentSize;
 }
 
-void ImageDecoderAVFObjC::setData(SharedBuffer& data, bool allDataReceived)
+void ImageDecoderAVFObjC::setData(const FragmentedSharedBuffer& data, bool allDataReceived)
 {
-    [m_loader updateData:data.createNSData().get() complete:allDataReceived];
+    [m_loader updateData:data.makeContiguous()->createNSData().get() complete:allDataReceived];
 
     if (allDataReceived) {
         m_isAllDataReceived = true;
@@ -663,7 +705,7 @@ void ImageDecoderAVFObjC::clearFrameBufferCache(size_t index)
 {
     size_t i = 0;
     for (auto& samplePair : m_sampleData.presentationOrder()) {
-        toSample(samplePair)->setImage(nullptr);
+        toProtectedSample(samplePair)->setImage(nullptr);
         if (++i > index)
             break;
     }

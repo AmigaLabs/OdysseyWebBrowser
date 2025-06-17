@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2020-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,11 +29,14 @@
 #include "CacheableIdentifierInlines.h"
 #include "CodeBlock.h"
 #include "ICStatusUtils.h"
-#include "PolymorphicAccess.h"
+#include "InlineCacheCompiler.h"
 #include "StructureStubInfo.h"
 #include <wtf/ListDump.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace JSC {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(DeleteByStatus);
 
 bool DeleteByStatus::appendVariant(const DeleteByVariant& variant)
 {
@@ -74,6 +77,7 @@ DeleteByStatus::DeleteByStatus(StubInfoSummary summary, StructureStubInfo& stubI
         m_state = NoInformation;
         return;
     case StubInfoSummary::Simple:
+    case StubInfoSummary::Megamorphic:
     case StubInfoSummary::MakesCalls:
     case StubInfoSummary::TakesSlowPathAndMakesCalls:
         RELEASE_ASSERT_NOT_REACHED();
@@ -85,10 +89,9 @@ DeleteByStatus::DeleteByStatus(StubInfoSummary summary, StructureStubInfo& stubI
     RELEASE_ASSERT_NOT_REACHED();
 }
 
-DeleteByStatus DeleteByStatus::computeForStubInfoWithoutExitSiteFeedback(
-    const ConcurrentJSLocker&, CodeBlock* block, StructureStubInfo* stubInfo)
+DeleteByStatus DeleteByStatus::computeForStubInfoWithoutExitSiteFeedback(const ConcurrentJSLocker& locker, CodeBlock* block, StructureStubInfo* stubInfo)
 {
-    StubInfoSummary summary = StructureStubInfo::summary(block->vm(), stubInfo);
+    StubInfoSummary summary = StructureStubInfo::summary(locker, block->vm(), stubInfo);
     if (!isInlineable(summary))
         return DeleteByStatus(summary, *stubInfo);
 
@@ -99,11 +102,10 @@ DeleteByStatus DeleteByStatus::computeForStubInfoWithoutExitSiteFeedback(
         return DeleteByStatus(NoInformation);
 
     case CacheType::Stub: {
-        PolymorphicAccess* list = stubInfo->u.stub;
-
-        for (unsigned listIndex = 0; listIndex < list->size(); ++listIndex) {
-            const AccessCase& access = list->at(listIndex);
-            ASSERT(!access.viaProxy());
+        auto list = stubInfo->listedAccessCases(locker);
+        for (unsigned listIndex = 0; listIndex < list.size(); ++listIndex) {
+            const AccessCase& access = *list.at(listIndex);
+            ASSERT(!access.viaGlobalProxy());
 
             Structure* structure = access.structure();
             ASSERT(structure);

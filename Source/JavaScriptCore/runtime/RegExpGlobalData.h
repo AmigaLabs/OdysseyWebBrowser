@@ -26,6 +26,7 @@
 #pragma once
 
 #include "RegExpCachedResult.h"
+#include "RegExpSubstringGlobalAtomCache.h"
 
 namespace JSC {
 
@@ -48,14 +49,22 @@ public:
     JSValue getLeftContext(JSGlobalObject*);
     JSValue getRightContext(JSGlobalObject*);
 
-    MatchResult performMatch(JSGlobalObject*, RegExp*, JSString*, const String&, int startOffset, int** ovector);
-    MatchResult performMatch(JSGlobalObject*, RegExp*, JSString*, const String&, int startOffset);
-    void recordMatch(VM&, JSGlobalObject*, RegExp*, JSString*, const MatchResult&);
+    MatchResult performMatch(JSGlobalObject*, RegExp*, JSString*, StringView, int startOffset, int** ovector);
+    MatchResult performMatch(JSGlobalObject*, RegExp*, JSString*, StringView, int startOffset);
+    void recordMatch(VM&, JSGlobalObject*, RegExp*, JSString*, const MatchResult&, bool oneCharacterMatch);
 
-    static ptrdiff_t offsetOfCachedResult() { return OBJECT_OFFSETOF(RegExpGlobalData, m_cachedResult); }
+    static constexpr ptrdiff_t offsetOfCachedResult() { return OBJECT_OFFSETOF(RegExpGlobalData, m_cachedResult); }
+
+    const Vector<int>& ovector() const { return m_ovector; }
+
+    inline MatchResult matchResult() const;
+    void resetResultFromCache(JSGlobalObject* owner, RegExp*, JSString*, MatchResult, Vector<int>&&);
+
+    RegExpSubstringGlobalAtomCache& substringGlobalAtomCache() { return m_substringGlobalAtomCache; }
 
 private:
     RegExpCachedResult m_cachedResult;
+    RegExpSubstringGlobalAtomCache m_substringGlobalAtomCache;
     bool m_multiline { false };
     Vector<int> m_ovector;
 };

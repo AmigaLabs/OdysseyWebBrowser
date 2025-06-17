@@ -20,7 +20,7 @@
 #include "config.h"
 #include "MediaStreamAudioSource.h"
 
-#if ENABLE(MEDIA_STREAM) && USE(GSTREAMER)
+#if ENABLE(MEDIA_STREAM) && USE(GSTREAMER) && ENABLE(WEB_AUDIO)
 
 #include "AudioBus.h"
 #include "GStreamerAudioData.h"
@@ -28,27 +28,6 @@
 #include "Logging.h"
 
 namespace WebCore {
-
-static Vector<size_t> copyBusData(AudioBus& bus, GstBuffer* buffer, bool isMuted)
-{
-    Vector<size_t> offsets;
-    GstMappedBuffer mappedBuffer(buffer, GST_MAP_WRITE);
-    if (isMuted) {
-        memset(mappedBuffer.data(), 0, mappedBuffer.size());
-        return offsets;
-    }
-
-    DisableMallocRestrictionsForCurrentThreadScope disableMallocRestrictions;
-    offsets.reserveInitialCapacity(sizeof(size_t) * bus.numberOfChannels());
-    size_t size = mappedBuffer.size() / bus.numberOfChannels();
-    for (size_t channelIndex = 0; channelIndex < bus.numberOfChannels(); ++channelIndex) {
-        const auto& channel = *bus.channel(channelIndex);
-        auto offset = channelIndex * size;
-        memcpy(mappedBuffer.data() + offset, channel.data(), sizeof(float) * channel.length());
-        offsets.uncheckedAppend(offset);
-    }
-    return offsets;
-}
 
 void MediaStreamAudioSource::consumeAudio(AudioBus& bus, size_t numberOfFrames)
 {
@@ -60,25 +39,38 @@ void MediaStreamAudioSource::consumeAudio(AudioBus& bus, size_t numberOfFrames)
     MediaTime mediaTime((m_numberOfFrames * G_USEC_PER_SEC) / m_currentSettings.sampleRate(), G_USEC_PER_SEC);
     m_numberOfFrames += numberOfFrames;
 
-    GstAudioInfo info;
-    gst_audio_info_set_format(&info, GST_AUDIO_FORMAT_F32LE, m_currentSettings.sampleRate(), bus.numberOfChannels(), nullptr);
-    GST_AUDIO_INFO_LAYOUT(&info) = GST_AUDIO_LAYOUT_NON_INTERLEAVED;
-    size_t size = GST_AUDIO_INFO_BPF(&info) * bus.numberOfChannels() * numberOfFrames;
+    // Lazily initialize caps, the settings don't change so this is OK.
+    if (!m_caps || GST_AUDIO_INFO_CHANNELS(&m_info) != static_cast<int>(bus.numberOfChannels())) {
+        gst_audio_info_set_format(&m_info, GST_AUDIO_FORMAT_F32LE, m_currentSettings.sampleRate(), bus.numberOfChannels(), nullptr);
+        GST_AUDIO_INFO_LAYOUT(&m_info) = GST_AUDIO_LAYOUT_NON_INTERLEAVED;
+        m_caps = adoptGRef(gst_audio_info_to_caps(&m_info));
+    }
 
-    auto caps = adoptGRef(gst_audio_info_to_caps(&info));
-    auto buffer = adoptGRef(gst_buffer_new_allocate(nullptr, size, nullptr));
-    auto offsets = copyBusData(bus, buffer.get(), muted());
-#if GST_CHECK_VERSION(1, 16, 0)
-    gst_buffer_add_audio_meta(buffer.get(), &info, numberOfFrames, offsets.data());
-#else
-    UNUSED_VARIABLE(offsets);
-#endif
-    auto sample = adoptGRef(gst_sample_new(buffer.get(), caps.get(), nullptr, nullptr));
-    GStreamerAudioData audioBuffer(WTFMove(sample), info);
-    GStreamerAudioStreamDescription description(&info);
+    auto buffer = adoptGRef(gst_buffer_new());
+    GST_BUFFER_PTS(buffer.get()) = toGstClockTime(mediaTime);
+    GST_BUFFER_FLAG_SET(buffer.get(), GST_BUFFER_FLAG_LIVE);
+
+    for (size_t channelIndex = 0; channelIndex < bus.numberOfChannels(); ++channelIndex) {
+        auto& channel = *bus.channel(channelIndex);
+        auto dataSize = sizeof(float) * channel.length();
+
+        bus.ref();
+        gst_buffer_append_memory(buffer.get(), gst_memory_new_wrapped(GST_MEMORY_FLAG_READONLY, channel.mutableData(), dataSize, 0, dataSize, &bus, reinterpret_cast<GDestroyNotify>(+[](gpointer data) {
+            auto bus = reinterpret_cast<AudioBus*>(data);
+            bus->deref();
+        })));
+    }
+
+    gst_buffer_add_audio_meta(buffer.get(), &m_info, numberOfFrames, nullptr);
+    if (bus.isSilent())
+        gst_buffer_add_audio_level_meta(buffer.get(), 127, FALSE);
+
+    auto sample = adoptGRef(gst_sample_new(buffer.get(), m_caps.get(), nullptr, nullptr));
+    GStreamerAudioData audioBuffer(WTFMove(sample), m_info);
+    GStreamerAudioStreamDescription description(&m_info);
     audioSamplesAvailable(mediaTime, audioBuffer, description, numberOfFrames);
 }
 
 } // namespace WebCore
 
-#endif // ENABLE(MEDIA_STREAM) && USE(GSTREAMER)
+#endif // ENABLE(MEDIA_STREAM) && USE(GSTREAMER) && ENABLE(WEB_AUDIO)

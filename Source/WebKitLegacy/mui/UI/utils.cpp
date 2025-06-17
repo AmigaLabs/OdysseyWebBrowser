@@ -818,7 +818,7 @@ STRPTR get_accepted_languages(STRPTR code, ULONG len)
 
     return ret;
 }
-
+#error
 STRPTR get_language(STRPTR code, ULONG len)
 {
     struct Locale *l = OpenLocale(NULL);

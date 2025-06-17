@@ -29,12 +29,15 @@
 #include <wtf/FastMalloc.h>
 #include <wtf/HashFunctions.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/StdLibExtras.h>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 
 namespace WTF {
 
 DECLARE_ALLOCATOR_WITH_HEAP_IDENTIFIER(SmallSet);
 
-// Functionally, this class is very similar to Variant<Vector<T, SmallArraySize>, HashSet<T>>
+// Functionally, this class is very similar to std::variant<Vector<T, SmallArraySize>, HashSet<T>>
 // It is optimized primarily for space, but is also quite fast
 // Its main limitation is that it has no way to remove elements once they have been added to it
 // Also, instead of being fully parameterized by a HashTrait parameter, it always uses -1 (all ones) as its empty value
@@ -67,7 +70,7 @@ public:
 
     SmallSet(SmallSet&& other)
     {
-        memcpy(static_cast<void*>(this), static_cast<void*>(&other), sizeof(SmallSet));
+        memcpySpan(asMutableByteSpan(*this), asByteSpan(other));
         other.initialize();
     }
 
@@ -84,8 +87,40 @@ public:
             SmallSetMalloc::free(m_inline.buffer);
     }
 
-    // We could easily include an iterator in this to fully match the HashSet interface, but currently none of our clients require it.
+    class iterator {
+        WTF_MAKE_FAST_ALLOCATED;
+    public:
+        iterator()
+        { }
+
+        iterator(unsigned index, unsigned capacity, T* buffer)
+            : m_index(index)
+            , m_capacity(capacity)
+            , m_buffer(buffer)
+        { }
+
+        iterator& operator++()
+        {
+            m_index++;
+            ASSERT(m_index <= m_capacity);
+            while (m_index < m_capacity && m_buffer[m_index] == emptyValue())
+                m_index++;
+            return *this;
+        }
+        
+        T& operator*() { ASSERT(m_index < m_capacity); return static_cast<T&>(m_buffer[m_index]); }
+        T operator*() const { ASSERT(m_index < m_capacity); return static_cast<T>(m_buffer[m_index]); }
+        bool operator==(const iterator& other) const { ASSERT(m_buffer == other.m_buffer); return m_index == other.m_index; }
+
+    private:
+        template<typename U, typename H, unsigned S> friend class WTF::SmallSet;
+        unsigned m_index;
+        unsigned m_capacity;
+        T* m_buffer;
+    };
+
     struct AddResult {
+        iterator entry;
         bool isNewEntry;
     };
 
@@ -95,14 +130,14 @@ public:
 
         if (isSmall()) {
             for (unsigned i = 0; i < m_size; i++) {
-                if (m_inline.smallStorage[i] == value)
-                    return { false };
+                if (equal(m_inline.smallStorage[i], value))
+                    return { iterator { i, m_capacity, m_inline.smallStorage }, false };
             }
 
             if (m_size < SmallArraySize) {
                 m_inline.smallStorage[m_size] = value;
                 ++m_size;
-                return { true };
+                return { iterator { m_size - 1, m_capacity, m_inline.smallStorage }, true };
             }
 
             grow(std::max(64u, SmallArraySize * 2));
@@ -116,12 +151,12 @@ public:
         }
 
         T* bucket = this->bucket(value);
-        if (*bucket != value) {
+        if (!equal(*bucket, value)) {
             *bucket = value;
             ++m_size;
-            return { true };
+            return { iterator { static_cast<unsigned>(bucket - m_inline.buffer), m_capacity, m_inline.buffer }, true };
         }
-        return { false };
+        return { iterator { static_cast<unsigned>(bucket - m_inline.buffer), m_capacity, m_inline.buffer }, false };
     }
 
     inline bool contains(T value) const
@@ -137,31 +172,8 @@ public:
         }
 
         T* bucket = this->bucket(value);
-        return *bucket == value;
+        return equal(*bucket, value);
     }
-
-    class iterator {
-        WTF_MAKE_FAST_ALLOCATED;
-    public:
-        iterator& operator++()
-        {
-            m_index++;
-            ASSERT(m_index <= m_capacity);
-            while (m_index < m_capacity && m_buffer[m_index] == emptyValue())
-                m_index++;
-            return *this;
-        }
-        
-        T operator*() const { ASSERT(m_index < m_capacity); return static_cast<T>(m_buffer[m_index]); }
-        bool operator==(const iterator& other) const { ASSERT(m_buffer == other.m_buffer); return m_index == other.m_index; }
-        bool operator!=(const iterator& other) const { ASSERT(m_buffer == other.m_buffer); return !(*this == other); }
-
-    private:
-        template<typename U, typename H, unsigned S> friend class WTF::SmallSet;
-        unsigned m_index;
-        unsigned m_capacity;
-        T* m_buffer;
-    };
 
     iterator begin() const
     {
@@ -207,12 +219,23 @@ private:
     constexpr static T emptyValue()
     {
         if constexpr (std::is_pointer<T>::value)
-            return static_cast<T>(bitwise_cast<void*>(std::numeric_limits<uintptr_t>::max()));
+            return static_cast<T>(std::bit_cast<void*>(std::numeric_limits<uintptr_t>::max()));
         return std::numeric_limits<T>::max();
+    }
+
+    bool equal(const T left, const T right) const
+    {
+        if constexpr (Hash::safeToCompareToEmptyOrDeleted)
+            return Hash::equal(left, right);
+        if (isValidEntry(left) && isValidEntry(right))
+            return Hash::equal(left, right);
+        return left == right; 
     }
 
     bool isValidEntry(const T value) const
     {
+        if constexpr (Hash::safeToCompareToEmptyOrDeleted)
+            return !Hash::equal(value, emptyValue());
         return value != emptyValue();
     }
 
@@ -234,15 +257,15 @@ private:
         // We memset the new buffer with -1, so for consistency emptyValue() must return something which is all 1s.
 #if !defined(NDEBUG)
         if constexpr (std::is_pointer<T>::value)
-            ASSERT(bitwise_cast<intptr_t>(emptyValue()) == -1ll);
+            ASSERT(std::bit_cast<intptr_t>(emptyValue()) == -1ll);
         else if constexpr (sizeof(T) == 8)
-            ASSERT(bitwise_cast<int64_t>(emptyValue()) == -1ll);
+            ASSERT(std::bit_cast<int64_t>(emptyValue()) == -1ll);
         else if constexpr (sizeof(T) == 4)
-            ASSERT(bitwise_cast<int32_t>(emptyValue()) == -1);
+            ASSERT(std::bit_cast<int32_t>(emptyValue()) == -1);
         else if constexpr (sizeof(T) == 2)
-            ASSERT(bitwise_cast<int16_t>(emptyValue()) == -1);
+            ASSERT(std::bit_cast<int16_t>(emptyValue()) == -1);
         else if constexpr (sizeof(T) == 1)
-            ASSERT(bitwise_cast<int8_t>(emptyValue()) == -1);
+            ASSERT(std::bit_cast<int8_t>(emptyValue()) == -1);
         else
             RELEASE_ASSERT_NOT_REACHED();
 #endif
@@ -256,7 +279,7 @@ private:
         m_capacity = size;
 
         for (unsigned i = 0; i < oldCapacity; i++) {
-            if (oldBuffer[i] != emptyValue()) {
+            if (isValidEntry(oldBuffer[i])) {
                 T* ptr = bucketInBuffer(newBuffer, static_cast<T>(oldBuffer[i]));
                 *ptr = oldBuffer[i];
             }
@@ -267,7 +290,6 @@ private:
 
         m_inline.buffer = newBuffer;
     }
-
 
     inline T* bucket(T target) const
     {
@@ -282,9 +304,9 @@ private:
         unsigned index = 0;
         while (true) {
             T* ptr = buffer + bucket;
-            if (*ptr == emptyValue())
+            if (!isValidEntry(*ptr))
                 return ptr;
-            if (*ptr == target)
+            if (equal(*ptr, target))
                 return ptr;
             index++;
             bucket = (bucket + index) & (m_capacity - 1);
@@ -303,3 +325,5 @@ private:
 } // namespace WTF
 
 using WTF::SmallSet;
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

@@ -26,6 +26,7 @@
 
 #if ENABLE(APP_HIGHLIGHTS)
 
+#import "InstanceMethodSwizzler.h"
 #import "PlatformUtilities.h"
 #import "Test.h"
 #import "TestNavigationDelegate.h"
@@ -39,7 +40,7 @@
 #import <wtf/Vector.h>
 
 #if PLATFORM(IOS_FAMILY)
-#import "UIKitSPI.h"
+#import "UIKitSPIForTesting.h"
 #endif
 
 @interface AppHighlightDelegate : NSObject <_WKAppHighlightDelegate>
@@ -102,15 +103,29 @@ TEST(AppHighlights, AppHighlightCreateAndRestore)
 
 TEST(AppHighlights, AppHighlightCreateAndRestoreAndScroll)
 {
+#if PLATFORM(IOS_FAMILY)
+    // Force UIKit to use a `CADisplayLink` rather than its own update cycle for `UIAnimation`s.
+    // UIKit's own update cycle does not work in TestWebKitAPIApp, as it is started in
+    // UIApplicationMain(), and TestWebKitAPIApp is not a real UIApplication. Without this,
+    // scroll view animations would not be completed.
+    InstanceMethodSwizzler isEmbeddedScreenSwizzler {
+        UIScreen.class,
+        @selector(_isEmbeddedScreen),
+        imp_implementationWithBlock(^BOOL {
+            return NO;
+        })
+    };
+#endif // PLATFORM(IOS_FAMILY)
+
     auto highlight = createAppHighlightWithHTML(@"<div style='height: 10000px'></div>Test", @"document.execCommand('SelectAll')", @"Test");
     auto webViewRestore = createWebViewForAppHighlightsWithHTML(@"<div style='height: 10000px'></div>Test");
 
     [webViewRestore _restoreAndScrollToAppHighlight:[highlight highlight]];
 
     TestWebKitAPI::Util::waitForConditionWithLogging([&] () -> bool {
-        return [webViewRestore stringByEvaluatingJavaScript:@"internals.numberOfAppHighlights()"].intValue == 1;
-    }, 2, @"Expected Highlights to be populated.");
-    EXPECT_NE(0, [[webViewRestore objectByEvaluatingJavaScript:@"pageYOffset"] floatValue]);
+        return [webViewRestore stringByEvaluatingJavaScript:@"internals.numberOfAppHighlights()"].intValue == 1
+            && [[webViewRestore objectByEvaluatingJavaScript:@"pageYOffset"] floatValue] > 0;
+    }, 2, @"Expected Highlights to be populated and the page to scroll.");
 }
 
 TEST(AppHighlights, AppHighlightRestoreFailure)
@@ -214,21 +229,6 @@ TEST(AppHighlights, AppHighlightRestoreFromStorageV1)
         return [webViewRestore stringByEvaluatingJavaScript:@"internals.numberOfAppHighlights()"].intValue == 1;
     }, 2, @"Expected Highlights to be populated.");
 }
-
-#if PLATFORM(IOS_FAMILY)
-
-TEST(AppHighlights, AvoidForcingCalloutBarInitialization)
-{
-    auto defaultConfiguration = adoptNS([[WKWebViewConfiguration alloc] init]);
-    auto webView = adoptNS([[TestWKWebView alloc] initWithFrame:CGRectMake(0, 0, 320, 500) configuration:defaultConfiguration.get() addToWindow:NO]);
-    [webView synchronouslyLoadTestPageNamed:@"simple"];
-    [webView stringByEvaluatingJavaScript:@"getSelection().setPosition(document.body, 1)"];
-    [webView waitForNextPresentationUpdate];
-
-    EXPECT_NULL(UICalloutBar.activeCalloutBar);
-}
-
-#endif // PLATFORM(IOS_FAMILY)
 
 } // namespace TestWebKitAPI
 

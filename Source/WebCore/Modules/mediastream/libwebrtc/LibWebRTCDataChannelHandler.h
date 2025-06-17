@@ -24,19 +24,23 @@
 
 #pragma once
 
-#if USE(LIBWEBRTC)
+#if ENABLE(WEB_RTC) && USE(LIBWEBRTC)
 
 #include "LibWebRTCMacros.h"
+#include "ProcessQualified.h"
 #include "RTCDataChannelHandler.h"
 #include "RTCDataChannelState.h"
 #include "SharedBuffer.h"
 #include <wtf/Lock.h>
+#include <wtf/ObjectIdentifier.h>
+#include <wtf/TZoneMalloc.h>
+#include <wtf/WeakPtr.h>
 
-ALLOW_UNUSED_PARAMETERS_BEGIN
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
 
 #include <webrtc/api/data_channel_interface.h>
 
-ALLOW_UNUSED_PARAMETERS_END
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
 
 namespace webrtc {
 struct DataChannelInit;
@@ -51,20 +55,23 @@ struct RTCDataChannelInit;
 class ScriptExecutionContext;
 
 class LibWebRTCDataChannelHandler final : public RTCDataChannelHandler, private webrtc::DataChannelObserver {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(LibWebRTCDataChannelHandler);
 public:
     explicit LibWebRTCDataChannelHandler(rtc::scoped_refptr<webrtc::DataChannelInterface>&&);
     ~LibWebRTCDataChannelHandler();
 
+    RTCDataChannelInit dataChannelInit() const;
+    String label() const;
+
     static webrtc::DataChannelInit fromRTCDataChannelInit(const RTCDataChannelInit&);
-    static Ref<RTCDataChannelEvent> channelEvent(Document&, rtc::scoped_refptr<webrtc::DataChannelInterface>&&);
 
 private:
     // RTCDataChannelHandler API
-    void setClient(RTCDataChannelHandlerClient&, ScriptExecutionContextIdentifier) final;
+    void setClient(RTCDataChannelHandlerClient&, std::optional<ScriptExecutionContextIdentifier>) final;
     bool sendStringData(const CString&) final;
-    bool sendRawData(const uint8_t*, size_t) final;
+    bool sendRawData(std::span<const uint8_t>) final;
     void close() final;
+    std::optional<unsigned short> id() const final;
 
     // webrtc::DataChannelObserver API
     void OnStateChange();
@@ -73,7 +80,11 @@ private:
 
     void checkState();
 
-    using Message = Variant<RTCDataChannelState, String, Ref<SharedBuffer>>;
+    struct StateChange {
+        RTCDataChannelState state;
+        std::optional<webrtc::RTCError> error;
+    };
+    using Message = std::variant<StateChange, String, Ref<FragmentedSharedBuffer>>;
     using PendingMessages = Vector<Message>;
     void storeMessage(PendingMessages&, const webrtc::DataBuffer&);
     void processMessage(const webrtc::DataBuffer&);
@@ -83,11 +94,12 @@ private:
 
     rtc::scoped_refptr<webrtc::DataChannelInterface> m_channel;
     Lock m_clientLock;
-    RTCDataChannelHandlerClient* m_client WTF_GUARDED_BY_LOCK(m_clientLock) { nullptr };
-    ScriptExecutionContextIdentifier m_contextIdentifier;
-    PendingMessages m_bufferedMessages;
+    bool m_hasClient WTF_GUARDED_BY_LOCK(m_clientLock)  { false };
+    WeakPtr<RTCDataChannelHandlerClient> m_client WTF_GUARDED_BY_LOCK(m_clientLock) { nullptr };
+    Markable<ScriptExecutionContextIdentifier> m_contextIdentifier;
+    PendingMessages m_bufferedMessages WTF_GUARDED_BY_LOCK(m_clientLock);
 };
 
 } // namespace WebCore
 
-#endif // USE(LIBWEBRTC)
+#endif // ENABLE(WEB_RTC) && USE(LIBWEBRTC)

@@ -99,7 +99,7 @@ pas_heap_config_utils_allocate_aligned(
     size_t size,
     pas_alignment alignment,
     pas_large_heap* large_heap,
-    pas_heap_config* config,
+    const pas_heap_config* config,
     bool should_zero)
 {
     static const bool verbose = false;
@@ -119,11 +119,14 @@ pas_heap_config_utils_allocate_aligned(
 
     runtime_config = (pas_basic_heap_runtime_config*)
         pas_heap_for_large_heap(large_heap)->segregated_heap.runtime_config;
-    cache = &runtime_config->page_caches->large_heap_cache;
+    if (large_heap->is_megapage_heap)
+        cache = &runtime_config->page_caches->megapage_large_heap_cache;
+    else
+        cache = &runtime_config->page_caches->large_heap_cache;
     
     allocation_result =
         pas_large_heap_physical_page_sharing_cache_try_allocate_with_alignment(
-            cache, aligned_size, alignment, should_zero);
+            cache, aligned_size, alignment, config, should_zero);
     if (!allocation_result.did_succeed)
         return result;
 
@@ -150,20 +153,20 @@ pas_heap_config_utils_allocate_aligned(
 }
 
 void* pas_heap_config_utils_prepare_to_enumerate(pas_enumerator* enumerator,
-                                                 pas_heap_config* my_config)
+                                                 const pas_heap_config* my_config)
 {
     pas_basic_heap_config_enumerator_data* result;
-    pas_heap_config** configs;
-    pas_heap_config* config;
+    const pas_heap_config** configs;
+    const pas_heap_config* config;
     pas_basic_heap_config_root_data* root_data;
 
     configs = pas_enumerator_read(
         enumerator, enumerator->root->heap_configs,
-        sizeof(pas_heap_config*) * pas_heap_config_kind_num_kinds);
+        sizeof(const pas_heap_config*) * pas_heap_config_kind_num_kinds);
     if (!configs)
         return NULL;
     
-    config = pas_enumerator_read(enumerator, configs[my_config->kind], sizeof(pas_heap_config));
+    config = pas_enumerator_read(enumerator, (void*)(uintptr_t)configs[my_config->kind], sizeof(pas_heap_config));
     if (!config)
         return NULL;
 

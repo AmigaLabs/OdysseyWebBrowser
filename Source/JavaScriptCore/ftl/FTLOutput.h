@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -92,6 +92,7 @@ public:
 
     void applyBlockOrder();
 
+    void probeDebugPrint(const String& str, LValue value);
     LBasicBlock appendTo(LBasicBlock, LBasicBlock nextBlock);
     void appendTo(LBasicBlock);
 
@@ -109,14 +110,14 @@ public:
     {
         ASSERT(graph.m_plan.weakReferences().contains(cell));
 
-        return constIntPtr(bitwise_cast<intptr_t>(cell));
+        return constIntPtr(std::bit_cast<intptr_t>(cell));
     }
 
     LValue alreadyRegisteredFrozenPointer(DFG::FrozenValue* value)
     {
         RELEASE_ASSERT(value->value().isCell());
 
-        return constIntPtr(bitwise_cast<intptr_t>(value->cell()));
+        return constIntPtr(std::bit_cast<intptr_t>(value->cell()));
     }
 
     template<typename T>
@@ -124,8 +125,8 @@ public:
     {
         static_assert(!std::is_base_of<HeapCell, T>::value, "To use a GC pointer, the graph must be aware of it. Use gcPointer instead and make sure the graph is aware of this reference.");
         if (sizeof(void*) == 8)
-            return constInt64(bitwise_cast<intptr_t>(value));
-        return constInt32(bitwise_cast<intptr_t>(value));
+            return constInt64(std::bit_cast<intptr_t>(value));
+        return constInt32(std::bit_cast<intptr_t>(value));
     }
     template<typename T>
     LValue constIntPtr(T value)
@@ -149,6 +150,7 @@ public:
     void addIncomingToPhiIfSet(LValue phi, Params... theRest);
     
     LValue opaque(LValue);
+    LValue extract(LValue tuple, unsigned index);
 
     LValue add(LValue, LValue);
     LValue sub(LValue, LValue);
@@ -158,6 +160,7 @@ public:
     LValue mod(LValue, LValue);
     LValue chillMod(LValue, LValue);
     LValue neg(LValue);
+    LValue purifyNaN(LValue);
 
     LValue doubleAdd(LValue, LValue);
     LValue doubleSub(LValue, LValue);
@@ -188,11 +191,12 @@ public:
 
     LValue doubleSqrt(LValue);
 
-    LValue doubleLog(LValue);
+    LValue doubleMax(LValue, LValue);
+    LValue doubleMin(LValue, LValue);
 
-    LValue doubleToInt(LValue);
+    LValue doubleToInt32(LValue);
     LValue doubleToInt64(LValue);
-    LValue doubleToUInt(LValue);
+    LValue doubleToUInt32(LValue);
 
     LValue signExt32To64(LValue);
     LValue signExt32ToPtr(LValue);
@@ -205,6 +209,7 @@ public:
     LValue floatToDouble(LValue);
     LValue bitCast(LValue, LType);
     LValue fround(LValue);
+    LValue f16round(LValue);
 
     LValue load(TypedPointer, LType);
     LValue store(LValue, TypedPointer);
@@ -219,6 +224,7 @@ public:
     LValue loadPtr(TypedPointer pointer) { return load(pointer, B3::pointerType()); }
     LValue loadFloat(TypedPointer pointer) { return load(pointer, B3::Float); }
     LValue loadDouble(TypedPointer pointer) { return load(pointer, B3::Double); }
+    LValue loadFloat16AsDouble(TypedPointer);
     LValue store32As8(LValue, TypedPointer);
     LValue store32As16(LValue, TypedPointer);
     LValue store32(LValue value, TypedPointer pointer)
@@ -246,6 +252,7 @@ public:
         ASSERT(value->type() == B3::Double);
         return store(value, pointer);
     }
+    LValue storeDoubleAsFloat16(LValue, TypedPointer);
 
     enum LoadType {
         Load8SignExt32,
@@ -329,6 +336,7 @@ public:
     LValue nonNegative32(LValue loadInstruction) { return loadInstruction; }
     LValue load32NonNegative(TypedPointer pointer) { return load32(pointer); }
     LValue load32NonNegative(LValue base, const AbstractHeap& field) { return load32(base, field); }
+    LValue load64NonNegative(LValue base, const AbstractHeap& field) { return load64(base, field); }
 
     LValue equal(LValue, LValue);
     LValue notEqual(LValue, LValue);
@@ -372,13 +380,13 @@ public:
     
     // These are relaxed atomics by default. Use AbstractHeapRepository::decorateFencedAccess() with a
     // non-null heap to make them seq_cst fenced.
-    LValue atomicXchgAdd(LValue operand, TypedPointer pointer, B3::Width);
-    LValue atomicXchgAnd(LValue operand, TypedPointer pointer, B3::Width);
-    LValue atomicXchgOr(LValue operand, TypedPointer pointer, B3::Width);
-    LValue atomicXchgSub(LValue operand, TypedPointer pointer, B3::Width);
-    LValue atomicXchgXor(LValue operand, TypedPointer pointer, B3::Width);
-    LValue atomicXchg(LValue operand, TypedPointer pointer, B3::Width);
-    LValue atomicStrongCAS(LValue expected, LValue newValue, TypedPointer pointer, B3::Width);
+    LValue atomicXchgAdd(LValue operand, TypedPointer pointer, Width);
+    LValue atomicXchgAnd(LValue operand, TypedPointer pointer, Width);
+    LValue atomicXchgOr(LValue operand, TypedPointer pointer, Width);
+    LValue atomicXchgSub(LValue operand, TypedPointer pointer, Width);
+    LValue atomicXchgXor(LValue operand, TypedPointer pointer, Width);
+    LValue atomicXchg(LValue operand, TypedPointer pointer, Width);
+    LValue atomicStrongCAS(LValue expected, LValue newValue, TypedPointer pointer, Width);
 
     template<typename VectorType>
     LValue call(LType type, LValue function, const VectorType& vector)
@@ -404,7 +412,7 @@ public:
     // https://bugs.webkit.org/show_bug.cgi?id=184324
     template<typename FunctionType>
     LValue operation(FunctionType function) { return constIntPtr(tagCFunctionPtr<void*, OperationPtrTag>(function)); }
-    LValue operation(FunctionPtr<OperationPtrTag> function) { return constIntPtr(function.executableAddress()); }
+    LValue operation(CodePtr<OperationPtrTag> function) { return constIntPtr(function.taggedPtr()); }
 
     void jump(LBasicBlock);
     void branch(LValue condition, LBasicBlock taken, Weight takenWeight, LBasicBlock notTaken, Weight notTakenWeight);
@@ -436,6 +444,7 @@ public:
 
     void ret(LValue);
 
+    void verify(LValue);
     void unreachable();
     
     void appendSuccessor(WeightedTarget);

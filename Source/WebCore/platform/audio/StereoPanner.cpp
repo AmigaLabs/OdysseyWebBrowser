@@ -31,12 +31,14 @@
 
 #include "SharedBuffer.h"
 #include "VectorMath.h"
+#include <wtf/IndexedRange.h>
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
 
 namespace StereoPanner {
 
+#if OS(MORPHOS)
 class precalculatedSinCos {
 	double valuesSin[160];
 	double valuesCos[160];
@@ -59,61 +61,68 @@ public:
 };
 
 static const precalculatedSinCos precalculatedSinCos;
+#endif
 
-void panWithSampleAccurateValues(const AudioBus* inputBus, AudioBus* outputBus, const float* panValues, size_t framesToProcess)
+void panWithSampleAccurateValues(const AudioBus* inputBus, AudioBus* outputBus, std::span<const float> panValues)
 {
-    bool isInputSafe = inputBus && (inputBus->numberOfChannels() == 1 || inputBus->numberOfChannels() == 2) && framesToProcess <= inputBus->length();
+    bool isInputSafe = inputBus && (inputBus->numberOfChannels() == 1 || inputBus->numberOfChannels() == 2) && panValues.size() <= inputBus->length();
     ASSERT(isInputSafe);
     if (!isInputSafe)
         return;
     
     unsigned numberOfInputChannels = inputBus->numberOfChannels();
     
-    bool isOutputSafe = outputBus && outputBus->numberOfChannels() == 2 && framesToProcess <= outputBus->length();
+    bool isOutputSafe = outputBus && outputBus->numberOfChannels() == 2 && panValues.size() <= outputBus->length();
     ASSERT(isOutputSafe);
     if (!isOutputSafe)
         return;
     
-    const float* sourceL = inputBus->channel(0)->data();
-    const float* sourceR = numberOfInputChannels > 1 ? inputBus->channel(1)->data() : sourceL;
-    float* destinationL = outputBus->channelByType(AudioBus::ChannelLeft)->mutableData();
-    float* destinationR = outputBus->channelByType(AudioBus::ChannelRight)->mutableData();
-    
-    if (!sourceL || !sourceR || !destinationL || !destinationR)
-        return;
+    auto sourceL = inputBus->channel(0)->span();
+    auto sourceR = numberOfInputChannels > 1 ? inputBus->channel(1)->span() : sourceL;
+    auto destinationL = outputBus->channelByType(AudioBus::ChannelLeft)->mutableSpan();
+    auto destinationR = outputBus->channelByType(AudioBus::ChannelRight)->mutableSpan();
     
     double gainL;
     double gainR;
     double panRadian;
-    int n = framesToProcess;
     
     // Handles mono source case first, then stereo source case.
     if (numberOfInputChannels == 1) {
-        while (n--) {
-            float inputL = *sourceL++;
-            double pan = clampTo(*panValues++, -1.0, 1.0);
+        for (auto [i, panValue] : indexedRange(panValues)) {
+            float inputL = sourceL[i];
+            double pan = clampTo(panValue, -1.0, 1.0);
             // Pan from left to right [-1; 1] will be normalized as [0; 1].
             panRadian = (pan * 0.5 + 0.5) * piOverTwoDouble;
+#if OS(MORPHOS)
             gainL = precalculatedSinCos.xcos(panRadian);
             gainR = precalculatedSinCos.xsin(panRadian);
-            *destinationL++ = static_cast<float>(inputL * gainL);
-            *destinationR++ = static_cast<float>(inputL * gainR);
+#else
+            gainL = cos(panRadian);
+            gainR = sin(panRadian);
+#endif
+            destinationL[i] = static_cast<float>(inputL * gainL);
+            destinationR[i] = static_cast<float>(inputL * gainR);
         }
     } else {
-        while (n--) {
-            float inputL = *sourceL++;
-            float inputR = *sourceR++;
-            double pan = clampTo(*panValues++, -1.0, 1.0);
+        for (auto [i, panValue] : indexedRange(panValues)) {
+            float inputL = sourceL[i];
+            float inputR = sourceR[i];
+            double pan = clampTo(panValue, -1.0, 1.0);
             // Normalize [-1; 0] to [0; 1]. Do nothing when [0; 1].
             panRadian = (pan <= 0 ? pan + 1 : pan) * piOverTwoDouble;
+#if OS(MORPHOS)
             gainL = precalculatedSinCos.xcos(panRadian);
             gainR = precalculatedSinCos.xsin(panRadian);
+#else
+            gainL = cos(panRadian);
+            gainR = sin(panRadian);
+#endif
             if (pan <= 0) {
-                *destinationL++ = static_cast<float>(inputL + inputR * gainL);
-                *destinationR++ = static_cast<float>(inputR * gainR);
+                destinationL[i] = static_cast<float>(inputL + inputR * gainL);
+                destinationR[i] = static_cast<float>(inputR * gainR);
             } else {
-                *destinationL++ = static_cast<float>(inputL * gainL);
-                *destinationR++ = static_cast<float>(inputR + inputL * gainR);
+                destinationL[i] = static_cast<float>(inputL * gainL);
+                destinationR[i] = static_cast<float>(inputR + inputL * gainR);
             }
         }
     }
@@ -133,34 +142,43 @@ void panToTargetValue(const AudioBus* inputBus, AudioBus* outputBus, float panVa
     if (!isOutputSafe)
         return;
     
-    const float* sourceL = inputBus->channel(0)->data();
-    const float* sourceR = numberOfInputChannels > 1 ? inputBus->channel(1)->data() : sourceL;
-    float* destinationL = outputBus->channelByType(AudioBus::ChannelLeft)->mutableData();
-    float* destinationR = outputBus->channelByType(AudioBus::ChannelRight)->mutableData();
-    
-    if (!sourceL || !sourceR || !destinationL || !destinationR)
-        return;
+    auto sourceL = inputBus->channel(0)->span().first(framesToProcess);
+    auto sourceR = numberOfInputChannels > 1 ? inputBus->channel(1)->span().first(framesToProcess) : sourceL;
+    auto destinationL = outputBus->channelByType(AudioBus::ChannelLeft)->mutableSpan();
+    auto destinationR = outputBus->channelByType(AudioBus::ChannelRight)->mutableSpan();
 
     float targetPan = clampTo(panValue, -1.0, 1.0);
     
     if (numberOfInputChannels == 1) {
         double panRadian = (targetPan * 0.5 + 0.5) * piOverTwoDouble;
+
+#if OS(MORPHOS)
         double gainL = precalculatedSinCos.xcos(panRadian);
         double gainR = precalculatedSinCos.xsin(panRadian);
-        
-        VectorMath::multiplyByScalar(sourceL, gainL, destinationL, framesToProcess);
-        VectorMath::multiplyByScalar(sourceL, gainR, destinationR, framesToProcess);
+#else
+        double gainL = cos(panRadian);
+        double gainR = sin(panRadian);
+#endif
+
+        VectorMath::multiplyByScalar(sourceL, gainL, destinationL);
+        VectorMath::multiplyByScalar(sourceL, gainR, destinationR);
     } else {
         double panRadian = (targetPan <= 0 ? targetPan + 1 : targetPan) * piOverTwoDouble;
+
+#if OS(MORPHOS)
         double gainL = precalculatedSinCos.xcos(panRadian);
         double gainR = precalculatedSinCos.xsin(panRadian);
+#else
+        double gainL = cos(panRadian);
+        double gainR = sin(panRadian);
+#endif
 
         if (targetPan <= 0) {
-            VectorMath::multiplyByScalarThenAddToVector(sourceR, gainL, sourceL, destinationL, framesToProcess);
-            VectorMath::multiplyByScalar(sourceR, gainR, destinationR, framesToProcess);
+            VectorMath::multiplyByScalarThenAddToVector(sourceR, gainL, sourceL, destinationL);
+            VectorMath::multiplyByScalar(sourceR, gainR, destinationR);
         } else {
-            VectorMath::multiplyByScalar(sourceL, gainL, destinationL, framesToProcess);
-            VectorMath::multiplyByScalarThenAddToVector(sourceL, gainR, sourceR, destinationR, framesToProcess);
+            VectorMath::multiplyByScalar(sourceL, gainL, destinationL);
+            VectorMath::multiplyByScalarThenAddToVector(sourceL, gainR, sourceR, destinationR);
         }
     }
 }

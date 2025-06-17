@@ -34,16 +34,14 @@
 namespace WebCore {
 
 class OffscreenCanvasRenderingContext2D final : public CanvasRenderingContext2DBase {
-    WTF_MAKE_ISO_ALLOCATED(OffscreenCanvasRenderingContext2D);
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(OffscreenCanvasRenderingContext2D);
 public:
     static bool enabledForContext(ScriptExecutionContext&);
+    static std::unique_ptr<OffscreenCanvasRenderingContext2D> create(CanvasBase&, CanvasRenderingContext2DSettings&&);
 
-    OffscreenCanvasRenderingContext2D(CanvasBase&, CanvasRenderingContext2DSettings&&);
     virtual ~OffscreenCanvasRenderingContext2D();
 
     OffscreenCanvas& canvas() const { return downcast<OffscreenCanvas>(canvasBase()); }
-
-    void commit();
 
     void setFont(const String&);
     CanvasDirection direction() const;
@@ -52,7 +50,8 @@ public:
     Ref<TextMetrics> measureText(const String& text);
 
 private:
-    bool isOffscreen2d() const final { return true; }
+    OffscreenCanvasRenderingContext2D(CanvasBase&, CanvasRenderingContext2DSettings&&);
+    RefPtr<ImageBuffer> transferToImageBuffer() final;
     const FontProxy* fontProxy() final;
 };
 

@@ -28,15 +28,18 @@
 
 #include "SerializedScriptValue.h"
 #include <wtf/CrossThreadTask.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(IDBValue);
 
 IDBValue::IDBValue()
 {
 }
 
 IDBValue::IDBValue(const SerializedScriptValue& scriptValue)
-    : m_data(ThreadSafeDataBuffer::copyVector(scriptValue.data()))
+    : m_data(ThreadSafeDataBuffer::copyData(scriptValue.wireBytes()))
     , m_blobURLs(scriptValue.blobURLs())
 {
 }
@@ -47,7 +50,7 @@ IDBValue::IDBValue(const ThreadSafeDataBuffer& value)
 }
 
 IDBValue::IDBValue(const SerializedScriptValue& scriptValue, const Vector<String>& blobURLs, const Vector<String>& blobFilePaths)
-    : m_data(ThreadSafeDataBuffer::copyVector(scriptValue.data()))
+    : m_data(ThreadSafeDataBuffer::copyData(scriptValue.wireBytes()))
     , m_blobURLs(blobURLs)
     , m_blobFilePaths(blobFilePaths)
 {

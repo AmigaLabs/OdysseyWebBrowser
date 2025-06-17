@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include "AcinerellaBuffer.h"
 #include "MediaPlayerMorphOS.h"
 
@@ -15,6 +17,7 @@
 #include <queue>
 #include "AcinerellaDecoder.h"
 #include "AcinerellaHLS.h"
+#include <wtf/text/StringToIntegerConversion.h>
 
 #if ENABLE(WEB_CRYPTO)
 
@@ -25,8 +28,8 @@
 
 #endif
 
-#define D(x)
-#define DP(x) 
+#define D(x) 
+#define DP(x)
 
 namespace WebCore {
 namespace Acinerella {
@@ -49,8 +52,8 @@ public:
 		}
 	}
 
-	void ref() override { ThreadSafeRefCounted<AcinerellaNetworkBuffer>::ref(); }
-	void deref() override { ThreadSafeRefCounted<AcinerellaNetworkBuffer>::deref(); }
+	void ref() const override { ThreadSafeRefCounted<AcinerellaNetworkBuffer>::ref(); }
+	void deref() const override { ThreadSafeRefCounted<AcinerellaNetworkBuffer>::deref(); }
 
 	void start(uint64_t from = 0) override
 	{
@@ -65,8 +68,7 @@ public:
 
 		{
 			auto lock = Locker(m_bufferLock);
-			while (!m_buffer.empty())
-				m_buffer.pop();
+            m_buffer.clear();
 
 			m_finishedLoading = false;
 			m_didFailLoading = false;
@@ -83,7 +85,8 @@ public:
 		m_curlRequest = createCurlRequest(m_request);
 		if (m_curlRequest)
 		{
-			m_curlRequest->setResumeOffset(static_cast<long long>(m_bufferPositionAbs));
+            m_curlRequest->disableAcceptEncoding(true);
+			m_curlRequest->setResumeOffset(static_cast<long long>(m_bufferPositionAbs));//, static_cast<long long>(m_bufferPositionAbs + m_readAhead));
 			m_curlRequest->start();
 		}
 	}
@@ -111,6 +114,11 @@ public:
 	{
 		return m_length > 0;
 	}
+ 
+    void getErrorMessage(WTF::String& error)
+    {
+        error = m_errorMessage;
+    };
 
 	int read(uint8_t *outBuffer, int size, int64_t readPosition) override
 	{
@@ -125,7 +133,7 @@ public:
 
 			D(dprintf("%s: seek to %llu\n", "nbRead", readPosition));
 
-			WTF::callOnMainThread([this, seekTo = readPosition, protect = makeRef(*this)]() {
+			WTF::callOnMainThread([this, seekTo = readPosition, protect = Ref{*this}]() {
 				start(seekTo);
 				m_seekProcessed = true;
 			});
@@ -144,12 +152,13 @@ public:
 
 			{
 				auto lock = Locker(m_bufferLock);
-				if (!m_buffer.empty())
+				if (!m_buffer.isEmpty())
 				{
-					auto buffer = m_buffer.front();
-					int write = std::min(int(buffer->size() - m_bufferRead), sizeLeft);
+					auto& buffer = m_buffer.first();
+                    auto bufferSpan = buffer->span();
+					int write = std::min(int(bufferSpan.size() - m_bufferRead), sizeLeft);
 
-					memcpy(outBuffer + sizeWritten, buffer->data() + m_bufferRead, write);
+					memcpy(outBuffer + sizeWritten, bufferSpan.data() + m_bufferRead, write);
 					m_bufferRead += write;
 					m_bufferPositionAbs += write;
 					sizeLeft -= write;
@@ -157,9 +166,9 @@ public:
 
 					D(dprintf("%s: read %d from current block\n", "nbRead", write));
 
-					if (m_bufferRead == int(buffer->size()))
+					if (m_bufferRead == int(bufferSpan.size()))
 					{
-						m_buffer.pop();
+						m_buffer.removeFirst();
 						m_bufferSize -= m_bufferRead;
 						m_bufferRead = 0;
 						
@@ -170,7 +179,7 @@ public:
 						}
 					}
 					
-					canReadMore = !m_buffer.empty();
+					canReadMore = !m_buffer.isEmpty();
 				}
 			}
 			
@@ -180,7 +189,7 @@ public:
 			}
 			else if (sizeWritten < size && !m_finishedLoading && !canReadMore)
 			{
-				WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+				WTF::callOnMainThread([this, protect = Ref{*this}]() {
 					continueBuffering();
 				});
 				m_eventSemaphore.waitFor(10_s);
@@ -193,7 +202,7 @@ public:
 
 		if (resume)
 		{
-			WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+			WTF::callOnMainThread([this, protect = Ref{*this}]() {
 				continueBuffering();
 			});
 		}
@@ -224,7 +233,8 @@ public:
 				m_curlRequest = createCurlRequest(m_request);
 				if (m_curlRequest)
 				{
-					m_curlRequest->setResumeOffset(static_cast<long long>(abs));
+                    m_curlRequest->disableAcceptEncoding(true);
+					m_curlRequest->setResumeOffset(static_cast<long long>(abs));//, static_cast<long long>(abs + m_readAhead));
 					m_curlRequest->start();
 				}
 			}
@@ -239,8 +249,8 @@ public:
 		if (context)
 		{
 			auto& storageSession = *context->storageSession();
-			auto includeSecureCookies = request.url().protocolIs("https") ? IncludeSecureCookies::Yes : IncludeSecureCookies::No;
-			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), std::nullopt, std::nullopt, includeSecureCookies, ShouldAskITP::Yes, ShouldRelaxThirdPartyCookieBlocking::No).first;
+			auto includeSecureCookies = request.url().protocolIs("https"_s) ? IncludeSecureCookies::Yes : IncludeSecureCookies::No;
+			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), std::nullopt, std::nullopt, includeSecureCookies, ApplyTrackingPrevention::No, ShouldRelaxThirdPartyCookieBlocking::No).first;
 			if (!cookieHeaderField.isEmpty())
 				request.addHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeaderField);
 		}
@@ -256,7 +266,7 @@ public:
 
 	inline bool shouldRedirectAsGET(const ResourceRequest& request, bool crossOrigin)
 	{
-		if ((request.httpMethod() == "GET") || (request.httpMethod() == "HEAD"))
+		if ((request.httpMethod() == "GET"_s) || (request.httpMethod() == "HEAD"_s))
 			return false;
 
 		if (!request.url().protocolIsInHTTPFamily())
@@ -265,10 +275,10 @@ public:
 		if (m_response.isSeeOther())
 			return true;
 
-		if ((m_response.isMovedPermanently() || m_response.isFound()) && (request.httpMethod() == "POST"))
+		if ((m_response.isMovedPermanently() || m_response.isFound()) && (request.httpMethod() == "POST"_s))
 			return true;
 
-		if (crossOrigin && (request.httpMethod() == "DELETE"))
+		if (crossOrigin && (request.httpMethod() == "DELETE"_s))
 			return true;
 
 		return false;
@@ -284,9 +294,35 @@ public:
 			
 			// only set on 1st request (or when we're reading from pos=0)
 			if (0 == m_bufferPositionAbs)
-				m_length = static_cast<int64_t>(m_response.expectedContentLength());
+            {
+				m_length = reinterpret_cast<int64_t>(m_response.expectedContentLength());
+                
+                D(dprintf("%s(%p): got expected content length %lld\n", __PRETTY_FUNCTION__, this, m_length));
+    
+                if (-1 == m_length) {
+                    for (auto header : response.headers) {
+                        auto splitPosition = header.find(':');
+                        if (splitPosition == notFound)
+                            continue;
 
-			if (m_response.shouldRedirect())
+                        auto key = header.left(splitPosition).trim(deprecatedIsSpaceOrNewline);
+                        if (!equalIgnoringASCIICase(key, "Content-Length"_s))
+                            continue;
+
+                        auto contentLength = header.substring(splitPosition + 1).trim(deprecatedIsSpaceOrNewline);
+                        if (auto length = parseIntegerAllowingTrailingJunk<int64_t>(contentLength)) {
+                            m_length = *length;
+                            D(dprintf("%s(%p): got content length from header %lld\n", __PRETTY_FUNCTION__, this, m_length));
+                        }
+                    }
+                }
+                
+                if (-1 == m_length) {
+                    m_length = 0; // disable seeking
+                }
+            }
+
+			if (m_response.isRedirection())
 			{
 				static const int maxRedirects = 20;
 
@@ -305,7 +341,7 @@ public:
 				newRequest.setURL(newURL);
 
 				if (shouldRedirectAsGET(newRequest, crossOrigin)) {
-					newRequest.setHTTPMethod("GET");
+					newRequest.setHTTPMethod("GET"_s);
 					newRequest.setHTTPBody(nullptr);
 					newRequest.clearHTTPContentType();
 				}
@@ -321,7 +357,8 @@ public:
 				m_curlRequest = createCurlRequest(newRequest);
 				if (m_curlRequest)
 				{
-					m_curlRequest->setResumeOffset(static_cast<long long>(m_bufferPositionAbs));
+                    m_curlRequest->disableAcceptEncoding(true);
+					m_curlRequest->setResumeOffset(static_cast<long long>(m_bufferPositionAbs));//, static_cast<long long>(m_bufferPositionAbs + m_readAhead));
 					m_curlRequest->start();
 				}
 
@@ -333,7 +370,7 @@ public:
 		}
 	}
 	
-	void curlDidReceiveBuffer(CurlRequest& request, Ref<SharedBuffer>&&buffer) override
+	void curlDidReceiveData(CurlRequest& request, Ref<SharedBuffer>&& buffer) override
 	{
 		D(dprintf("%s(%p): %d bytes, currently buffered size: %d\n", __PRETTY_FUNCTION__, this, buffer->size(), m_bufferSize));
 		if (m_curlRequest.get() == &request)
@@ -343,14 +380,14 @@ public:
 				{
 					auto lock = Locker(m_bufferLock);
 					m_bufferSize += buffer->size();
-					m_buffer.push(RefPtr<SharedBuffer>(WTFMove(buffer)));
+					m_buffer.append(WTFMove(buffer));
 
 					if (m_bufferSize > m_readAhead && !m_isPaused)
 					{
 						if (m_curlRequest)
 						{
 							D(dprintf("%s: suspending...\n", __PRETTY_FUNCTION__));
-							m_curlRequest->suspend();
+                            m_curlRequest->suspend();
 							m_isPaused = true;
 						}
 					}
@@ -383,6 +420,7 @@ public:
 			m_isPaused = true;
 			m_didFailLoading = true;
 			m_eventSemaphore.signal();
+            m_errorMessage = error.localizedDescription();
 			if (error.type() != ResourceError::Type::Timeout && error.type() != ResourceError::Type::Cancellation)
 				m_nonRecoverableErrors ++;
 			D(dprintf("%s(%p): error type %d code %d %s nrcount %d\n", __PRETTY_FUNCTION__, this, int(error.type()), int(error.errorCode()), error.localizedDescription().utf8().data(), m_nonRecoverableErrors));
@@ -391,11 +429,12 @@ public:
 protected:
 	ResourceRequest                  m_request;
 	ResourceResponse                 m_response;
+    String                           m_errorMessage;
 	unsigned                         m_redirectCount = 0;
 	BinarySemaphore                  m_eventSemaphore;
 	RefPtr<CurlRequest>              m_curlRequest;
 	Lock                             m_bufferLock;
-	std::queue<RefPtr<SharedBuffer>> m_buffer;
+	Deque<Ref<SharedBuffer>>         m_buffer;
 	// pos within the front() chunk
 	int                              m_bufferRead = 0;
 	// abs position in the stream that we've read (not in the buffer anymore)
@@ -419,7 +458,7 @@ public:
 		DP(dprintf("%s(%p): prepend %d\n", __PRETTY_FUNCTION__, this, !!prepend?prepend->size():0));
 		if (!!prepend)
 		{
-			m_buffer = SharedBuffer::create(prepend->data(), prepend->size());
+            m_bufferBuilder.append(*prepend);
 		}
 	}
 	
@@ -429,7 +468,7 @@ public:
 		DP(dprintf("%s(%p): prepend %d\n", __PRETTY_FUNCTION__, this, !!prepend?prepend->size():0));
 		if (!!prepend)
 		{
-			m_buffer = SharedBuffer::create(prepend->data(), prepend->size());
+            m_bufferBuilder.append(*prepend);
 		}
 		
 		m_encryptionKey = key;
@@ -455,19 +494,18 @@ public:
 		if (!!m_request)
 			return;
 
-		m_request = AcinerellaNetworkFileRequest::create(m_url, [this, protect = makeRef(*this)](bool success) {
+		m_request = AcinerellaNetworkFileRequest::create(m_url, [this, protect = Ref{*this}](bool success) {
 			if (success)
 			{
-				auto buffer = m_request->buffer();
-				if (!!m_buffer)
-					m_buffer->append(buffer->data(), buffer->size());
-				else
-					m_buffer = buffer;
+                // can happen if request got cancelled but processing of data is already pending
+                if (!m_request)
+                    return;
 
-				DP(dprintf("%s(%p): received, total len %d (%d)\n", __PRETTY_FUNCTION__, this, m_buffer->size(), buffer->size()));
+                m_bufferBuilder.append(*m_request->buffer());
+				DP(dprintf("%s(%p): received, total len %d (%d)\n", __PRETTY_FUNCTION__, this, m_buffer->size(), m_request->buffer()->size()));
 
 #if ENABLE(WEB_CRYPTO)
-				if (!!m_encryptionKey && !!m_buffer)
+				if (!!m_encryptionKey)
 				{
 					CryptoAlgorithmAesCbcCfbParams params;
 					auto key = CryptoKeyAES::importRaw(CryptoAlgorithmIdentifier::AES_CBC, m_encryptionKey->copyData(), true, CryptoKeyUsageDecrypt);
@@ -479,13 +517,13 @@ public:
 							params.iv = BufferSource(asAB);
 						}
 					}
-					auto decryptResult = CryptoAlgorithmAES_CBC::platformDecrypt(params, *key, m_buffer->copyData(), CryptoAlgorithmAES_CBC::Padding::No);
+					auto decryptResult = CryptoAlgorithmAES_CBC::platformDecrypt(params, *key, m_bufferBuilder.takeAsContiguous()->extractData(), CryptoAlgorithmAES_CBC::Padding::No);
 					if (!decryptResult.hasException())
 					{
 						auto encrypted = decryptResult.releaseReturnValue();
 						DP(dprintf("%s(%p): encryption succeded!\n", __PRETTY_FUNCTION__, this));
-						m_buffer->clear();
-						m_buffer->append(encrypted.data(), encrypted.sizeInBytes());
+						m_bufferBuilder.reset();
+						m_bufferBuilder.append(encrypted.data(), encrypted.sizeInBytes());
 					}
 					else
 					{
@@ -493,6 +531,7 @@ public:
 					}
 				}
 #endif
+                m_buffer = m_bufferBuilder.takeAsContiguous();
 				m_length = m_buffer->size();
 			}
 
@@ -539,7 +578,7 @@ public:
 
 			if (size > 0 && size < int(m_buffer->size()))
 			{
-				memcpy(outBuffer, m_buffer->data() + m_bufferPositionAbs, size);
+				memcpy(outBuffer, m_buffer->span().data() + m_bufferPositionAbs, size);
 
 				DP(dprintf("%s(%p): read from %d, size %d\n", __PRETTY_FUNCTION__, this, int(m_bufferPositionAbs), size));
 				m_bufferPositionAbs += size;
@@ -558,6 +597,7 @@ protected:
 	int32_t                              m_bufferPositionAbs = 0;
 	RefPtr<AcinerellaNetworkFileRequest> m_request;
 	BinarySemaphore                      m_eventSemaphore;
+    SharedBufferBuilder                  m_bufferBuilder;
 	RefPtr<SharedBuffer>                 m_buffer;
 	RefPtr<SharedBuffer>                 m_encryptionKey;
 	unsigned char                        m_iv[16];
@@ -596,7 +636,7 @@ RefPtr<AcinerellaNetworkBuffer> AcinerellaNetworkBuffer::create(AcinerellaNetwor
 	if (startsWithLettersIgnoringASCIICase(url, "blob:"))
 		return RefPtr<AcinerellaNetworkBuffer>(WTF::adoptRef(*new AcinerellaNetworkBufferPlatformMediaResourceLoader(resourceProvider, url, readAhead)));
 #endif
-	if (url.contains("m3u8"))
+	if (url.contains("m3u8"_s))
 		return RefPtr<AcinerellaNetworkBuffer>(WTF::adoptRef(*new AcinerellaNetworkBufferHLS(resourceProvider, url, readAhead)));
 	return RefPtr<AcinerellaNetworkBuffer>(WTF::adoptRef(*new AcinerellaNetworkBufferInternal(resourceProvider, url, readAhead)));
 }
@@ -630,6 +670,7 @@ public:
 
 		if (m_curlRequest)
 		{
+            m_curlRequest->disableAcceptEncoding(true);
 			m_curlRequest->start();
 		}
 		else
@@ -647,6 +688,7 @@ public:
 
 		if (m_curlRequest)
 		{
+            m_curlRequest->disableAcceptEncoding(true);
 			m_curlRequest->start();
 		}
 		else
@@ -661,7 +703,7 @@ public:
 		{
 			Function<void(bool)> onTmpFinished;
 			std::swap(m_onFinished, onTmpFinished);
-			WTF::callOnMainThread([this, success, onFinished(std::move(onTmpFinished)), protect = makeRef(*this)]() {
+			WTF::callOnMainThread([this, success, onFinished(std::move(onTmpFinished)), protect = Ref{*this}]() {
 				onFinished(success);
 			});
 		}
@@ -669,7 +711,7 @@ public:
 		{
 			Function<void(RefPtr<SharedBuffer>)> onTmpFinished;
 			std::swap(m_onFinished2, onTmpFinished);
-			WTF::callOnMainThread([this, success, onFinished(std::move(onTmpFinished)), protect = makeRef(*this)]() {
+			WTF::callOnMainThread([this, success, onFinished(std::move(onTmpFinished)), protect = Ref{*this}]() {
 				onFinished(success ? buffer() : nullptr);
 			});
 		}
@@ -683,7 +725,7 @@ public:
 		m_onFinished2 = nullptr;
 	}
 
-	RefPtr<SharedBuffer> buffer() override { return m_buffer; }
+	RefPtr<SharedBuffer> buffer() override { return m_contiguousBuffer; }
 
 	Ref<CurlRequest> createCurlRequest(ResourceRequest&request)
 	{
@@ -691,8 +733,8 @@ public:
 		if (context)
 		{
 			auto& storageSession = *context->storageSession();
-			auto includeSecureCookies = request.url().protocolIs("https") ? IncludeSecureCookies::Yes : IncludeSecureCookies::No;
-			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), std::nullopt, std::nullopt, includeSecureCookies, ShouldAskITP::Yes, ShouldRelaxThirdPartyCookieBlocking::No).first;
+			auto includeSecureCookies = request.url().protocolIs("https"_s) ? IncludeSecureCookies::Yes : IncludeSecureCookies::No;
+			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), std::nullopt, std::nullopt, includeSecureCookies, ApplyTrackingPrevention::No, ShouldRelaxThirdPartyCookieBlocking::No).first;
 			if (!cookieHeaderField.isEmpty())
 				request.addHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeaderField);
 		}
@@ -707,7 +749,7 @@ public:
 
 	inline bool shouldRedirectAsGET(const ResourceRequest& request, bool crossOrigin)
 	{
-		if ((request.httpMethod() == "GET") || (request.httpMethod() == "HEAD"))
+		if ((request.httpMethod() == "GET"_s) || (request.httpMethod() == "HEAD"_s))
 			return false;
 
 		if (!request.url().protocolIsInHTTPFamily())
@@ -716,10 +758,10 @@ public:
 		if (m_response.isSeeOther())
 			return true;
 
-		if ((m_response.isMovedPermanently() || m_response.isFound()) && (request.httpMethod() == "POST"))
+		if ((m_response.isMovedPermanently() || m_response.isFound()) && (request.httpMethod() == "POST"_s))
 			return true;
 
-		if (crossOrigin && (request.httpMethod() == "DELETE"))
+		if (crossOrigin && (request.httpMethod() == "DELETE"_s))
 			return true;
 
 		return false;
@@ -733,7 +775,7 @@ public:
 			D(dprintf("%s(%p)..\n", __PRETTY_FUNCTION__, this));
 			m_response = ResourceResponse(response);
 
-			if (m_response.shouldRedirect())
+			if (m_response.isRedirection())
 			{
 				static const int maxRedirects = 20;
 
@@ -751,7 +793,7 @@ public:
 				newRequest.setURL(newURL);
 
 				if (shouldRedirectAsGET(newRequest, crossOrigin)) {
-					newRequest.setHTTPMethod("GET");
+					newRequest.setHTTPMethod("GET"_s);
 					newRequest.setHTTPBody(nullptr);
 					newRequest.clearHTTPContentType();
 				}
@@ -767,6 +809,7 @@ public:
 				m_curlRequest = createCurlRequest(newRequest);
 				if (m_curlRequest)
 				{
+                    m_curlRequest->disableAcceptEncoding(true);
 					m_curlRequest->start();
 				}
 				else
@@ -782,26 +825,24 @@ public:
 		}
 	}
 	
-	void curlDidReceiveBuffer(CurlRequest& request, Ref<SharedBuffer>&&buffer) override
+	void curlDidReceiveData(CurlRequest& request, Ref<SharedBuffer>&& buffer) override
 	{
 		if (m_curlRequest.get() == &request)
 		{
 			if (buffer->size())
 			{
 				D(dprintf("%s(%p): append %d\n", __PRETTY_FUNCTION__, this, buffer->size()));
-				if (!m_buffer)
-					m_buffer = RefPtr<SharedBuffer>(WTFMove(buffer));
-				else
-					m_buffer->append(WTFMove(buffer));
+				m_buffer.append(buffer.get());
 			}
 		}
 	}
 	
 	void curlDidComplete(CurlRequest& request, NetworkLoadMetrics&&) override
 	{
-		D(dprintf("%s(%p): %s %d OK %d onfini %d\n", __PRETTY_FUNCTION__, this, m_url.utf8().data(), m_buffer?m_buffer->size():0, m_curlRequest.get() == &request, !!m_onFinished));
+		D(dprintf("%s(%p): %s %d OK %d onfini %d\n", __PRETTY_FUNCTION__, this, m_url.utf8().data(), m_buffer.size(), m_curlRequest.get() == &request, !!m_onFinished));
 		if (m_curlRequest.get() == &request)
 		{
+            m_contiguousBuffer = m_buffer.takeAsContiguous();
 			onFinished(true);
 		}
 	}
@@ -815,16 +856,17 @@ public:
 		}
 	}
 
-	void ref() override { ThreadSafeRefCounted<AcinerellaNetworkFileRequest>::ref(); }
-	void deref() override { ThreadSafeRefCounted<AcinerellaNetworkFileRequest>::deref(); }
+	void ref() const override { ThreadSafeRefCounted<AcinerellaNetworkFileRequest>::ref(); }
+	void deref() const override { ThreadSafeRefCounted<AcinerellaNetworkFileRequest>::deref(); }
 
 protected:
-	ResourceRequest      m_request;
-	ResourceResponse     m_response;
-	unsigned             m_redirectCount = 0;
-	BinarySemaphore      m_eventSemaphore;
-	RefPtr<CurlRequest>  m_curlRequest;
-	RefPtr<SharedBuffer> m_buffer;
+	ResourceRequest        m_request;
+	ResourceResponse       m_response;
+	unsigned               m_redirectCount = 0;
+	BinarySemaphore        m_eventSemaphore;
+	RefPtr<CurlRequest>    m_curlRequest;
+	SharedBufferBuilder    m_buffer;
+    RefPtr<SharedBuffer>   m_contiguousBuffer;
 };
 
 RefPtr<AcinerellaNetworkFileRequest> AcinerellaNetworkFileRequest::create(const String &url, Function<void(bool)>&& onFinished)

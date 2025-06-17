@@ -34,6 +34,7 @@
 #include <wtf/LoggerHelper.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/RetainPtr.h>
+#include <wtf/TZoneMalloc.h>
 
 OBJC_CLASS WebVideoContainerLayer;
 
@@ -45,12 +46,12 @@ class VideoLayerManagerObjC final
     , public LoggerHelper
 #endif
 {
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(VideoLayerManagerObjC, WEBCORE_EXPORT);
     WTF_MAKE_NONCOPYABLE(VideoLayerManagerObjC);
-    WTF_MAKE_FAST_ALLOCATED;
 
 public:
 #if !RELEASE_LOG_DISABLED
-    WEBCORE_EXPORT VideoLayerManagerObjC(const Logger&, const void*);
+    WEBCORE_EXPORT VideoLayerManagerObjC(const Logger&, uint64_t);
 #else
     VideoLayerManagerObjC() = default;
 #endif
@@ -59,18 +60,17 @@ public:
 
     WEBCORE_EXPORT PlatformLayer* videoInlineLayer() const final;
 
-    WEBCORE_EXPORT void setVideoLayer(PlatformLayer*, IntSize contentSize) final;
+    WEBCORE_EXPORT void setVideoLayer(PlatformLayer*, FloatSize) final;
     WEBCORE_EXPORT void didDestroyVideoLayer() final;
 
 #if ENABLE(VIDEO_PRESENTATION_MODE)
     WEBCORE_EXPORT PlatformLayer* videoFullscreenLayer() const final;
-    WEBCORE_EXPORT void setVideoFullscreenLayer(PlatformLayer*, WTF::Function<void()>&& completionHandler, PlatformImagePtr) final;
+    WEBCORE_EXPORT void setVideoFullscreenLayer(PlatformLayer*, Function<void()>&& completionHandler, PlatformImagePtr) final;
     WEBCORE_EXPORT FloatRect videoFullscreenFrame() const final;
     WEBCORE_EXPORT void setVideoFullscreenFrame(FloatRect) final;
     WEBCORE_EXPORT void updateVideoFullscreenInlineImage(PlatformImagePtr) final;
 #endif
 
-    WEBCORE_EXPORT bool requiresTextTrackRepresentation() const final;
     WEBCORE_EXPORT void setTextTrackRepresentationLayer(PlatformLayer*) final;
     WEBCORE_EXPORT void syncTextTrackBounds() final;
 
@@ -78,12 +78,12 @@ private:
 
 #if !RELEASE_LOG_DISABLED
     const Logger& logger() const final { return m_logger.get(); }
-    const void* logIdentifier() const final { return m_logIdentifier; }
-    const char* logClassName() const final { return "VideoLayerManagerObjC"; }
+    uint64_t logIdentifier() const final { return m_logIdentifier; }
+    ASCIILiteral logClassName() const final { return "VideoLayerManagerObjC"_s; }
     WTFLogChannel& logChannel() const final;
 
     Ref<const Logger> m_logger;
-    const void* m_logIdentifier;
+    const uint64_t m_logIdentifier;
 #endif
 
     RetainPtr<WebVideoContainerLayer> m_videoInlineLayer;

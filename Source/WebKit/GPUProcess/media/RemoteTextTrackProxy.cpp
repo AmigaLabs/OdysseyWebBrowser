@@ -27,65 +27,68 @@
 #include "config.h"
 #include "RemoteTextTrackProxy.h"
 
-#if ENABLE(GPU_PROCESS)
+#if ENABLE(GPU_PROCESS) && ENABLE(VIDEO)
 
 #include "Connection.h"
-#include "DataReference.h"
 #include "GPUConnectionToWebProcess.h"
 #include "MediaPlayerPrivateRemoteMessages.h"
 #include "RemoteMediaPlayerProxy.h"
 #include "TextTrackPrivateRemoteConfiguration.h"
-#include "WebCoreArgumentCoders.h"
 #include <WebCore/ISOVTTCue.h>
 #include <WebCore/NotImplemented.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebKit {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RemoteTextTrackProxy);
+
 using namespace WebCore;
 
-RemoteTextTrackProxy::RemoteTextTrackProxy(GPUConnectionToWebProcess& connectionToWebProcess, TrackPrivateRemoteIdentifier identifier, InbandTextTrackPrivate& trackPrivate, MediaPlayerIdentifier mediaPlayerIdentifier)
-    : m_connectionToWebProcess(makeWeakPtr(connectionToWebProcess))
-    , m_identifier(identifier)
+RemoteTextTrackProxy::RemoteTextTrackProxy(GPUConnectionToWebProcess& connectionToWebProcess, InbandTextTrackPrivate& trackPrivate, MediaPlayerIdentifier mediaPlayerIdentifier)
+    : m_connectionToWebProcess(connectionToWebProcess)
     , m_trackPrivate(trackPrivate)
+    , m_id(trackPrivate.id())
     , m_mediaPlayerIdentifier(mediaPlayerIdentifier)
 {
-    m_trackPrivate->setClient(this);
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::AddRemoteTextTrack(m_identifier, configuration()), m_mediaPlayerIdentifier);
+    m_clientId = trackPrivate.addClient([](auto&& task) {
+        ensureOnMainThread(WTFMove(task));
+    }, *this);
+    connectionToWebProcess.protectedConnection()->send(Messages::MediaPlayerPrivateRemote::AddRemoteTextTrack(configuration()), m_mediaPlayerIdentifier);
 }
 
 RemoteTextTrackProxy::~RemoteTextTrackProxy()
 {
+    Ref { m_trackPrivate }->removeClient(m_clientId);
 }
 
 TextTrackPrivateRemoteConfiguration& RemoteTextTrackProxy::configuration()
 {
     static NeverDestroyed<TextTrackPrivateRemoteConfiguration> configuration;
 
-    configuration->trackId = m_trackPrivate->id();
-    configuration->label = m_trackPrivate->label();
-    configuration->language = m_trackPrivate->language();
-    configuration->trackIndex = m_trackPrivate->trackIndex();
-    configuration->inBandMetadataTrackDispatchType = m_trackPrivate->inBandMetadataTrackDispatchType();
-    configuration->startTimeVariance = m_trackPrivate->startTimeVariance();
+    Ref trackPrivate = m_trackPrivate;
+    configuration->trackId = trackPrivate->id();
+    configuration->label = trackPrivate->label();
+    configuration->language = trackPrivate->language();
+    configuration->trackIndex = trackPrivate->trackIndex();
+    configuration->inBandMetadataTrackDispatchType = trackPrivate->inBandMetadataTrackDispatchType();
+    configuration->startTimeVariance = trackPrivate->startTimeVariance();
 
-    configuration->cueFormat = m_trackPrivate->cueFormat();
-    configuration->isClosedCaptions = m_trackPrivate->isClosedCaptions();
-    configuration->isSDH = m_trackPrivate->isSDH();
-    configuration->containsOnlyForcedSubtitles = m_trackPrivate->containsOnlyForcedSubtitles();
-    configuration->isMainProgramContent = m_trackPrivate->isMainProgramContent();
-    configuration->isEasyToRead = m_trackPrivate->isEasyToRead();
-    configuration->isDefault = m_trackPrivate->isDefault();
-    configuration->kind = m_trackPrivate->kind();
+    configuration->cueFormat = trackPrivate->cueFormat();
+    configuration->isClosedCaptions = trackPrivate->isClosedCaptions();
+    configuration->isSDH = trackPrivate->isSDH();
+    configuration->containsOnlyForcedSubtitles = trackPrivate->containsOnlyForcedSubtitles();
+    configuration->isMainProgramContent = trackPrivate->isMainProgramContent();
+    configuration->isEasyToRead = trackPrivate->isEasyToRead();
+    configuration->isDefault = trackPrivate->isDefault();
+    configuration->kind = trackPrivate->kind();
 
     return configuration.get();
 }
 
 void RemoteTextTrackProxy::configurationChanged()
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::RemoteTextTrackConfigurationChanged(m_identifier, configuration()), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::RemoteTextTrackConfigurationChanged(std::exchange(m_id, m_trackPrivate->id()), configuration()), m_mediaPlayerIdentifier);
 }
 
 void RemoteTextTrackProxy::willRemove()
@@ -93,7 +96,7 @@ void RemoteTextTrackProxy::willRemove()
     ASSERT_NOT_REACHED();
 }
 
-void RemoteTextTrackProxy::idChanged(const AtomString&)
+void RemoteTextTrackProxy::idChanged(TrackID)
 {
     configurationChanged();
 }
@@ -108,88 +111,68 @@ void RemoteTextTrackProxy::languageChanged(const AtomString&)
     configurationChanged();
 }
 
-void RemoteTextTrackProxy::addDataCue(const MediaTime& start, const MediaTime& end, const void* data, unsigned length)
+void RemoteTextTrackProxy::addDataCue(const MediaTime& start, const MediaTime& end, std::span<const uint8_t> data)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::AddDataCue(m_identifier, start, end, IPC::DataReference(static_cast<const uint8_t*>(data), length)), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::AddDataCue(m_trackPrivate->id(), start, end, data), m_mediaPlayerIdentifier);
 }
 
 #if ENABLE(DATACUE_VALUE)
 void RemoteTextTrackProxy::addDataCue(const MediaTime& start, const MediaTime& end, Ref<SerializedPlatformDataCue>&& cueData, const String& type)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::AddDataCueWithType(m_identifier, start, end, cueData->encodableValue(), type), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::AddDataCueWithType(m_trackPrivate->id(), start, end, cueData->encodableValue(), type), m_mediaPlayerIdentifier);
 }
 
 void RemoteTextTrackProxy::updateDataCue(const MediaTime& start, const MediaTime& end, SerializedPlatformDataCue& cueData)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::UpdateDataCue(m_identifier, start, end, cueData.encodableValue()), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::UpdateDataCue(m_trackPrivate->id(), start, end, cueData.encodableValue()), m_mediaPlayerIdentifier);
 }
 
 void RemoteTextTrackProxy::removeDataCue(const MediaTime& start, const MediaTime& end, SerializedPlatformDataCue& cueData)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::RemoveDataCue(m_identifier, start, end, cueData.encodableValue()), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::RemoveDataCue(m_trackPrivate->id(), start, end, cueData.encodableValue()), m_mediaPlayerIdentifier);
 }
 #endif
 
 void RemoteTextTrackProxy::addGenericCue(InbandGenericCue& cue)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::AddGenericCue(m_identifier, cue.cueData()), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::AddGenericCue(m_trackPrivate->id(), cue.cueData()), m_mediaPlayerIdentifier);
 }
 
 void RemoteTextTrackProxy::updateGenericCue(InbandGenericCue& cue)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::UpdateGenericCue(m_identifier, cue.cueData()), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::UpdateGenericCue(m_trackPrivate->id(), cue.cueData()), m_mediaPlayerIdentifier);
 }
 
 void RemoteTextTrackProxy::removeGenericCue(InbandGenericCue& cue)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::RemoveGenericCue(m_identifier, cue.cueData()), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::RemoveGenericCue(m_trackPrivate->id(), cue.cueData()), m_mediaPlayerIdentifier);
 }
 
 void RemoteTextTrackProxy::parseWebVTTFileHeader(String&& header)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::ParseWebVTTFileHeader(m_identifier, header), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::ParseWebVTTFileHeader(m_trackPrivate->id(), header), m_mediaPlayerIdentifier);
 }
 
-void RemoteTextTrackProxy::parseWebVTTCueData(const uint8_t* data, unsigned length)
+void RemoteTextTrackProxy::parseWebVTTCueData(std::span<const uint8_t> data)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::ParseWebVTTCueData(m_identifier, IPC::DataReference(data, length)), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::ParseWebVTTCueData(m_trackPrivate->id(), data), m_mediaPlayerIdentifier);
 }
 
 void RemoteTextTrackProxy::parseWebVTTCueData(ISOWebVTTCue&& cueData)
 {
-    if (!m_connectionToWebProcess)
-        return;
-
-    m_connectionToWebProcess->connection().send(Messages::MediaPlayerPrivateRemote::ParseWebVTTCueDataStruct(m_identifier, cueData), m_mediaPlayerIdentifier);
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        connection->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::ParseWebVTTCueDataStruct(m_trackPrivate->id(), cueData), m_mediaPlayerIdentifier);
 }
 
 } // namespace WebKit
 
-#endif // ENABLE(GPU_PROCESS)
+#endif // ENABLE(GPU_PROCESS) && ENABLE(VIDEO)

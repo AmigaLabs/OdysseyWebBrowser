@@ -27,6 +27,7 @@
 #include "config.h"
 #include "AnimationTimeline.h"
 
+#include "AnimationTimelinesController.h"
 #include "KeyframeEffect.h"
 #include "KeyframeEffectStack.h"
 #include "StyleResolver.h"
@@ -35,23 +36,27 @@
 
 namespace WebCore {
 
-AnimationTimeline::AnimationTimeline() = default;
-AnimationTimeline::~AnimationTimeline() = default;
-
-void AnimationTimeline::forgetAnimation(WebAnimation* animation)
+AnimationTimeline::AnimationTimeline(std::optional<WebAnimationTime> duration)
+    : m_duration(duration)
 {
-    m_allAnimations.removeFirst(animation);
 }
+
+AnimationTimeline::~AnimationTimeline() = default;
 
 void AnimationTimeline::animationTimingDidChange(WebAnimation& animation)
 {
     updateGlobalPosition(animation);
 
-    if (m_animations.add(&animation)) {
-        m_allAnimations.append(makeWeakPtr(&animation));
+    if (m_animations.add(animation)) {
         auto* timeline = animation.timeline();
         if (timeline && timeline != this)
             timeline->removeAnimation(animation);
+        else if (timeline == this) {
+            if (auto* keyframeEffect = dynamicDowncast<KeyframeEffect>(animation.effect())) {
+                if (auto styleable = keyframeEffect->targetStyleable())
+                    styleable->animationWasAdded(animation);
+            }
+        }
     }
 }
 
@@ -65,21 +70,38 @@ void AnimationTimeline::updateGlobalPosition(WebAnimation& animation)
 void AnimationTimeline::removeAnimation(WebAnimation& animation)
 {
     ASSERT(!animation.timeline() || animation.timeline() == this);
-    m_animations.remove(&animation);
-    if (is<KeyframeEffect>(animation.effect())) {
-        if (auto styleable = downcast<KeyframeEffect>(animation.effect())->targetStyleable()) {
+    m_animations.remove(animation);
+    if (auto* keyframeEffect = dynamicDowncast<KeyframeEffect>(animation.effect())) {
+        if (auto styleable = keyframeEffect->targetStyleable())
             styleable->animationWasRemoved(animation);
-            styleable->ensureKeyframeEffectStack().removeEffect(*downcast<KeyframeEffect>(animation.effect()));
-        }
     }
 }
 
-std::optional<double> AnimationTimeline::bindingsCurrentTime()
+void AnimationTimeline::detachFromDocument()
 {
-    auto time = currentTime();
-    if (!time)
-        return std::nullopt;
-    return secondsToWebAnimationsAPITime(*time);
+    if (CheckedPtr controller = this->controller())
+        controller->removeTimeline(*this);
+
+    auto& animationsToRemove = m_animations;
+    while (!animationsToRemove.isEmpty())
+        animationsToRemove.first()->remove();
+}
+
+void AnimationTimeline::suspendAnimations()
+{
+    for (const auto& animation : m_animations)
+        animation->setSuspended(true);
+}
+
+void AnimationTimeline::resumeAnimations()
+{
+    for (const auto& animation : m_animations)
+        animation->setSuspended(false);
+}
+
+bool AnimationTimeline::animationsAreSuspended() const
+{
+    return controller() && controller()->animationsAreSuspended();
 }
 
 } // namespace WebCore

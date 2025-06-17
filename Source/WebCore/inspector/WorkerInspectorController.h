@@ -25,12 +25,13 @@
 
 #pragma once
 
-#include "WorkerDebugger.h"
+#include "WorkerOrWorkletGlobalScope.h"
 #include <JavaScriptCore/InspectorAgentRegistry.h>
 #include <JavaScriptCore/InspectorEnvironment.h>
 #include <wtf/Forward.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/Stopwatch.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace Inspector {
 class FrontendChannel;
@@ -41,12 +42,12 @@ namespace WebCore {
 
 class InstrumentingAgents;
 class WebInjectedScriptManager;
-class WorkerOrWorkletGlobalScope;
+class WorkerDebugger;
 struct WorkerAgentContext;
 
 class WorkerInspectorController final : public Inspector::InspectorEnvironment {
     WTF_MAKE_NONCOPYABLE(WorkerInspectorController);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(WorkerInspectorController);
 public:
     explicit WorkerInspectorController(WorkerOrWorkletGlobalScope&);
     ~WorkerInspectorController() override;
@@ -64,8 +65,8 @@ public:
     Inspector::InspectorFunctionCallHandler functionCallHandler() const override;
     Inspector::InspectorEvaluateHandler evaluateHandler() const override;
     void frontendInitialized() override { }
-    WTF::Stopwatch& executionStopwatch() const final { return m_executionStopwatch; }
-    WorkerDebugger& debugger() override { return m_debugger; }
+    WTF::Stopwatch& executionStopwatch() const override;
+    JSC::Debugger* debugger() override;
     JSC::VM& vm() override;
 
 private:
@@ -74,14 +75,16 @@ private:
     WorkerAgentContext workerAgentContext();
     void createLazyAgents();
 
+    void updateServiceWorkerPageFrontendCount();
+
     Ref<InstrumentingAgents> m_instrumentingAgents;
     std::unique_ptr<WebInjectedScriptManager> m_injectedScriptManager;
     Ref<Inspector::FrontendRouter> m_frontendRouter;
     Ref<Inspector::BackendDispatcher> m_backendDispatcher;
     Ref<WTF::Stopwatch> m_executionStopwatch;
-    WorkerDebugger m_debugger;
+    std::unique_ptr<WorkerDebugger> m_debugger;
     Inspector::AgentRegistry m_agents;
-    WorkerOrWorkletGlobalScope& m_globalScope;
+    WeakRef<WorkerOrWorkletGlobalScope> m_globalScope;
     std::unique_ptr<Inspector::FrontendChannel> m_forwardingChannel;
     bool m_didCreateLazyAgents { false };
 };

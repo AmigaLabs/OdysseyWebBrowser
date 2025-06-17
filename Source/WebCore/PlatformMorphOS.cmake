@@ -1,11 +1,10 @@
+include(platform/Adwaita.cmake)
 include(platform/Cairo.cmake)
 include(platform/Curl.cmake)
 include(platform/FreeType.cmake)
 include(platform/ImageDecoders.cmake)
 
-if (NOT MORPHOS_MINIMAL)
-	include(platform/GCrypt.cmake)
-endif()
+include(platform/GCrypt.cmake)
 
 list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBKIT_LIBRARIES_DIR}/include"
@@ -18,6 +17,7 @@ list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     ${WEBCORE_DIR}/platform/generic
     ${WEBCORE_DIR}/platform/graphics/morphos
     ${WEBCORE_DIR}/platform/mediacapabilities
+    "${WEBCORE_DIR}/platform/video-codecs"
 )
 
 list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
@@ -41,17 +41,22 @@ list(APPEND WebCore_LIBRARIES
 )
 
 list(APPEND WebCore_SOURCES
+    accessibility/morphos/AXObjectCacheMorphOS.cpp
+    accessibility/morphos/AccessibilityObjectMorphOS.cpp
+    inspector/LegacyWebSocketInspectorInstrumentation.cpp
     editing/morphos/EditorMorphOS.cpp
     editing/morphos/AutofillElements.cpp
     platform/morphos/Altivec.cpp
     platform/morphos/PasteboardMorphOS.cpp
     platform/morphos/CursorMorphOS.cpp
+    platform/morphos/SharedMemoryMorphOS.cpp
     platform/morphos/PlatformKeyboardEvent.cpp
     platform/morphos/PlatformScreenMorphOS.cpp
     platform/morphos/MIMETypeRegistryMorphOS.cpp
     platform/morphos/DragDataMorphOS.cpp
     platform/morphos/DragImageMorphOS.cpp
     platform/morphos/SelectionData.cpp
+    platform/morphos/UserAgentMorphOS.cpp
     platform/generic/KeyedDecoderGeneric.cpp
     platform/generic/KeyedEncoderGeneric.cpp
     platform/graphics/morphos/GraphicsLayerMorphOS.cpp
@@ -59,20 +64,22 @@ list(APPEND WebCore_SOURCES
     platform/graphics/morphos/DisplayRefreshMonitorMorphOS.cpp
     platform/network/morphos/CurlSSLHandleMorphOS.cpp
     platform/network/morphos/NetworkStateNotifierMorphOS.cpp
-    platform/posix/SharedBufferPOSIX.cpp
+    #platform/posix/SharedBufferPOSIX.cpp
     platform/text/LocaleICU.cpp
     platform/text/hyphen/HyphenationLibHyphen.cpp
-    rendering/RenderThemeMorphOS.cpp
-    rendering/RenderThemeAdwaita.cpp
+    rendering/adwaita/RenderThemeMorphOS.cpp
+    rendering/adwaita/RenderThemeAdwaita.cpp
     page/morphos/DragControllerMorphOS.cpp
     platform/adwaita/ThemeAdwaita.cpp
-    platform/adwaita/ScrollbarThemeAdwaita1.cpp
+    platform/adwaita/ScrollbarThemeAdwaita.cpp
+    platform/graphics/morphos/SystemFontDatabaseMorphOS.cpp
 )
 
 list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
     platform/adwaita/ScrollbarThemeAdwaita.h
     platform/graphics/morphos/MediaPlayerMorphOS.h
     platform/morphos/SelectionData.h
+    inspector/LegacyWebSocketInspectorInstrumentation.h
 )
 
 if (NOT MORPHOS_MINIMAL)
@@ -92,6 +99,7 @@ if (NOT MORPHOS_MINIMAL)
 		platform/graphics/morphos/AcinerellaVideoDecoder.cpp
 		platform/graphics/morphos/AcinerellaContainer.cpp
 		platform/graphics/morphos/MediaPlayerPrivateMorphOS.cpp
+        platform/graphics/morphos/MediaSourceChunkReader.cpp
 		platform/graphics/morphos/MediaSourcePrivateMorphOS.cpp
 		platform/graphics/morphos/MediaSourceBufferPrivateMorphOS.cpp
 		platform/graphics/morphos/AudioTrackPrivateMorphOS.cpp
@@ -102,14 +110,15 @@ if (NOT MORPHOS_MINIMAL)
 	)
 endif()
 
-list(APPEND WebCore_USER_AGENT_STYLE_SHEETS
-	${WEBCORE_DIR}/Modules/mediacontrols/mediaControlsAdwaita.css
-	${WEBCORE_DIR}/css/themeAdwaita.css
-)
+#list(APPEND WebCore_USER_AGENT_STYLE_SHEETS
+#    ${WEBCORE_DIR}/css/themeAdwaita.css
+#    ${WebCore_DERIVED_SOURCES_DIR}/ModernMediaControls.css
+#)
 
-set(WebCore_USER_AGENT_SCRIPTS
-	${WEBCORE_DIR}/Modules/mediacontrols/mediaControlsAdwaita.js
-)
+#set(WebCore_USER_AGENT_SCRIPTS
+#    ${WebCore_DERIVED_SOURCES_DIR}/ModernMediaControls.js
+#)
+
 set(WebCore_USER_AGENT_SCRIPTS_DEPENDENCIES ${WEBCORE_DIR}/rendering/RenderThemeAdwaita.cpp)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -DMORPHOS_MINIMAL=${MORPHOS_MINIMAL}")

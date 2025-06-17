@@ -32,16 +32,18 @@
 #include "WebKitSettings.h"
 
 #include "WebKitEnumTypes.h"
+#include "WebKitFeaturePrivate.h"
 #include "WebKitInitialize.h"
 #include "WebKitSettingsPrivate.h"
 #include "WebPageProxy.h"
 #include "WebPreferences.h"
 #include <WebCore/HTTPParsers.h>
 #include <WebCore/PlatformScreen.h>
-#include <WebCore/TextEncodingRegistry.h>
 #include <WebCore/UserAgent.h>
 #include <cmath>
 #include <glib/gi18n-lib.h>
+#include <pal/text/TextEncodingRegistry.h>
+#include <wtf/glib/GSpanExtras.h>
 #include <wtf/glib/WTFGType.h>
 #include <wtf/text/CString.h>
 
@@ -53,11 +55,13 @@
 #include <WebCore/PlatformDisplay.h>
 #endif
 
+#define FEATURE_DEFAULT(featureName) ((DEFAULT_VALUE_FOR_ ## featureName) ? TRUE : FALSE)
+
 using namespace WebKit;
 
 struct _WebKitSettingsPrivate {
     _WebKitSettingsPrivate()
-        : preferences(WebPreferences::create(String(), "WebKit2.", "WebKit2."))
+        : preferences(WebPreferences::create(String(), "WebKit2."_s, "WebKit2."_s))
     {
         defaultFontFamily = preferences->standardFontFamily().utf8();
         monospaceFontFamily = preferences->fixedFontFamily().utf8();
@@ -67,6 +71,9 @@ struct _WebKitSettingsPrivate {
         fantasyFontFamily = preferences->fantasyFontFamily().utf8();
         pictographFontFamily = preferences->pictographFontFamily().utf8();
         defaultCharset = preferences->defaultTextEncodingName().utf8();
+#if ENABLE(WEB_RTC)
+        webrtcUDPPortsRange = preferences->webRTCUDPPortRange().utf8();
+#endif
     }
 
     RefPtr<WebPreferences> preferences;
@@ -80,6 +87,9 @@ struct _WebKitSettingsPrivate {
     CString defaultCharset;
     CString userAgent;
     CString mediaContentTypesRequiringHardwareSupport;
+#if ENABLE(WEB_RTC)
+    CString webrtcUDPPortsRange;
+#endif
     bool allowModalDialogs { false };
     bool zoomTextOnly { false };
 #if PLATFORM(GTK)
@@ -88,23 +98,23 @@ struct _WebKitSettingsPrivate {
 };
 
 /**
- * SECTION:WebKitSettings
- * @short_description: Control the behaviour of a #WebKitWebView
+ * WebKitSettings:
+ *
+ * Control the behaviour of a #WebKitWebView.
  *
  * #WebKitSettings can be applied to a #WebKitWebView to control text charset,
  * color, font sizes, printing mode, script support, loading of images and various
  * other things on a #WebKitWebView. After creation, a #WebKitSettings object
  * contains default settings.
  *
- * <informalexample><programlisting>
- * /<!-- -->* Disable JavaScript. *<!-- -->/
+ * ```c
+ * // Disable JavaScript
  * WebKitSettings *settings = webkit_web_view_group_get_settings (my_view_group);
  * webkit_settings_set_enable_javascript (settings, FALSE);
- *
- * </programlisting></informalexample>
+ * ```
  */
 
-WEBKIT_DEFINE_TYPE(WebKitSettings, webkit_settings, G_TYPE_OBJECT)
+WEBKIT_DEFINE_FINAL_TYPE(WebKitSettings, webkit_settings, G_TYPE_OBJECT, GObject)
 
 enum {
     PROP_0,
@@ -114,10 +124,12 @@ enum {
     PROP_ENABLE_OFFLINE_WEB_APPLICATION_CACHE,
     PROP_ENABLE_HTML5_LOCAL_STORAGE,
     PROP_ENABLE_HTML5_DATABASE,
+#if !ENABLE(2022_GLIB_API)
     PROP_ENABLE_XSS_AUDITOR,
     PROP_ENABLE_FRAME_FLATTENING,
     PROP_ENABLE_PLUGINS,
     PROP_ENABLE_JAVA,
+#endif
     PROP_JAVASCRIPT_CAN_OPEN_WINDOWS_AUTOMATICALLY,
     PROP_ENABLE_HYPERLINK_AUDITING,
     PROP_DEFAULT_FONT_FAMILY,
@@ -131,7 +143,7 @@ enum {
     PROP_DEFAULT_MONOSPACE_FONT_SIZE,
     PROP_MINIMUM_FONT_SIZE,
     PROP_DEFAULT_CHARSET,
-#if PLATFORM(GTK)
+#if PLATFORM(GTK) && !USE(GTK4)
     PROP_ENABLE_PRIVATE_BROWSING,
 #endif
     PROP_ENABLE_DEVELOPER_EXTRAS,
@@ -153,7 +165,10 @@ enum {
     PROP_ENABLE_PAGE_CACHE,
     PROP_USER_AGENT,
     PROP_ENABLE_SMOOTH_SCROLLING,
+#if !ENABLE(2022_GLIB_API)
     PROP_ENABLE_ACCELERATED_2D_CANVAS,
+#endif
+    PROP_ENABLE_2D_CANVAS_ACCELERATION,
     PROP_ENABLE_WRITE_CONSOLE_MESSAGES_TO_STDOUT,
     PROP_ENABLE_MEDIA_STREAM,
     PROP_ENABLE_MOCK_CAPTURE_DEVICES,
@@ -171,10 +186,13 @@ enum {
     PROP_ENABLE_JAVASCRIPT_MARKUP,
     PROP_ENABLE_MEDIA,
     PROP_MEDIA_CONTENT_TYPES_REQUIRING_HARDWARE_SUPPORT,
+    PROP_ENABLE_WEBRTC,
+    PROP_DISABLE_WEB_SECURITY,
+    PROP_WEBRTC_UDP_PORTS_RANGE,
     N_PROPERTIES,
 };
 
-static GParamSpec* sObjProperties[N_PROPERTIES] = { nullptr, };
+static std::array<GParamSpec*, N_PROPERTIES> sObjProperties;
 
 static void webKitSettingsDispose(GObject* object)
 {
@@ -186,22 +204,16 @@ static void webKitSettingsConstructed(GObject* object)
     G_OBJECT_CLASS(webkit_settings_parent_class)->constructed(object);
 
     WebKitSettings* settings = WEBKIT_SETTINGS(object);
-    WebPreferences* prefs = settings->priv->preferences.get();
-    prefs->setShouldRespectImageOrientation(true);
+    [[maybe_unused]] RefPtr prefs = settings->priv->preferences.get();
 
-#if ENABLE(MEDIA_STREAM)
-    prefs->setMediaDevicesEnabled(true);
-    prefs->setMediaStreamEnabled(true);
-#if ENABLE(WEB_RTC)
-    prefs->setPeerConnectionEnabled(true);
-#endif
-#endif
+    // FIXME: Expose API for MediaSession when the feature is officially non-experimental.
 }
 
 static void webKitSettingsSetProperty(GObject* object, guint propId, const GValue* value, GParamSpec* paramSpec)
 {
     WebKitSettings* settings = WEBKIT_SETTINGS(object);
 
+ALLOW_DEPRECATED_DECLARATIONS_BEGIN
     switch (propId) {
     case PROP_ENABLE_JAVASCRIPT:
         webkit_settings_set_enable_javascript(settings, g_value_get_boolean(value));
@@ -221,17 +233,16 @@ static void webKitSettingsSetProperty(GObject* object, guint propId, const GValu
     case PROP_ENABLE_HTML5_DATABASE:
         webkit_settings_set_enable_html5_database(settings, g_value_get_boolean(value));
         break;
+#if !ENABLE(2022_GLIB_API)
     case PROP_ENABLE_XSS_AUDITOR:
-        webkit_settings_set_enable_xss_auditor(settings, g_value_get_boolean(value));
         break;
     case PROP_ENABLE_FRAME_FLATTENING:
-        webkit_settings_set_enable_frame_flattening(settings, g_value_get_boolean(value));
         break;
     case PROP_ENABLE_PLUGINS:
         break;
     case PROP_ENABLE_JAVA:
-        webkit_settings_set_enable_java(settings, g_value_get_boolean(value));
         break;
+#endif
     case PROP_JAVASCRIPT_CAN_OPEN_WINDOWS_AUTOMATICALLY:
         webkit_settings_set_javascript_can_open_windows_automatically(settings, g_value_get_boolean(value));
         break;
@@ -271,7 +282,7 @@ static void webKitSettingsSetProperty(GObject* object, guint propId, const GValu
     case PROP_DEFAULT_CHARSET:
         webkit_settings_set_default_charset(settings, g_value_get_string(value));
         break;
-#if PLATFORM(GTK)
+#if PLATFORM(GTK) && !USE(GTK4)
     case PROP_ENABLE_PRIVATE_BROWSING:
         G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
         if (g_value_get_boolean(value))
@@ -342,10 +353,15 @@ static void webKitSettingsSetProperty(GObject* object, guint propId, const GValu
     case PROP_ENABLE_SMOOTH_SCROLLING:
         webkit_settings_set_enable_smooth_scrolling(settings, g_value_get_boolean(value));
         break;
+#if !ENABLE(2022_GLIB_API)
     case PROP_ENABLE_ACCELERATED_2D_CANVAS:
         ALLOW_DEPRECATED_DECLARATIONS_BEGIN
         webkit_settings_set_enable_accelerated_2d_canvas(settings, g_value_get_boolean(value));
         ALLOW_DEPRECATED_DECLARATIONS_END
+        break;
+#endif
+    case PROP_ENABLE_2D_CANVAS_ACCELERATION:
+        webkit_settings_set_enable_2d_canvas_acceleration(settings, g_value_get_boolean(value));
         break;
     case PROP_ENABLE_WRITE_CONSOLE_MESSAGES_TO_STDOUT:
         webkit_settings_set_enable_write_console_messages_to_stdout(settings, g_value_get_boolean(value));
@@ -394,16 +410,27 @@ static void webKitSettingsSetProperty(GObject* object, guint propId, const GValu
     case PROP_MEDIA_CONTENT_TYPES_REQUIRING_HARDWARE_SUPPORT:
         webkit_settings_set_media_content_types_requiring_hardware_support(settings, g_value_get_string(value));
         break;
+    case PROP_ENABLE_WEBRTC:
+        webkit_settings_set_enable_webrtc(settings, g_value_get_boolean(value));
+        break;
+    case PROP_DISABLE_WEB_SECURITY:
+        webkit_settings_set_disable_web_security(settings, g_value_get_boolean(value));
+        break;
+    case PROP_WEBRTC_UDP_PORTS_RANGE:
+        webkit_settings_set_webrtc_udp_ports_range(settings, g_value_get_string(value));
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propId, paramSpec);
         break;
     }
+ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
 static void webKitSettingsGetProperty(GObject* object, guint propId, GValue* value, GParamSpec* paramSpec)
 {
     WebKitSettings* settings = WEBKIT_SETTINGS(object);
 
+ALLOW_DEPRECATED_DECLARATIONS_BEGIN
     switch (propId) {
     case PROP_ENABLE_JAVASCRIPT:
         g_value_set_boolean(value, webkit_settings_get_enable_javascript(settings));
@@ -423,18 +450,20 @@ static void webKitSettingsGetProperty(GObject* object, guint propId, GValue* val
     case PROP_ENABLE_HTML5_DATABASE:
         g_value_set_boolean(value, webkit_settings_get_enable_html5_database(settings));
         break;
+#if !ENABLE(2022_GLIB_API)
     case PROP_ENABLE_XSS_AUDITOR:
-        g_value_set_boolean(value, webkit_settings_get_enable_xss_auditor(settings));
+        g_value_set_boolean(value, FALSE);
         break;
     case PROP_ENABLE_FRAME_FLATTENING:
-        g_value_set_boolean(value, webkit_settings_get_enable_frame_flattening(settings));
+        g_value_set_boolean(value, FALSE);
         break;
     case PROP_ENABLE_PLUGINS:
         g_value_set_boolean(value, FALSE);
         break;
     case PROP_ENABLE_JAVA:
-        g_value_set_boolean(value, webkit_settings_get_enable_java(settings));
+        g_value_set_boolean(value, FALSE);
         break;
+#endif
     case PROP_JAVASCRIPT_CAN_OPEN_WINDOWS_AUTOMATICALLY:
         g_value_set_boolean(value, webkit_settings_get_javascript_can_open_windows_automatically(settings));
         break;
@@ -474,7 +503,7 @@ static void webKitSettingsGetProperty(GObject* object, guint propId, GValue* val
     case PROP_DEFAULT_CHARSET:
         g_value_set_string(value, webkit_settings_get_default_charset(settings));
         break;
-#if PLATFORM(GTK)
+#if PLATFORM(GTK) && !USE(GTK4)
     case PROP_ENABLE_PRIVATE_BROWSING:
         G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
         g_value_set_boolean(value, webkit_settings_get_enable_private_browsing(settings));
@@ -538,10 +567,15 @@ static void webKitSettingsGetProperty(GObject* object, guint propId, GValue* val
     case PROP_ENABLE_SMOOTH_SCROLLING:
         g_value_set_boolean(value, webkit_settings_get_enable_smooth_scrolling(settings));
         break;
+#if !ENABLE(2022_GLIB_API)
     case PROP_ENABLE_ACCELERATED_2D_CANVAS:
         ALLOW_DEPRECATED_DECLARATIONS_BEGIN
         g_value_set_boolean(value, webkit_settings_get_enable_accelerated_2d_canvas(settings));
         ALLOW_DEPRECATED_DECLARATIONS_END
+        break;
+#endif
+    case PROP_ENABLE_2D_CANVAS_ACCELERATION:
+        g_value_set_boolean(value, webkit_settings_get_enable_2d_canvas_acceleration(settings));
         break;
     case PROP_ENABLE_WRITE_CONSOLE_MESSAGES_TO_STDOUT:
         g_value_set_boolean(value, webkit_settings_get_enable_write_console_messages_to_stdout(settings));
@@ -590,10 +624,20 @@ static void webKitSettingsGetProperty(GObject* object, guint propId, GValue* val
     case PROP_MEDIA_CONTENT_TYPES_REQUIRING_HARDWARE_SUPPORT:
         g_value_set_string(value, webkit_settings_get_media_content_types_requiring_hardware_support(settings));
         break;
+    case PROP_ENABLE_WEBRTC:
+        g_value_set_boolean(value, webkit_settings_get_enable_webrtc(settings));
+        break;
+    case PROP_DISABLE_WEB_SECURITY:
+        g_value_set_boolean(value, webkit_settings_get_disable_web_security(settings));
+        break;
+    case PROP_WEBRTC_UDP_PORTS_RANGE:
+        g_value_set_string(value, webkit_settings_get_webrtc_udp_ports_range(settings));
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, propId, paramSpec);
         break;
     }
+ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
 static void webkit_settings_class_init(WebKitSettingsClass* klass)
@@ -618,7 +662,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-javascript",
             _("Enable JavaScript"),
             _("Enable JavaScript."),
-            TRUE,
+            FEATURE_DEFAULT(JavaScriptEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -633,14 +677,15 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "auto-load-images",
             _("Auto load images"),
             _("Load images automatically."),
-            TRUE,
+            FEATURE_DEFAULT(LoadsImagesAutomatically),
             readWriteConstructParamFlags);
 
     /**
      * WebKitSettings:load-icons-ignoring-image-load-setting:
      *
-     * Determines whether a site can load favicons irrespective
-     * of the value of #WebKitSettings:auto-load-images.
+     * Unsupported setting. This property does nothing.
+     *
+     * Deprecated: 2.42
      */
     sObjProperties[PROP_LOAD_ICONS_IGNORING_IMAGE_LOAD_SETTING] =
         g_param_spec_boolean(
@@ -648,25 +693,22 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Load icons ignoring image load setting"),
             _("Whether to load site icons ignoring image load setting."),
             FALSE,
-            readWriteConstructParamFlags);
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
 
     /**
      * WebKitSettings:enable-offline-web-application-cache:
      *
-     * Whether to enable HTML5 offline web application cache support. Offline
-     * web application cache allows web applications to run even when
-     * the user is not connected to the network.
+     * Unsupported setting. This property does nothing.
      *
-     * HTML5 offline web application specification is available at
-     * http://dev.w3.org/html5/spec/offline.html.
+     * Deprecated: 2.44
      */
     sObjProperties[PROP_ENABLE_OFFLINE_WEB_APPLICATION_CACHE] =
         g_param_spec_boolean(
             "enable-offline-web-application-cache",
             _("Enable offline web application cache"),
             _("Whether to enable offline web application cache."),
-            TRUE,
-            readWriteConstructParamFlags);
+            FALSE,
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
 
     /**
      * WebKitSettings:enable-html5-local-storage:
@@ -682,7 +724,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-html5-local-storage",
             _("Enable HTML5 local storage"),
             _("Whether to enable HTML5 Local Storage support."),
-            TRUE,
+            FEATURE_DEFAULT(LocalStorageEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -695,14 +737,17 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-html5-database",
             _("Enable HTML5 database"),
             _("Whether to enable HTML5 database support."),
-            TRUE,
+            FEATURE_DEFAULT(IndexedDBAPIEnabled),
             readWriteConstructParamFlags);
 
+#if !ENABLE(2022_GLIB_API)
     /**
      * WebKitSettings:enable-xss-auditor:
      *
      * Whether to enable the XSS auditor. This feature filters some kinds of
      * reflective XSS attacks on vulnerable web sites.
+     *
+     * Deprecated: 2.38
      */
     sObjProperties[PROP_ENABLE_XSS_AUDITOR] =
         g_param_spec_boolean(
@@ -710,14 +755,14 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Enable XSS auditor"),
             _("Whether to enable the XSS auditor."),
             TRUE,
-            readWriteConstructParamFlags);
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
 
     /**
      * WebKitSettings:enable-frame-flattening:
      *
-     * Whether to enable the frame flattening. With this setting each subframe is expanded
-     * to its contents, which will flatten all the frames to become one scrollable page.
-     * On touch devices scrollable subframes on a page can result in a confusing user experience.
+     * Frame flattening is no longer supported. This property does nothing.
+     *
+     * Deprecated: 2.38
      */
     sObjProperties[PROP_ENABLE_FRAME_FLATTENING] =
         g_param_spec_boolean(
@@ -725,7 +770,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Enable frame flattening"),
             _("Whether to enable frame flattening."),
             FALSE,
-            readWriteConstructParamFlags);
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
 
     /**
      * WebKitSettings:enable-plugins:
@@ -740,20 +785,23 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Enable plugins"),
             _("Enable embedded plugin objects."),
             FALSE,
-            readWriteConstructParamFlags);
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
 
     /**
      * WebKitSettings:enable-java:
      *
      * Determines whether or not Java is enabled on the page.
+     *
+     * Deprecated: 2.38
      */
     sObjProperties[PROP_ENABLE_JAVA] =
         g_param_spec_boolean(
             "enable-java",
             _("Enable Java"),
             _("Whether Java support should be enabled."),
-            TRUE,
-            readWriteConstructParamFlags);
+            FALSE,
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
+#endif
 
     /**
      * WebKitSettings:javascript-can-open-windows-automatically:
@@ -766,7 +814,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "javascript-can-open-windows-automatically",
             _("JavaScript can open windows automatically"),
             _("Whether JavaScript can open windows automatically."),
-            FALSE,
+            FEATURE_DEFAULT(JavaScriptCanOpenWindowsAutomatically),
             readWriteConstructParamFlags);
 
     /**
@@ -782,7 +830,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-hyperlink-auditing",
             _("Enable hyperlink auditing"),
             _("Whether <a ping> should be able to send pings."),
-            TRUE,
+            FEATURE_DEFAULT(HyperlinkAuditingEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -933,7 +981,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "iso-8859-1",
             readWriteConstructParamFlags);
 
-#if PLATFORM(GTK)
+#if PLATFORM(GTK) && !USE(GTK4)
     /**
      * WebKitSettings:enable-private-browsing:
      *
@@ -961,7 +1009,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-developer-extras",
             _("Enable developer extras"),
             _("Whether to enable developer extras"),
-            FALSE,
+            FEATURE_DEFAULT(DeveloperExtrasEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -974,7 +1022,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-resizable-text-areas",
             _("Enable resizable text areas"),
             _("Whether to enable resizable text areas"),
-            TRUE,
+            FEATURE_DEFAULT(TextAreasAreResizable),
             readWriteConstructParamFlags);
 
     /**
@@ -990,7 +1038,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-tabs-to-links",
             _("Enable tabs to links"),
             _("Whether to enable tabs to links"),
-            TRUE,
+            FEATURE_DEFAULT(TabsToLinks),
             readWriteConstructParamFlags);
 
     /**
@@ -998,6 +1046,8 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
      *
      * Determines whether or not to prefetch domain names. DNS prefetching attempts
      * to resolve domain names before a user tries to follow a link.
+     *
+     * Deprecated: 2.48
      */
     sObjProperties[PROP_ENABLE_DNS_PREFETCHING] =
         g_param_spec_boolean(
@@ -1005,7 +1055,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Enable DNS prefetching"),
             _("Whether to enable DNS prefetching"),
             FALSE,
-            readWriteConstructParamFlags);
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
 
     /**
      * WebKitSettings:enable-caret-browsing:
@@ -1033,7 +1083,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-fullscreen",
             _("Enable Fullscreen"),
             _("Whether to enable the Javascript Fullscreen API"),
-            TRUE,
+#if ENABLE(FULLSCREEN_API)
+            FEATURE_DEFAULT(FullScreenEnabled),
+#else
+            FALSE,
+#endif
             readWriteConstructParamFlags);
 
     /**
@@ -1046,7 +1100,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "print-backgrounds",
             _("Print Backgrounds"),
             _("Whether background images should be drawn during printing"),
-            TRUE,
+            FEATURE_DEFAULT(ShouldPrintBackgrounds),
             readWriteConstructParamFlags);
 
     /**
@@ -1063,7 +1117,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-webaudio",
             _("Enable WebAudio"),
             _("Whether WebAudio content should be handled"),
-            TRUE,
+#if ENABLE(WEB_AUDIO)
+            FEATURE_DEFAULT(WebAudioEnabled),
+#else
+            FALSE,
+#endif
             readWriteConstructParamFlags);
 
     /**
@@ -1077,7 +1135,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-webgl",
             _("Enable WebGL"),
             _("Whether WebGL content should be rendered"),
-            TRUE,
+            FEATURE_DEFAULT(WebGLEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -1126,7 +1184,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "javascript-can-access-clipboard",
             _("JavaScript can access clipboard"),
             _("Whether JavaScript can access Clipboard"),
-            FALSE,
+            FEATURE_DEFAULT(JavaScriptCanAccessClipboard),
             readWriteConstructParamFlags);
 
     /**
@@ -1143,7 +1201,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "media-playback-requires-user-gesture",
             _("Media playback requires user gesture"),
             _("Whether media playback requires user gesture"),
-            FALSE,
+            FEATURE_DEFAULT(RequiresUserGestureForMediaPlayback),
             readWriteConstructParamFlags);
 
     /**
@@ -1158,7 +1216,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "media-playback-allows-inline",
             _("Media playback allows inline"),
             _("Whether media playback allows inline"),
-            TRUE,
+            FEATURE_DEFAULT(AllowsInlineMediaPlayback),
             readWriteConstructParamFlags);
 
     /**
@@ -1173,7 +1231,10 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "draw-compositing-indicators",
             _("Draw compositing indicators"),
             _("Whether to draw compositing borders and repaint counters"),
-            FALSE,
+            // Note that this property controls also the CompositingRepaintCountersVisible
+            // feature flag. We pick CompositingBordersVisible for the default, as both
+            // are always expected to be the same.
+            FEATURE_DEFAULT(CompositingBordersVisible),
             readWriteConstructParamFlags);
 
     /**
@@ -1191,7 +1252,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-site-specific-quirks",
             _("Enable Site Specific Quirks"),
             _("Enables the site-specific compatibility workarounds"),
-            TRUE,
+            FEATURE_DEFAULT(NeedsSiteSpecificQuirks),
             readWriteConstructParamFlags);
 
     /**
@@ -1212,7 +1273,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-page-cache",
             _("Enable page cache"),
             _("Whether the page cache should be used"),
-            TRUE,
+            FEATURE_DEFAULT(UsesBackForwardCache),
             readWriteConstructParamFlags);
 
     /**
@@ -1245,9 +1306,10 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-smooth-scrolling",
             _("Enable smooth scrolling"),
             _("Whether to enable smooth scrolling"),
-            FALSE,
+            FEATURE_DEFAULT(ScrollAnimatorEnabled),
             readWriteConstructParamFlags);
 
+#if !ENABLE(2022_GLIB_API)
     /**
      * WebKitSettings:enable-accelerated-2d-canvas:
      *
@@ -1266,6 +1328,29 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Enable accelerated 2D canvas"),
             _("Whether to enable accelerated 2D canvas"),
             FALSE,
+            static_cast<GParamFlags>(readWriteConstructParamFlags | G_PARAM_DEPRECATED));
+#endif
+
+    /**
+     * WebKitSettings:enable-2d-canvas-acceleration:
+     *
+     * Enable or disable 2D canvas acceleration.
+     * If this setting is enabled, the 2D canvas will be accelerated even if Skia CPU
+     * is used for rendering. However, the canvas can be unaccelerated even when this setting
+     * is enabled, for other reasons like its size or when willReadFrequently property is used.
+     *
+     * Since: 2.46
+     */
+    sObjProperties[PROP_ENABLE_2D_CANVAS_ACCELERATION] =
+        g_param_spec_boolean(
+            "enable-2d-canvas-acceleration",
+            _("Enable 2D canvas acceleration"),
+            _("Whether to enable 2D canvas acceleration"),
+#if USE(SKIA)
+            FEATURE_DEFAULT(CanvasUsesAcceleratedDrawing),
+#else
+            FALSE,
+#endif
             readWriteConstructParamFlags);
 
     /**
@@ -1281,7 +1366,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-write-console-messages-to-stdout",
             _("Write console messages on stdout"),
             _("Whether to write console messages on stdout"),
-            FALSE,
+            FEATURE_DEFAULT(LogsPageMessagesToSystemConsoleEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -1300,7 +1385,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-media-stream",
             _("Enable MediaStream"),
             _("Whether MediaStream content should be handled"),
+#if ENABLE(MEDIA_STREAM)
+            FEATURE_DEFAULT(MediaDevicesEnabled),
+#else
             FALSE,
+#endif
             readWriteConstructParamFlags);
 
     /**
@@ -1316,7 +1405,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
         g_param_spec_boolean("enable-mock-capture-devices",
             _("Enable mock capture devices"),
             _("Whether we expose mock capture devices or not"),
+#if ENABLE(MEDIA_STREAM)
+            FEATURE_DEFAULT(MockCaptureDevicesEnabled),
+#else
             FALSE,
+#endif
             readWriteConstructParamFlags);
 
    /**
@@ -1336,7 +1429,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-spatial-navigation",
             _("Enable Spatial Navigation"),
             _("Whether to enable Spatial Navigation support."),
-            FALSE,
+            FEATURE_DEFAULT(SpatialNavigationEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -1355,7 +1448,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-mediasource",
             _("Enable MediaSource"),
             _("Whether MediaSource should be enabled."),
-            TRUE,
+#if ENABLE(MEDIA_SOURCE)
+            FEATURE_DEFAULT(MediaSourceEnabled),
+#else
+            FALSE,
+#endif
             readWriteConstructParamFlags);
 
    /**
@@ -1375,7 +1472,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-encrypted-media",
             _("Enable EncryptedMedia"),
             _("Whether EncryptedMedia should be enabled."),
+#if ENABLE(ENCRYPTED_MEDIA)
+            FEATURE_DEFAULT(EncryptedMediaAPIEnabled),
+#else
             FALSE,
+#endif
             readWriteConstructParamFlags);
 
     /**
@@ -1397,7 +1498,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-media-capabilities",
             _("Enable MediaCapabilities"),
             _("Whether MediaCapabilities should be enabled."),
-            FALSE,
+            FEATURE_DEFAULT(MediaCapabilitiesEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -1416,7 +1517,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "allow-file-access-from-file-urls",
             _("Allow file access from file URLs"),
             _("Whether file access is allowed from file URLs."),
-            FALSE,
+            FEATURE_DEFAULT(AllowFileAccessFromFileURLs),
             readWriteConstructParamFlags);
 
     /**
@@ -1436,7 +1537,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "allow-universal-access-from-file-urls",
             _("Allow universal access from the context of file scheme URLs"),
             _("Whether or not universal access is allowed from the context of file scheme URLs"),
-            FALSE,
+            FEATURE_DEFAULT(AllowUniversalAccessFromFileURLs),
             readWriteConstructParamFlags);
 
     /**
@@ -1454,7 +1555,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "allow-top-navigation-to-data-urls",
             _("Allow top frame navigation to data URLs"),
             _("Whether or not top frame navigation is allowed to data URLs"),
-            FALSE,
+            FEATURE_DEFAULT(AllowTopNavigationToDataURLs),
             readWriteConstructParamFlags);
 
 #if PLATFORM(GTK)
@@ -1462,15 +1563,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
      * WebKitSettings:hardware-acceleration-policy:
      *
      * The #WebKitHardwareAccelerationPolicy to decide how to enable and disable
-     * hardware acceleration. The default value %WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND
-     * enables the hardware acceleration when the web contents request it.
-     * It's possible to enforce hardware acceleration to be always enabled
-     * by using %WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS. And it's also possible to disable it
-     * completely using %WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER. Note that disabling hardware
-     * acceleration might cause some websites to not render correctly or consume more CPU.
+     * hardware acceleration. Disabling hardware acceleration might
+     * cause some websites to not render correctly or consume more CPU.
      *
      * Note that changing this setting might not be possible if hardware acceleration is not
-     * supported by the hardware or the system. In that case you can get the value to know the
+     * supported by the hardware or the system. In that case, you can get the value to know the
      * actual policy being used, but changing the setting will not have any effect.
      *
      * Since: 2.16
@@ -1481,7 +1578,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Hardware Acceleration Policy"),
             _("The policy to decide how to enable and disable hardware acceleration"),
             WEBKIT_TYPE_HARDWARE_ACCELERATION_POLICY,
-            WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND,
+            WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS,
             readWriteConstructParamFlags);
 
     /**
@@ -1498,7 +1595,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             _("Whether horizontal swipe gesture will trigger back-forward navigation"),
             FALSE,
             readWriteConstructParamFlags);
-#endif // PLATFOTM(GTK)
+#endif // PLATFORM(GTK)
 
     /**
      * WebKitSettings:enable-javascript-markup:
@@ -1514,7 +1611,7 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-javascript-markup",
             _("Enable JavaScript Markup"),
             _("Enable JavaScript in document markup."),
-            TRUE,
+            FEATURE_DEFAULT(JavaScriptMarkupEnabled),
             readWriteConstructParamFlags);
 
     /**
@@ -1531,7 +1628,11 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             "enable-media",
             _("Enable media"),
             _("Whether media content should be handled"),
+#if ENABLE(VIDEO)
+            FEATURE_DEFAULT(MediaEnabled),
+#else
             TRUE,
+#endif
             readWriteConstructParamFlags);
 
     /**
@@ -1550,7 +1651,69 @@ static void webkit_settings_class_init(WebKitSettingsClass* klass)
             nullptr, // A null string forces the default value.
             readWriteConstructParamFlags);
 
-    g_object_class_install_properties(gObjectClass, N_PROPERTIES, sObjProperties);
+    /**
+     * WebKitSettings:enable-webrtc:
+     *
+     * Enable WebRTC support for loaded pages.
+     *
+     * Enabling this setting implies that [property@Settings:enable-media-stream]
+     * will be enabled as well.
+     *
+     * See also https://www.w3.org/TR/webrtc/
+     *
+     * Since: 2.38
+     */
+    sObjProperties[PROP_ENABLE_WEBRTC] = g_param_spec_boolean(
+        "enable-webrtc",
+        _("Enable WebRTC"),
+        _("Whether WebRTC content should be handled"),
+#if ENABLE(WEB_RTC)
+        FEATURE_DEFAULT(PeerConnectionEnabled),
+#else
+        FALSE,
+#endif
+        readWriteConstructParamFlags);
+
+    /**
+     * WebKitSettings:disable-web-security:
+     *
+     * Enable or disable support for Web Security on pages.
+     *
+     * This setting disables the same-origin policy, allowing every website full control over
+     * all other websites. This is for use in special environments where you wish to disable
+     * all security and allow websites to hack each other. It is impossible to use this setting
+     * securely.
+     *
+     * Since: 2.40
+     */
+    sObjProperties[PROP_DISABLE_WEB_SECURITY] = g_param_spec_boolean(
+        "disable-web-security",
+        _("Disable web security"),
+        _("Whether web security should be disabled."),
+        !FEATURE_DEFAULT(WebSecurityEnabled),
+        readWriteConstructParamFlags);
+
+    /**
+     * WebKitSettings:webrtc-udp-ports-range:
+     *
+     * Allow customization of the WebRTC UDP ports range.
+     *
+     * In some constrained environments where a firewall blocks UDP network traffic excepted on a
+     * specific port range, this settings can be used to give hints to the WebRTC backend regarding
+     * which ports to allocate. The format is min-port:max-port, so for instance 20000:30000. The
+     * default empty string value means the OS will use no hints from the WebRTC backend. Using 0
+     * for one of the values is allowed and means the value is unspecified.
+     *
+     * Since: 2.48
+     */
+    sObjProperties[PROP_WEBRTC_UDP_PORTS_RANGE] = g_param_spec_string(
+        "webrtc-udp-ports-range",
+        _("WebRTC UDP ports range"),
+        _("WebRTC UDP ports range, the format is min-port:max-port"),
+        nullptr, // A null string forces the default value.
+        readWriteConstructParamFlags);
+
+    g_object_class_install_properties(gObjectClass, N_PROPERTIES, sObjProperties.data());
 }
 
 WebPreferences* webkitSettingsGetPreferences(WebKitSettings* settings)
@@ -1561,8 +1724,9 @@ WebPreferences* webkitSettingsGetPreferences(WebKitSettings* settings)
 /**
  * webkit_settings_new:
  *
- * Creates a new #WebKitSettings instance with default values. It must
- * be manually attached to a #WebKitWebView.
+ * Creates a new #WebKitSettings instance with default values.
+ *
+ * It must be manually attached to a #WebKitWebView.
  * See also webkit_settings_new_with_settings().
  *
  * Returns: a new #WebKitSettings instance.
@@ -1578,8 +1742,9 @@ WebKitSettings* webkit_settings_new()
  * @...: value of first setting, followed by more settings,
  *    %NULL-terminated
  *
- * Creates a new #WebKitSettings instance with the given settings. It must
- * be manually attached to a #WebKitWebView.
+ * Creates a new #WebKitSettings instance with the given settings.
+ *
+ * It must be manually attached to a #WebKitWebView.
  *
  * Returns: a new #WebKitSettings instance.
  */
@@ -1666,15 +1831,19 @@ void webkit_settings_set_auto_load_images(WebKitSettings* settings, gboolean ena
  * webkit_settings_get_load_icons_ignoring_image_load_setting:
  * @settings: a #WebKitSettings
  *
- * Get the #WebKitSettings:load-icons-ignoring-image-load-setting property.
+ * Setting no longer supported. This function returns %FALSE.
  *
- * Returns: %TRUE If site icon can be loaded irrespective of image loading preference or %FALSE otherwise.
+ * Returns: %FALSE
+ *
+ * Deprecated: 2.42
  */
 gboolean webkit_settings_get_load_icons_ignoring_image_load_setting(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->loadsSiteIconsIgnoringImageLoadingPreference();
+    g_warning("webkit_settings_get_load_icons_ignoring_image_load_setting is deprecated and always returns FALSE.");
+
+    return FALSE;
 }
 
 /**
@@ -1682,19 +1851,16 @@ gboolean webkit_settings_get_load_icons_ignoring_image_load_setting(WebKitSettin
  * @settings: a #WebKitSettings
  * @enabled: Value to be set
  *
- * Set the #WebKitSettings:load-icons-ignoring-image-load-setting property.
+ * Setting no longer supported. This function does nothing.
+ *
+ * Deprecated: 2.42
  */
 void webkit_settings_set_load_icons_ignoring_image_load_setting(WebKitSettings* settings, gboolean enabled)
 {
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
 
-    WebKitSettingsPrivate* priv = settings->priv;
-    bool currentValue = priv->preferences->loadsSiteIconsIgnoringImageLoadingPreference();
-    if (currentValue == enabled)
-        return;
-
-    priv->preferences->setLoadsSiteIconsIgnoringImageLoadingPreference(enabled);
-    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_LOAD_ICONS_IGNORING_IMAGE_LOAD_SETTING]);
+    if (enabled)
+        g_warning("webkit_settings_set_load_icons_ignoring_image_load_setting is deprecated and does nothing.");
 }
 
 /**
@@ -1703,13 +1869,15 @@ void webkit_settings_set_load_icons_ignoring_image_load_setting(WebKitSettings* 
  *
  * Get the #WebKitSettings:enable-offline-web-application-cache property.
  *
- * Returns: %TRUE If HTML5 offline web application cache support is enabled or %FALSE otherwise.
+ * Returns: %FALSE.
+ *
+ * Deprecated: 2.44
  */
 gboolean webkit_settings_get_enable_offline_web_application_cache(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->offlineWebApplicationCacheEnabled();
+    return FALSE;
 }
 
 /**
@@ -1717,19 +1885,16 @@ gboolean webkit_settings_get_enable_offline_web_application_cache(WebKitSettings
  * @settings: a #WebKitSettings
  * @enabled: Value to be set
  *
- * Set the #WebKitSettings:enable-offline-web-application-cache property.
+ * Setting no longer supported. This function does nothing.
+ *
+ * Deprecated: 2.44
  */
 void webkit_settings_set_enable_offline_web_application_cache(WebKitSettings* settings, gboolean enabled)
 {
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
 
-    WebKitSettingsPrivate* priv = settings->priv;
-    bool currentValue = priv->preferences->offlineWebApplicationCacheEnabled();
-    if (currentValue == enabled)
-        return;
-
-    priv->preferences->setOfflineWebApplicationCacheEnabled(enabled);
-    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_OFFLINE_WEB_APPLICATION_CACHE]);
+    if (enabled)
+        g_warning("webkit_settings_set_enable_offline_web_application_cache is deprecated and does nothing.");
 }
 
 /**
@@ -1779,7 +1944,7 @@ gboolean webkit_settings_get_enable_html5_database(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->databasesEnabled();
+    return settings->priv->preferences->indexedDBAPIEnabled();
 }
 
 /**
@@ -1794,27 +1959,30 @@ void webkit_settings_set_enable_html5_database(WebKitSettings* settings, gboolea
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
 
     WebKitSettingsPrivate* priv = settings->priv;
-    bool currentValue = priv->preferences->databasesEnabled();
+    bool currentValue = priv->preferences->indexedDBAPIEnabled();
     if (currentValue == enabled)
         return;
 
-    priv->preferences->setDatabasesEnabled(enabled);
+    priv->preferences->setIndexedDBAPIEnabled(enabled);
     g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_HTML5_DATABASE]);
 }
 
+#if !ENABLE(2022_GLIB_API)
 /**
  * webkit_settings_get_enable_xss_auditor:
  * @settings: a #WebKitSettings
  *
- * Get the #WebKitSettings:enable-xss-auditor property.
+ * The XSS auditor has been removed. This function returns %FALSE.
  *
- * Returns: %TRUE If XSS auditing is enabled or %FALSE otherwise.
+ * Returns: %FALSE
+ *
+ * Deprecated: 2.38. This function does nothing.
  */
 gboolean webkit_settings_get_enable_xss_auditor(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->xssAuditorEnabled();
+    return FALSE;
 }
 
 /**
@@ -1822,35 +1990,30 @@ gboolean webkit_settings_get_enable_xss_auditor(WebKitSettings* settings)
  * @settings: a #WebKitSettings
  * @enabled: Value to be set
  *
- * Set the #WebKitSettings:enable-xss-auditor property.
+ * The XSS auditor has been removed. This function does nothing.
+ *
+ * Deprecated: 2.38. This function does nothing.
  */
 void webkit_settings_set_enable_xss_auditor(WebKitSettings* settings, gboolean enabled)
 {
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
-
-    WebKitSettingsPrivate* priv = settings->priv;
-    bool currentValue = priv->preferences->xssAuditorEnabled();
-    if (currentValue == enabled)
-        return;
-
-    priv->preferences->setXSSAuditorEnabled(enabled);
-    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_XSS_AUDITOR]);
 }
 
 /**
  * webkit_settings_get_enable_frame_flattening:
  * @settings: a #WebKitSettings
  *
- * Get the #WebKitSettings:enable-frame-flattening property.
+ * Frame flattening is no longer supported. This function returns %FALSE.
  *
- * Returns: %TRUE If frame flattening is enabled or %FALSE otherwise.
+ * Returns: %FALSE
  *
+ * Deprecated: 2.38
  **/
 gboolean webkit_settings_get_enable_frame_flattening(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->frameFlatteningEnabled();
+    return FALSE;
 }
 
 /**
@@ -1858,18 +2021,13 @@ gboolean webkit_settings_get_enable_frame_flattening(WebKitSettings* settings)
  * @settings: a #WebKitSettings
  * @enabled: Value to be set
  *
- * Set the #WebKitSettings:enable-frame-flattening property.
+ * Frame flattening is no longer supported. This function does nothing.
+ *
+ * Deprecated: 2.38
  */
-void webkit_settings_set_enable_frame_flattening(WebKitSettings* settings, gboolean enabled)
+void webkit_settings_set_enable_frame_flattening(WebKitSettings* settings, gboolean)
 {
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
-
-    WebKitSettingsPrivate* priv = settings->priv;
-    if (priv->preferences->frameFlatteningEnabled() == enabled)
-        return;
-
-    priv->preferences->setFrameFlatteningEnabled(enabled);
-    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_FRAME_FLATTENING]);
 }
 
 /**
@@ -1914,13 +2072,17 @@ void webkit_settings_set_enable_plugins(WebKitSettings* settings, gboolean enabl
  *
  * Get the #WebKitSettings:enable-java property.
  *
- * Returns: %TRUE If Java is enabled or %FALSE otherwise.
+ * Returns: %FALSE always.
+ *
+ * Deprecated: 2.38. This function always returns %FALSE.
  */
 gboolean webkit_settings_get_enable_java(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->javaEnabled();
+    g_warning("webkit_settings_get_enable_java is deprecated and always returns FALSE. Java is no longer supported.");
+
+    return FALSE;
 }
 
 /**
@@ -1929,19 +2091,19 @@ gboolean webkit_settings_get_enable_java(WebKitSettings* settings)
  * @enabled: Value to be set
  *
  * Set the #WebKitSettings:enable-java property.
+ *
+ * Deprecated function that does nothing.
+ *
+ * Deprecated: 2.38. This function does nothing.
  */
 void webkit_settings_set_enable_java(WebKitSettings* settings, gboolean enabled)
 {
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
 
-    WebKitSettingsPrivate* priv = settings->priv;
-    bool currentValue = priv->preferences->javaEnabled();
-    if (currentValue == enabled)
-        return;
-
-    priv->preferences->setJavaEnabled(enabled);
-    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_JAVA]);
+    if (enabled)
+        g_warning("webkit_settings_set_enable_java is deprecated and does nothing. Java is no longer supported.");
 }
+#endif
 
 /**
  * webkit_settings_get_javascript_can_open_windows_automatically:
@@ -2014,7 +2176,7 @@ void webkit_settings_set_enable_hyperlink_auditing(WebKitSettings* settings, gbo
 }
 
 /**
- * webkit_web_settings_get_default_font_family:
+ * webkit_settings_get_default_font_family:
  * @settings: a #WebKitSettings
  *
  * Gets the #WebKitSettings:default-font-family property.
@@ -2414,7 +2576,7 @@ void webkit_settings_set_default_charset(WebKitSettings* settings, const gchar* 
     g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_DEFAULT_CHARSET]);
 }
 
-#if PLATFORM(GTK)
+#if PLATFORM(GTK) && !USE(GTK4)
 /**
  * webkit_settings_get_enable_private_browsing:
  * @settings: a #WebKitSettings
@@ -2561,12 +2723,16 @@ void webkit_settings_set_enable_tabs_to_links(WebKitSettings* settings, gboolean
  * Get the #WebKitSettings:enable-dns-prefetching property.
  *
  * Returns: %TRUE If DNS prefetching is enabled or %FALSE otherwise.
+ *
+ * Deprecated: 2.48.
  */
 gboolean webkit_settings_get_enable_dns_prefetching(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->dnsPrefetchingEnabled();
+    g_warning("webkit_settings_get_enable_dns_prefetching is deprecated and always returns FALSE.");
+
+    return FALSE;
 }
 
 /**
@@ -2575,18 +2741,15 @@ gboolean webkit_settings_get_enable_dns_prefetching(WebKitSettings* settings)
  * @enabled: Value to be set
  *
  * Set the #WebKitSettings:enable-dns-prefetching property.
+ *
+ * Deprecated: 2.48.
  */
 void webkit_settings_set_enable_dns_prefetching(WebKitSettings* settings, gboolean enabled)
 {
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
 
-    WebKitSettingsPrivate* priv = settings->priv;
-    bool currentValue = priv->preferences->dnsPrefetchingEnabled();
-    if (currentValue == enabled)
-        return;
-
-    priv->preferences->setDNSPrefetchingEnabled(enabled);
-    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_DNS_PREFETCHING]);
+    if (enabled)
+        g_warning("webkit_settings_set_enable_dns_prefetching is deprecated and does nothing.");
 }
 
 /**
@@ -3082,7 +3245,7 @@ void webkit_settings_set_user_agent(WebKitSettings* settings, const char* userAg
         userAgentString = String::fromUTF8(userAgent);
         g_return_if_fail(WebCore::isValidUserAgentHeaderValue(userAgentString));
     } else
-        userAgentString = WebCore::standardUserAgent("");
+        userAgentString = WebCore::standardUserAgent(emptyString());
 
     CString newUserAgent = userAgentString.utf8();
     if (newUserAgent == priv->userAgent)
@@ -3097,6 +3260,8 @@ void webkit_settings_set_user_agent(WebKitSettings* settings, const char* userAg
  * @settings: a #WebKitSettings
  * @application_name: (allow-none): The application name used for the user agent or %NULL to use the default user agent.
  * @application_version: (allow-none): The application version for the user agent or %NULL to user the default version.
+ *
+ * Set the #WebKitSettings:user-agent property by appending the application details.
  *
  * Set the #WebKitSettings:user-agent property by appending the application details to the default user
  * agent. If no application name or version is given, the default user agent used will be used. If only
@@ -3145,6 +3310,7 @@ void webkit_settings_set_enable_smooth_scrolling(WebKitSettings* settings, gbool
     g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_SMOOTH_SCROLLING]);
 }
 
+#if !ENABLE(2022_GLIB_API)
 /**
  * webkit_settings_get_enable_accelerated_2d_canvas:
  * @settings: a #WebKitSettings
@@ -3178,6 +3344,55 @@ gboolean webkit_settings_get_enable_accelerated_2d_canvas(WebKitSettings* settin
 void webkit_settings_set_enable_accelerated_2d_canvas(WebKitSettings* settings, gboolean enabled)
 {
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
+}
+#endif
+
+/**
+ * webkit_settings_get_enable_2d_canvas_acceleration:
+ * @settings: a #WebKitSettings
+ *
+ * Get the #WebKitSettings:enable-2d-canvas-acceleration property.
+ *
+ * Returns: %TRUE if 2D canvas acceleration is enabled or %FALSE otherwise.
+ *
+ * Since: 2.46
+ */
+gboolean webkit_settings_get_enable_2d_canvas_acceleration(WebKitSettings* settings)
+{
+    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
+
+#if USE(SKIA)
+    return settings->priv->preferences->canvasUsesAcceleratedDrawing();
+#else
+    return FALSE;
+#endif
+}
+
+/**
+ * webkit_settings_set_enable_2d_canvas_acceleration:
+ * @settings: a #WebKitSettings
+ * @enabled: Value to be set
+ *
+ * Set the #WebKitSettings:enable-2d-canvas-acceleration property.
+ *
+ * Since: 2.46
+ */
+void webkit_settings_set_enable_2d_canvas_acceleration(WebKitSettings* settings, gboolean enabled)
+{
+    g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
+
+#if USE(SKIA)
+    WebKitSettingsPrivate* priv = settings->priv;
+    bool currentValue = priv->preferences->canvasUsesAcceleratedDrawing();
+    if (currentValue == enabled)
+        return;
+
+    priv->preferences->setCanvasUsesAcceleratedDrawing(enabled);
+    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_2D_CANVAS_ACCELERATION]);
+#else
+    if (enabled)
+        g_warning("2D canvas acceleration not supported, webkit_settings_set_enable_2d_canvas_acceleration does nothing");
+#endif
 }
 
 /**
@@ -3234,7 +3449,8 @@ gboolean webkit_settings_get_enable_media_stream(WebKitSettings* settings)
 {
     g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
 
-    return settings->priv->preferences->mediaStreamEnabled();
+    // FIXME: We may want to deprecate this and add new API for media devices.
+    return settings->priv->preferences->mediaDevicesEnabled();
 }
 
 /**
@@ -3251,14 +3467,55 @@ void webkit_settings_set_enable_media_stream(WebKitSettings* settings, gboolean 
     g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
 
     WebKitSettingsPrivate* priv = settings->priv;
-    bool currentValue = priv->preferences->mediaStreamEnabled();
+    bool currentValue = priv->preferences->mediaDevicesEnabled();
     if (currentValue == enabled)
         return;
 
     priv->preferences->setMediaDevicesEnabled(enabled);
-    priv->preferences->setMediaStreamEnabled(enabled);
-    priv->preferences->setPeerConnectionEnabled(enabled);
     g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_MEDIA_STREAM]);
+}
+
+/**
+ * webkit_settings_get_enable_webrtc:
+ * @settings: a #WebKitSettings
+ *
+ * Get the [property@Settings:enable-webrtc] property.
+ *
+ * Returns: %TRUE If WebRTC support is enabled or %FALSE otherwise.
+ *
+ * Since: 2.38
+ */
+gboolean webkit_settings_get_enable_webrtc(WebKitSettings* settings)
+{
+    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
+
+    return settings->priv->preferences->peerConnectionEnabled();
+}
+
+/**
+ * webkit_settings_set_enable_webrtc:
+ * @settings: a #WebKitSettings
+ * @enabled: Value to be set
+ *
+ * Set the [property@Settings:enable-webrtc] property.
+ *
+ * Setting this property to %TRUE implies the media-stream web-setting will also be enabled.
+ *
+ * Since: 2.38
+ */
+void webkit_settings_set_enable_webrtc(WebKitSettings* settings, gboolean enabled)
+{
+    g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
+
+    WebKitSettingsPrivate* priv = settings->priv;
+    bool currentValue = priv->preferences->peerConnectionEnabled();
+    if (currentValue == enabled)
+        return;
+
+    if (enabled)
+        webkit_settings_set_enable_media_stream(settings, enabled);
+    priv->preferences->setPeerConnectionEnabled(enabled);
+    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_ENABLE_WEBRTC]);
 }
 
 /**
@@ -3588,9 +3845,12 @@ void webkit_settings_set_allow_top_navigation_to_data_urls(WebKitSettings* setti
  */
 WebKitHardwareAccelerationPolicy webkit_settings_get_hardware_acceleration_policy(WebKitSettings* settings)
 {
-    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND);
+    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS);
 
     WebKitSettingsPrivate* priv = settings->priv;
+#if USE(GTK4)
+    return priv->preferences->acceleratedCompositingEnabled() ? WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS : WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER;
+#else
     if (!priv->preferences->acceleratedCompositingEnabled())
         return WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER;
 
@@ -3598,6 +3858,7 @@ WebKitHardwareAccelerationPolicy webkit_settings_get_hardware_acceleration_polic
         return WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS;
 
     return WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND;
+#endif
 }
 
 /**
@@ -3630,8 +3891,6 @@ void webkit_settings_set_hardware_acceleration_policy(WebKitSettings* settings, 
         }
         break;
     case WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER:
-        if (HardwareAccelerationManager::singleton().forceHardwareAcceleration())
-            return;
         if (priv->preferences->acceleratedCompositingEnabled()) {
             priv->preferences->setAcceleratedCompositingEnabled(false);
             changed = true;
@@ -3643,6 +3902,7 @@ void webkit_settings_set_hardware_acceleration_policy(WebKitSettings* settings, 
             changed = true;
         }
         break;
+#if !USE(GTK4)
     case WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND:
         if (!priv->preferences->acceleratedCompositingEnabled() && HardwareAccelerationManager::singleton().canUseHardwareAcceleration()) {
             priv->preferences->setAcceleratedCompositingEnabled(true);
@@ -3655,6 +3915,7 @@ void webkit_settings_set_hardware_acceleration_policy(WebKitSettings* settings, 
             changed = true;
         }
         break;
+#endif
     }
 
     if (changed)
@@ -3703,8 +3964,9 @@ void webkit_settings_set_enable_back_forward_navigation_gestures(WebKitSettings*
  * webkit_settings_font_size_to_points:
  * @pixels: the font size in pixels to convert to points
  *
- * Convert @pixels to the equivalent value in points, based on the current
- * screen DPI. Applications can use this function to convert font size values
+ * Convert @pixels to the equivalent value in points.
+ *
+ * Applications can use this function to convert font size values
  * in pixels to font size values in points when getting the font size properties
  * of #WebKitSettings.
  *
@@ -3714,15 +3976,16 @@ void webkit_settings_set_enable_back_forward_navigation_gestures(WebKitSettings*
  */
 guint32 webkit_settings_font_size_to_points(guint32 pixels)
 {
-    return std::round(pixels * 72 / WebCore::screenDPI());
+    return std::round(pixels * 72 / 96);
 }
 
 /**
  * webkit_settings_font_size_to_pixels:
  * @points: the font size in points to convert to pixels
  *
- * Convert @points to the equivalent value in pixels, based on the current
- * screen DPI. Applications can use this function to convert font size values
+ * Convert @points to the equivalent value in pixels.
+ *
+ * Applications can use this function to convert font size values
  * in points to font size values in pixels when setting the font size properties
  * of #WebKitSettings.
  *
@@ -3732,7 +3995,7 @@ guint32 webkit_settings_font_size_to_points(guint32 pixels)
  */
 guint32 webkit_settings_font_size_to_pixels(guint32 points)
 {
-    return std::round(points * WebCore::screenDPI() / 72);
+    return std::round(points * 96 / 72);
 }
 #endif // PLATFORM(GTK)
 
@@ -3820,6 +4083,12 @@ void webkitSettingsSetMediaCaptureRequiresSecureConnection(WebKitSettings* setti
     priv->preferences->setMediaCaptureRequiresSecureConnection(required);
 }
 
+void webkitSettingsSetGetUserMediaRequiresFocus(WebKitSettings* settings, bool required)
+{
+    WebKitSettingsPrivate* priv = settings->priv;
+    priv->preferences->setGetUserMediaRequiresFocus(required);
+}
+
 /**
  * webkit_settings_get_media_content_types_requiring_hardware_support:
  * @settings: a #WebKitSettings
@@ -3861,4 +4130,310 @@ void webkit_settings_set_media_content_types_requiring_hardware_support(WebKitSe
     priv->preferences->setMediaContentTypesRequiringHardwareSupport(mediaContentTypesRequiringHardwareSupportString);
     priv->mediaContentTypesRequiringHardwareSupport = mediaContentTypesRequiringHardwareSupportString.utf8();
     g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_MEDIA_CONTENT_TYPES_REQUIRING_HARDWARE_SUPPORT]);
+}
+
+/**
+ * webkit_settings_get_disable_web_security:
+ * @settings: a #WebKitSettings
+ *
+ * Get the #WebKitSettings:disable-web-security property.
+ *
+ * Returns: %TRUE If web security support is disabled or %FALSE otherwise.
+ *
+ * Since: 2.40
+*/
+gboolean webkit_settings_get_disable_web_security(WebKitSettings* settings)
+{
+    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
+
+    return !settings->priv->preferences->webSecurityEnabled();
+}
+
+/**
+ * webkit_settings_set_disable_web_security:
+ * @settings: a #WebKitSettings
+ * @disabled: Value to be set
+ *
+ * Set the #WebKitSettings:disable-web-security property.
+ *
+ * Since: 2.40
+ */
+void webkit_settings_set_disable_web_security(WebKitSettings* settings, gboolean disabled)
+{
+    g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
+
+    WebKitSettingsPrivate* priv = settings->priv;
+    bool currentValue = !priv->preferences->webSecurityEnabled();
+    if (currentValue == disabled)
+        return;
+
+    priv->preferences->setWebSecurityEnabled(!disabled);
+    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_DISABLE_WEB_SECURITY]);
+}
+
+/**
+ * webkit_settings_set_feature_enabled:
+ * @settings: a #WebKitSettings
+ * @feature: the feature to toggle.
+ * @enabled: whether the feature will be enabled.
+ *
+ * Enables or disables a feature.
+ *
+ * The current status of the feature can be determined with
+ * [id@webkit_settings_get_feature_enabled]. To reset a feature to its
+ * initial status, pass the value returned by
+ * [id@webkit_feature_get_default_value] as the @enabled parameter.
+ *
+ * Since: 2.42
+ */
+void webkit_settings_set_feature_enabled(WebKitSettings* settings, WebKitFeature* feature, gboolean enabled)
+{
+    g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
+    g_return_if_fail(feature);
+
+    settings->priv->preferences->setFeatureEnabled(webkitFeatureGetFeature(feature), !!enabled);
+}
+
+/**
+ * webkit_settings_get_feature_enabled:
+ * @settings: a #WebKitSettings
+ * @feature: the feature to toggle.
+ *
+ * Gets whether a feature is enabled.
+ *
+ * Returns: Whether the feature is enabled.
+ *
+ * Since: 2.42
+ */
+gboolean webkit_settings_get_feature_enabled(WebKitSettings* settings, WebKitFeature* feature)
+{
+    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
+    g_return_val_if_fail(feature, FALSE);
+
+    return settings->priv->preferences->isFeatureEnabled(webkitFeatureGetFeature(feature)) ? TRUE : FALSE;
+}
+
+/**
+ * webkit_settings_get_all_features:
+ *
+ * Gets the list of all available WebKit features.
+ *
+ * Features can be toggled with [method@Settings.set_feature_enabled],
+ * and their current state determined with
+ * [method@Settings.get_feature_enabled].
+ *
+ * Note that most applications should use
+ * [func@Settings.get_development_features] and
+ * [func@Settings.get_experimental_features] instead.
+ *
+ * Returns: (transfer full): List of all features.
+ *
+ * Since: 2.42
+ */
+WebKitFeatureList* webkit_settings_get_all_features(void)
+{
+    return webkitFeatureListCreate(WebPreferences::features());
+}
+
+/**
+ * webkit_settings_get_experimental_features:
+ *
+ * Gets the list of available experimental WebKit features.
+ *
+ * The returned features are a subset of those returned by
+ * [func@Settings.get_all_features], and includes those which
+ * certain applications may want to expose to end users; see
+ * [enum@FeatureStatus] for more details.
+ *
+ * Returns: (transfer full): List of experimental features.
+ *
+ * Since: 2.42
+ */
+WebKitFeatureList* webkit_settings_get_experimental_features(void)
+{
+    return webkitFeatureListCreate(WebPreferences::experimentalFeatures());
+}
+
+/**
+ * webkit_settings_get_development_features:
+ *
+ * Gets the list of available development WebKit features.
+ *
+ * The returned features are a subset of those returned by
+ * [func@Settings.get_all_features], and includes those which
+ * web and WebKit developers might find useful, but in general should
+ * *not* be exposed to end users; see [enum@FeatureStatus] for
+ * more details.
+ *
+ * Returns: (transfer full): List of development features.
+ *
+ * Since: 2.42
+ */
+WebKitFeatureList* webkit_settings_get_development_features(void)
+{
+    return webkitFeatureListCreate(WebPreferences::internalDebugFeatures());
+}
+
+/**
+ * webkit_settings_apply_from_key_file:
+ * @settings: a #WebKitSettings
+ * @key_file: a #GKeyFile
+ * @group_name: Name of the group to read from @key_file
+ * @error: return location for error or %NULL to ignore
+ *
+ * Reads the contents of the given @group_name from the given @key_file and apply the value of
+ * each key/value to the corresponding property on the @settings.
+ *
+ * Value types have to match with the corresponding setting property type and the group keys have to
+ * match existing setting property names. If those conditions are not met, the function will return
+ * %FALSE.
+ *
+ * Supported value types are strings (unquoted), booleans (0, 1, true, false) and unsigned integers.
+ *
+ * Returns: %TRUE if the settings were correctly applied or %FALSE on error.
+ *
+ * Since: 2.46
+ */
+gboolean webkit_settings_apply_from_key_file(WebKitSettings* settings, GKeyFile* keyFile, const gchar* groupName, GError** error)
+{
+    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), FALSE);
+    g_return_val_if_fail(keyFile, FALSE);
+    g_return_val_if_fail(groupName, FALSE);
+    g_return_val_if_fail(!error || !*error, FALSE);
+
+    if (!g_key_file_has_group(keyFile, groupName)) {
+        g_set_error(error, G_KEY_FILE_ERROR, G_KEY_FILE_ERROR_INVALID_VALUE, "The key file has no %s group", groupName);
+        return FALSE;
+    }
+
+    const auto properties = gObjectClassGetProperties(G_OBJECT_GET_CLASS(settings));
+    GRefPtr<GPtrArray> propertyNames = adoptGRef(g_ptr_array_sized_new(properties.span().size()));
+    GRefPtr<GArray> values = adoptGRef(g_array_sized_new(FALSE, FALSE, sizeof(GValue), properties.span().size()));
+    g_array_set_clear_func(values.get(), reinterpret_cast<GDestroyNotify>(g_value_unset));
+
+    for (const GParamSpec* property : properties.span()) {
+        GUniqueOutPtr<GError> lookupError;
+        const char* name = property->name;
+        if (!g_key_file_has_key(keyFile, groupName, name, &lookupError.outPtr())) {
+            if (lookupError) {
+                g_propagate_error(error, lookupError.release());
+                return FALSE;
+            }
+            continue; // Setting missing in GKeyFile, skip it.
+        }
+
+        GValue value = G_VALUE_INIT;
+        bool isValueSet = false;
+        switch (G_PARAM_SPEC_VALUE_TYPE(property)) {
+        case G_TYPE_BOOLEAN: {
+            bool boolValue = g_key_file_get_boolean(keyFile, groupName, name, &lookupError.outPtr());
+            if (!boolValue && lookupError) {
+                g_propagate_error(error, lookupError.release());
+                return FALSE;
+            }
+            g_value_init(&value, G_TYPE_BOOLEAN);
+            g_value_set_boolean(&value, boolValue);
+            isValueSet = true;
+            break;
+        }
+        case G_TYPE_UINT: {
+            guint64 uintValue = g_key_file_get_uint64(keyFile, groupName, name, &lookupError.outPtr());
+            if (!uintValue && lookupError) {
+                g_propagate_error(error, lookupError.release());
+                return FALSE;
+            }
+            if (uintValue > G_MAXUINT) {
+                g_set_error(error, G_KEY_FILE_ERROR, G_KEY_FILE_ERROR_INVALID_VALUE, "Value for '%s' exceeds maximum integer size", name);
+                return FALSE;
+            }
+            g_value_init(&value, G_TYPE_UINT);
+            g_value_set_uint(&value, static_cast<guint>(uintValue));
+            isValueSet = true;
+            break;
+        }
+        case G_TYPE_STRING: {
+            GUniquePtr<char> stringValue(g_key_file_get_string(keyFile, groupName, name, &lookupError.outPtr()));
+            if (!stringValue) {
+                g_assert(lookupError);
+                g_propagate_error(error, lookupError.release());
+                return FALSE;
+            }
+            g_value_init(&value, G_TYPE_STRING);
+            g_value_take_string(&value, stringValue.release());
+            isValueSet = true;
+            break;
+        }
+        default:
+            break;
+        }
+        if (isValueSet) {
+            g_ptr_array_add(propertyNames.get(), const_cast<char*>(name));
+            g_array_append_val(values.get(), value);
+        }
+    }
+
+    GUniqueOutPtr<GError> getKeysError;
+    auto allKeys = gKeyFileGetKeys(keyFile, groupName, getKeysError);
+    if (UNLIKELY(getKeysError)) {
+        g_propagate_error(error, getKeysError.release());
+        return FALSE;
+    }
+
+    for (const char* key : allKeys.span()) {
+        if (!g_ptr_array_find_with_equal_func(propertyNames.get(), static_cast<gconstpointer>(key), g_str_equal, nullptr)) {
+            g_set_error(error, G_KEY_FILE_ERROR, G_KEY_FILE_ERROR_INVALID_VALUE, "The %s group contains an invalid setting: %s", groupName, key);
+            return FALSE;
+        }
+    }
+
+    g_object_setv(G_OBJECT(settings), propertyNames->len, const_cast<const char**>(reinterpret_cast<char**>(propertyNames->pdata)), reinterpret_cast<GValue*>(values->data));
+    return TRUE;
+}
+
+/**
+ * webkit_settings_get_webrtc_udp_ports_range:
+ * @settings: a #WebKitSettings
+ *
+ * Get the [property@Settings:webrtc-udp-ports-range] property.
+ *
+ * Returns: The WebRTC UDP ports range, or %NULL if un-set.
+ *
+ * Since: 2.48
+ */
+const gchar*
+webkit_settings_get_webrtc_udp_ports_range(WebKitSettings* settings)
+{
+    g_return_val_if_fail(WEBKIT_IS_SETTINGS(settings), nullptr);
+#if ENABLE(WEB_RTC)
+    return settings->priv->webrtcUDPPortsRange.data();
+#else
+    return nullptr;
+#endif
+}
+
+/**
+ * webkit_settings_set_webrtc_udp_ports_range:
+ * @settings: a #WebKitSettings
+ * @udp_port_range: Value to be set
+ *
+ * Set the [property@Settings:webrtc-udp-ports-range] property.
+ *
+ * Since: 2.48
+ */
+void
+webkit_settings_set_webrtc_udp_ports_range(WebKitSettings* settings, const gchar* udpPortsRange)
+{
+    g_return_if_fail(WEBKIT_IS_SETTINGS(settings));
+#if ENABLE(WEB_RTC)
+    WebKitSettingsPrivate* priv = settings->priv;
+    if (!g_strcmp0(priv->webrtcUDPPortsRange.data(), udpPortsRange))
+        return;
+
+    auto portRange = String::fromLatin1(udpPortsRange);
+    priv->preferences->setWebRTCUDPPortRange(portRange);
+    priv->webrtcUDPPortsRange = portRange.utf8();
+    g_object_notify_by_pspec(G_OBJECT(settings), sObjProperties[PROP_WEBRTC_UDP_PORTS_RANGE]);
+#else
+    UNUSED_PARAM(udpPortsRange);
+#endif
 }

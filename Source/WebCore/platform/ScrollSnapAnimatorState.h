@@ -29,16 +29,21 @@
 #include "FloatSize.h"
 #include "LayoutPoint.h"
 #include "PlatformWheelEvent.h"
+#include "ScrollAnimationMomentum.h"
 #include "ScrollSnapOffsetsInfo.h"
 #include "ScrollTypes.h"
-#include "ScrollingMomentumCalculator.h"
 #include <wtf/MonotonicTime.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WTF {
 class TextStream;
 }
 
 namespace WebCore {
+
+class Page;
+class ScrollingEffectsController;
+struct ScrollExtents;
 
 enum class ScrollSnapState {
     Snapping,
@@ -48,8 +53,13 @@ enum class ScrollSnapState {
 };
 
 class ScrollSnapAnimatorState {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(ScrollSnapAnimatorState);
 public:
+    ScrollSnapAnimatorState(ScrollingEffectsController& scrollController)
+        : m_scrollController(scrollController)
+    { }
+    virtual ~ScrollSnapAnimatorState();
+
     const Vector<SnapOffset<LayoutUnit>>& snapOffsetsForAxis(ScrollEventAxis axis) const
     {
         return axis == ScrollEventAxis::Horizontal ? m_snapOffsetsInfo.horizontalSnapOffsets : m_snapOffsetsInfo.verticalSnapOffsets;
@@ -64,8 +74,39 @@ public:
     {
         return axis == ScrollEventAxis::Horizontal ? m_activeSnapIndexX : m_activeSnapIndexY;
     }
+    
+    void setActiveSnapIndexForAxis(ScrollEventAxis, std::optional<unsigned>);
 
-    void setActiveSnapIndexForAxis(ScrollEventAxis axis, std::optional<unsigned> index)
+    std::optional<unsigned> closestSnapPointForOffset(ScrollEventAxis, ScrollOffset, const ScrollExtents&, float pageScale) const;
+    float adjustedScrollDestination(ScrollEventAxis, FloatPoint destinationOffset, float velocity, std::optional<float> originalOffset, const ScrollExtents&, float pageScale) const;
+
+    // returns true if an active snap index changed.
+    bool resnapAfterLayout(ScrollOffset, const ScrollExtents&, float pageScale);
+
+    bool setNearestScrollSnapIndexForOffset(ScrollOffset, const ScrollExtents&, float pageScale);
+
+    // State transition helpers.
+    // These return true if they start a new animation.
+    bool transitionToSnapAnimationState(const ScrollExtents&, float pageScale, const FloatPoint& initialOffset);
+    bool transitionToGlideAnimationState(const ScrollExtents&, float pageScale, const FloatPoint& initialOffset, const FloatSize& initialVelocity, const FloatSize& initialDelta);
+
+    void transitionToUserInteractionState();
+    void transitionToDestinationReachedState();
+
+private:
+    std::pair<float, std::optional<unsigned>> targetOffsetForStartOffset(ScrollEventAxis, const ScrollExtents&, float startOffset, FloatPoint predictedOffset, float pageScale, float initialDelta) const;
+    bool setupAnimationForState(ScrollSnapState, const ScrollExtents&, float pageScale, const FloatPoint& initialOffset, const FloatSize& initialVelocity, const FloatSize& initialDelta);
+    void teardownAnimationForState(ScrollSnapState);
+
+    bool preserveCurrentTargetForAxis(ScrollEventAxis, ElementIdentifier);
+
+    Vector<SnapOffset<LayoutUnit>> currentlySnappedOffsetsForAxis(ScrollEventAxis) const;
+    UncheckedKeyHashSet<ElementIdentifier> currentlySnappedBoxes(const Vector<SnapOffset<LayoutUnit>>& horizontalOffsets, const Vector<SnapOffset<LayoutUnit>>& verticalOffsets) const;
+
+    bool setNearestScrollSnapIndexForAxisAndOffsetInternal(ScrollEventAxis, ScrollOffset, const ScrollExtents&, float pageScale);
+    void updateCurrentlySnappedBoxes();
+
+    void setActiveSnapIndexForAxisInternal(ScrollEventAxis axis, std::optional<unsigned> index)
     {
         if (axis == ScrollEventAxis::Horizontal)
             m_activeSnapIndexX = index;
@@ -73,28 +114,15 @@ public:
             m_activeSnapIndexY = index;
     }
 
-    FloatPoint currentAnimatedScrollOffset(MonotonicTime, bool& isAnimationComplete) const;
-
-    // State transition helpers.
-    void transitionToSnapAnimationState(const FloatSize& contentSize, const FloatSize& viewportSize, float pageScale, const FloatPoint& initialOffset);
-    void transitionToGlideAnimationState(const FloatSize& contentSize, const FloatSize& viewportSize, float pageScale, const FloatPoint& initialOffset, const FloatSize& initialVelocity, const FloatSize& initialDelta);
-    void transitionToUserInteractionState();
-    void transitionToDestinationReachedState();
-
-private:
-    std::pair<float, std::optional<unsigned>> targetOffsetForStartOffset(ScrollEventAxis, const FloatSize& viewportSize, float maxScrollOffset, float startOffset, FloatPoint predictedOffset, float pageScale, float initialDelta) const;
-    void teardownAnimationForState(ScrollSnapState);
-    void setupAnimationForState(ScrollSnapState, const FloatSize& contentSize, const FloatSize& viewportSize, float pageScale, const FloatPoint& initialOffset, const FloatSize& initialVelocity, const FloatSize& initialDelta);
+    ScrollingEffectsController& m_scrollController;
 
     ScrollSnapState m_currentState { ScrollSnapState::UserInteraction };
 
     LayoutScrollSnapOffsetsInfo m_snapOffsetsInfo;
-
+    
     std::optional<unsigned> m_activeSnapIndexX;
     std::optional<unsigned> m_activeSnapIndexY;
-
-    MonotonicTime m_startTime;
-    std::unique_ptr<ScrollingMomentumCalculator> m_momentumCalculator;
+    UncheckedKeyHashSet<ElementIdentifier> m_currentlySnappedBoxes;
 };
 
 WTF::TextStream& operator<<(WTF::TextStream&, const ScrollSnapAnimatorState&);

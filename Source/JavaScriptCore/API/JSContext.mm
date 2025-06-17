@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2022 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,6 +27,8 @@
 
 #import "APICast.h"
 #import "Completion.h"
+#import "IntegrityInlines.h"
+#import "JSAPIGlobalObject.h"
 #import "JSBaseInternal.h"
 #import "JSCInlines.h"
 #import "JSContextInternal.h"
@@ -35,6 +37,8 @@
 #import "JSGlobalObject.h"
 #import "JSInternalPromise.h"
 #import "JSModuleLoader.h"
+#import "JSRetainPtr.h"
+#import "JSScriptInternal.h"
 #import "JSValueInternal.h"
 #import "JSVirtualMachineInternal.h"
 #import "JSWrapperMap.h"
@@ -46,10 +50,12 @@
 
 #if JSC_OBJC_API_ENABLED
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 @implementation JSContext {
     RetainPtr<JSVirtualMachine> m_virtualMachine;
     JSGlobalContextRef m_context;
-    JSC::Strong<JSC::JSObject> m_exception;
+    RetainPtr<JSValue> m_exception;
     WeakObjCPtr<id <JSModuleLoaderDelegate>> m_moduleLoaderDelegate;
 }
 
@@ -92,7 +98,7 @@
 
 - (void)dealloc
 {
-    m_exception.clear();
+    m_exception = nil;
     JSGlobalContextRelease(m_context);
     [_exceptionHandler release];
     [super dealloc];
@@ -131,7 +137,7 @@
         return [JSValue valueWithJSValueRef:result inContext:self];
     }
 
-    auto* apiGlobalObject = JSC::jsDynamicCast<JSC::JSAPIGlobalObject*>(vm, globalObject);
+    auto* apiGlobalObject = JSC::jsDynamicCast<JSC::JSAPIGlobalObject*>(globalObject);
     if (!apiGlobalObject)
         return [JSValue valueWithNewPromiseRejectedWithReason:[JSValue valueWithNewErrorFromMessage:@"Context does not support module loading" inContext:self] inContext:self];
 
@@ -159,7 +165,7 @@
     }
 
     auto scope = DECLARE_CATCH_SCOPE(vm);
-    JSC::JSArray* result = globalObject->moduleLoader()->dependencyKeysIfEvaluated(globalObject, JSC::jsString(vm, [[script sourceURL] absoluteString]));
+    JSC::JSArray* result = globalObject->moduleLoader()->dependencyKeysIfEvaluated(globalObject, JSC::jsString(vm, String([[script sourceURL] absoluteString])));
     if (scope.exception()) {
         JSValueRef exceptionValue = toRef(globalObject, scope.exception()->value());
         scope.clearException();
@@ -187,17 +193,12 @@
     JSC::JSGlobalObject* globalObject = toJS(m_context);
     JSC::VM& vm = globalObject->vm();
     JSC::JSLockHolder locker(vm);
-    if (value)
-        m_exception.set(vm, toJS(JSValueToObject(m_context, valueInternalValue(value), 0)));
-    else
-        m_exception.clear();
+    m_exception = value;
 }
 
 - (JSValue *)exception
 {
-    if (!m_exception)
-        return nil;
-    return [JSValue valueWithJSValueRef:toRef(m_exception.get()) inContext:self];
+    return m_exception.get();
 }
 
 - (JSValue *)globalObject
@@ -258,11 +259,11 @@
 
 - (NSString *)name
 {
-    JSStringRef name = JSGlobalContextCopyName(m_context);
+    auto name = adopt(JSGlobalContextCopyName(m_context));
     if (!name)
         return nil;
 
-    return adoptCF(JSStringCopyCFString(kCFAllocatorDefault, name)).bridgingAutorelease();
+    return adoptCF(JSStringCopyCFString(kCFAllocatorDefault, name.get())).bridgingAutorelease();
 }
 
 - (void)setName:(NSString *)name
@@ -270,14 +271,24 @@
     JSGlobalContextSetName(m_context, OpaqueJSString::tryCreate(name).get());
 }
 
+- (BOOL)isInspectable
+{
+    return JSGlobalContextIsInspectable(m_context);
+}
+
+- (void)setInspectable:(BOOL)inspectable
+{
+    JSGlobalContextSetInspectable(m_context, inspectable);
+}
+
 - (BOOL)_remoteInspectionEnabled
 {
-    return JSGlobalContextGetRemoteInspectionEnabled(m_context);
+    return self.inspectable;
 }
 
 - (void)_setRemoteInspectionEnabled:(BOOL)enabled
 {
-    JSGlobalContextSetRemoteInspectionEnabled(m_context, enabled);
+    self.inspectable = enabled;
 }
 
 - (BOOL)_includesNativeCallStackWhenReportingExceptions
@@ -411,5 +422,7 @@
 }
 
 @end
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
 
 #endif

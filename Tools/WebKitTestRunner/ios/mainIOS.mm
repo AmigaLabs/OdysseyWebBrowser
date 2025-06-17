@@ -27,7 +27,7 @@
 
 #import "HIDEventGenerator.h"
 #import "TestController.h"
-#import "UIKitSPI.h"
+#import "UIKitSPIForTesting.h"
 #import <WebKit/WKProcessPoolPrivate.h>
 
 static int _argc;
@@ -70,6 +70,7 @@ int main(int argc, const char* argv[])
     _argv = argv;
 
     [WKProcessPool _setLinkedOnOrAfterEverythingForTesting];
+    [WKProcessPool _crashOnMessageCheckFailureForTesting];
 
     UIApplicationMain(argc, (char**)argv, @"WebKitTestRunnerApp", @"WebKitTestRunnerApp");
     return 0;

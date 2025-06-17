@@ -28,6 +28,8 @@
 #include "ECMAMode.h"
 #include <wtf/text/UniquedStringImpl.h>
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace JSC {
 
 class Structure;
@@ -83,7 +85,8 @@ enum ResolveType : unsigned {
 enum class InitializationMode : unsigned {
     Initialization,      // "let x = 20;"
     ConstInitialization, // "const x = 20;"
-    NotInitialization    // "x = 20;"
+    NotInitialization,   // "x = 20;"
+    ScopedArgumentInitialization // Assign to scoped argument, which also has NotInitialization semantics.
 };
 
 ALWAYS_INLINE const char* resolveModeName(ResolveMode resolveMode)
@@ -120,7 +123,8 @@ ALWAYS_INLINE const char* initializationModeName(InitializationMode initializati
     static const char* const names[] = {
         "Initialization",
         "ConstInitialization",
-        "NotInitialization"
+        "NotInitialization",
+        "ScopedArgumentInitialization"
     };
     return names[static_cast<unsigned>(initializationMode)];
 }
@@ -132,6 +136,7 @@ ALWAYS_INLINE bool isInitialization(InitializationMode initializationMode)
     case InitializationMode::ConstInitialization:
         return true;
     case InitializationMode::NotInitialization:
+    case InitializationMode::ScopedArgumentInitialization:
         return false;
     }
     ASSERT_NOT_REACHED();
@@ -267,3 +272,5 @@ void printInternal(PrintStream&, JSC::ResolveType);
 void printInternal(PrintStream&, JSC::InitializationMode);
 
 } // namespace WTF
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

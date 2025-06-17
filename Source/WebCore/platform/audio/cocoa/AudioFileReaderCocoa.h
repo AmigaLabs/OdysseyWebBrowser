@@ -54,26 +54,25 @@ class AudioFileReader
 #endif
 {
 public:
-    AudioFileReader(const void* data, size_t dataSize);
+    explicit AudioFileReader(std::span<const uint8_t> data);
     ~AudioFileReader();
 
     RefPtr<AudioBus> createBus(float sampleRate, bool mixToMono); // Returns nullptr on error
 
-    const void* data() const { return m_data; }
-    size_t dataSize() const { return m_dataSize; }
+    size_t dataSize() const { return m_data.size(); }
+    std::span<const uint8_t> span() const { return m_data; }
 
 #if !RELEASE_LOG_DISABLED
     const Logger& logger() const final { return m_logger.get(); }
-    const void* logIdentifier() const final { return m_logIdentifier; }
+    uint64_t logIdentifier() const final { return m_logIdentifier; }
     WTFLogChannel& logChannel() const final;
-    const char* logClassName() const final { return "AudioFileReaderCocoa"; }
+    ASCIILiteral logClassName() const final { return "AudioFileReaderCocoa"_s; }
 #endif
 
 private:
 #if ENABLE(MEDIA_SOURCE)
-    bool isMaybeWebM(const uint8_t* data, size_t dataSize) const;
-    std::unique_ptr<AudioFileReaderWebMData> demuxWebMData(const uint8_t* data, size_t dataSize) const;
-    Vector<AudioStreamPacketDescription> getPacketDescriptions(CMSampleBufferRef) const;
+    bool isMaybeWebM(std::span<const uint8_t>) const;
+    std::unique_ptr<AudioFileReaderWebMData> demuxWebMData(std::span<const uint8_t>) const;
     std::optional<size_t> decodeWebMData(AudioBufferList&, size_t numberOfFrames, const AudioStreamBasicDescription& inFormat, const AudioStreamBasicDescription& outFormat) const;
 #endif
     static OSStatus readProc(void* clientData, SInt64 position, UInt32 requestCount, void* buffer, UInt32* actualCount);
@@ -82,8 +81,7 @@ private:
     std::optional<AudioStreamBasicDescription> fileDataFormat() const;
     AudioStreamBasicDescription clientDataFormat(const AudioStreamBasicDescription& inFormat, float sampleRate) const;
 
-    const void* m_data = { nullptr };
-    size_t m_dataSize = { 0 };
+    std::span<const uint8_t> m_data;
 
     AudioFileID m_audioFileID = { nullptr };
     ExtAudioFileRef m_extAudioFileRef = { nullptr };
@@ -92,7 +90,7 @@ private:
 
 #if !RELEASE_LOG_DISABLED
     const Ref<Logger> m_logger;
-    const void* m_logIdentifier;
+    const uint64_t m_logIdentifier;
 #endif
 
 };

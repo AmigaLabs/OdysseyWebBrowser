@@ -24,18 +24,19 @@
 
 #include "config.h"
 #include "LibWebRTCRtpTransformableFrame.h"
+#include <wtf/TZoneMallocInlines.h>
 
 #if ENABLE(WEB_RTC) && USE(LIBWEBRTC)
 
-ALLOW_UNUSED_PARAMETERS_BEGIN
-ALLOW_DEPRECATED_DECLARATIONS_BEGIN
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
 
 #include <webrtc/api/frame_transformer_interface.h>
 
-ALLOW_DEPRECATED_DECLARATIONS_END
-ALLOW_UNUSED_PARAMETERS_END
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(LibWebRTCRtpTransformableFrame);
 
 LibWebRTCRtpTransformableFrame::LibWebRTCRtpTransformableFrame(std::unique_ptr<webrtc::TransformableFrameInterface>&& frame, bool isAudioSenderFrame)
     : m_rtcFrame(WTFMove(frame))
@@ -52,15 +53,15 @@ std::unique_ptr<webrtc::TransformableFrameInterface> LibWebRTCRtpTransformableFr
     return WTFMove(m_rtcFrame);
 }
 
-Span<const uint8_t> LibWebRTCRtpTransformableFrame::data() const
+std::span<const uint8_t> LibWebRTCRtpTransformableFrame::data() const
 {
     if (!m_rtcFrame)
         return { };
     auto data = m_rtcFrame->GetData();
-    return { data.begin(), data.size() };
+    return unsafeMakeSpan(data.begin(), data.size());
 }
 
-void LibWebRTCRtpTransformableFrame::setData(Span<const uint8_t> data)
+void LibWebRTCRtpTransformableFrame::setData(std::span<const uint8_t> data)
 {
     if (m_rtcFrame)
         m_rtcFrame->SetData({ data.data(), data.size() });
@@ -86,12 +87,10 @@ RTCEncodedAudioFrameMetadata LibWebRTCRtpTransformableFrame::audioMetadata() con
     Vector<uint32_t> cssrcs;
     if (!m_isAudioSenderFrame) {
         auto* audioFrame = static_cast<webrtc::TransformableAudioFrameInterface*>(m_rtcFrame.get());
-        auto& header = audioFrame->GetHeader();
-        if (header.numCSRCs) {
-            cssrcs.reserveInitialCapacity(header.numCSRCs);
-            for (size_t cptr = 0; cptr < header.numCSRCs; ++cptr)
-                cssrcs.uncheckedAppend(header.arrOfCSRCs[cptr]);
-        }
+        auto contributingSources = audioFrame->GetContributingSources();
+        cssrcs = Vector<uint32_t>(contributingSources.size(), [&](size_t cptr) {
+            return contributingSources[cptr];
+        });
     }
     return { m_rtcFrame->GetSsrc(), WTFMove(cssrcs) };
 }
@@ -101,7 +100,7 @@ RTCEncodedVideoFrameMetadata LibWebRTCRtpTransformableFrame::videoMetadata() con
     if (!m_rtcFrame)
         return { };
     auto* videoFrame = static_cast<webrtc::TransformableVideoFrameInterface*>(m_rtcFrame.get());
-    auto& metadata = videoFrame->GetMetadata();
+    auto metadata = videoFrame->Metadata();
 
     std::optional<int64_t> frameId;
     if (metadata.GetFrameId())

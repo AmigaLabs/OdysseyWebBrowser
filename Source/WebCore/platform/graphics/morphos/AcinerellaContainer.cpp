@@ -10,21 +10,16 @@
 #include "AcinerellaHLS.h"
 #include "PlatformMediaResourceLoader.h"
 #include <proto/exec.h>
-#if OS(MORPHOS)
+#if !OS(AMIGAOS)
 #include <exec/system.h>
-#endif
-#if OS(AROS)
-#include <aros/debug.h>
-#define dprintf bug
-#undef D
 #endif
 
 #define D(x) 
 #define DNP(x)
-#define DIO(x) 
+#define DIO(x)
 #define DINIT(x)
 
-#define DDUMP(x) 
+#define DDUMP(x)
 
 namespace WebCore {
 namespace Acinerella {
@@ -36,7 +31,7 @@ Acinerella::Acinerella(AcinerellaClient *client, const String &url)
 {
 	D(dprintf("%s: %p url '%s'\n", __func__, this, url.utf8().data()));
 	m_networkBuffer = AcinerellaNetworkBuffer::create(this, m_url);
-	m_isHLS = m_url.contains("m3u8");
+	m_isHLS = m_url.contains("m3u8"_s);
 
 	if (m_networkBuffer)
 	{
@@ -47,7 +42,7 @@ Acinerella::Acinerella(AcinerellaClient *client, const String &url)
 		m_networkBuffer->start();
 	}
 	ref();
-	m_thread = Thread::create("Acinerella", [this] {
+	m_thread = Thread::create("Acinerella"_s, [this] {
 		threadEntryPoint();
 	});
 	if (!m_thread)
@@ -186,12 +181,12 @@ bool Acinerella::ended()
 	return m_ended;
 }
 
-void Acinerella::ref()
+void Acinerella::ref() const
 {
 	ThreadSafeRefCounted<Acinerella>::ref();
 }
 
-void Acinerella::deref()
+void Acinerella::deref() const
 {
 	ThreadSafeRefCounted<Acinerella>::deref();
 }
@@ -212,20 +207,13 @@ String Acinerella::referrer()
 
 void Acinerella::selectStream()
 {
+#if !OS(AMIGAOS)
+
 	HLSStreamInfo selected;
 	auto *hls = static_cast<AcinerellaNetworkBufferHLS*>(m_networkBuffer.get());
 
-#if OS(MORPHOS)
 	UQUAD clock = 0;
 	NewGetSystemAttrsA(&clock, sizeof(clock), SYSTEMINFOTYPE_PPC_CPUCLOCK, NULL);
-#endif
-#if OS(AROS)
-	UQUAD clock = 2000000000;
-#endif
-#if OS(AMIGAOS)
-	ULONG clock = 0; // TODO: Check this
-	GetCPUInfoTags(GCIT_ProcessorSpeed, &clock, TAG_DONE); 
-#endif
 
 	for (auto info : hls->streams())
 	{
@@ -287,6 +275,7 @@ void Acinerella::selectStream()
 		m_hlsStreamURL = selected.m_url;
 		hls->selectStream(selected);
 	}
+#endif	
 }
 
 void Acinerella::selectStream(const String& url, double position)
@@ -346,7 +335,7 @@ void Acinerella::startSeeking(double pos)
 		if (m_videoDecoder)
 			m_videoDecoder->prePlay();
 
-		dispatch([this, protectedThis = makeRef(*this)]() {
+		dispatch([this, protectedThis = Ref{*this}]() {
 			initializeAfterDiscontinuity();
 		});
 
@@ -558,7 +547,7 @@ bool Acinerella::initialize()
 		{
 			m_acinerella = nullptr;
 			DINIT(dprintf("---- ac failed to open :(\n"));
-			WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+			WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 				if (m_client)
 					m_client->accFailed();
 			});
@@ -585,14 +574,14 @@ bool Acinerella::initialize()
 				switch (info.stream_type)
 				{
 				case AC_STREAM_TYPE_VIDEO:
-					DINIT(dprintf("video stream: %dx%d index %d ev %d\n", info.additional_info.video_info.frame_width, info.additional_info.video_info.frame_height, i, streamSettings().m_decodeVideo));
+					DINIT(dprintf("video stream: %dx%d index %d ev %d codec %s\n", info.additional_info.video_info.frame_width, info.additional_info.video_info.frame_height, i, streamSettings().m_decodeVideo, ac_codec_name(acinerella->instance(), i)));
 					if (-1 == videoIndex && streamSettings().m_decodeVideo)
 						videoIndex = i;
 					break;
 
 				case AC_STREAM_TYPE_AUDIO:
-					DINIT(dprintf("audio stream: %d %d %d\n", info.additional_info.audio_info.samples_per_second,
-						info.additional_info.audio_info.channel_count, info.additional_info.audio_info.bit_depth));
+					DINIT(dprintf("audio stream: %d %d %d codec %s\n", info.additional_info.audio_info.samples_per_second,
+						info.additional_info.audio_info.channel_count, info.additional_info.audio_info.bit_depth, ac_codec_name(acinerella->instance(), i)));
 					if (-1 == audioIndex)
 						audioIndex = i;
 					break;
@@ -629,10 +618,10 @@ bool Acinerella::initialize()
 						decoderMask |= (1UL << videoIndex);
 				}
 
-				WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+				WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 					if (m_client)
 					{
-						m_client->accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState::Loading);
+						m_client->accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState::Loading, { });
 					}
 				});
 
@@ -664,7 +653,7 @@ bool Acinerella::initialize()
 				}
 				
 				m_muxer->setDecoderMask(decoderMask);
-				m_muxer->setSinkFunction([this, protectedThis = makeRef(*this)](int, int, uint32_t) -> bool {
+				m_muxer->setSinkFunction([this, protectedThis = Ref{*this}](int, int, uint32_t) -> bool {
 					// look ma, a lambda within a lambda
                     if (!m_waitingForDemux) {
                         m_waitingForDemux = true;
@@ -711,6 +700,7 @@ bool Acinerella::initialize()
 						minfo.m_height = video->frameHeight();
 						minfo.m_videoCodec = video->codec();
 						minfo.m_bitRate = video->bitRate();
+                        minfo.m_fps = video->framesPerSecond();
 					}
 					else
 					{
@@ -739,7 +729,7 @@ bool Acinerella::initialize()
 						minfo.m_selectedHLSStreamURL = hls->selectedStream().m_url;
 					}
 					
-					WTF::callOnMainThread([this, minfo, protectedThis = makeRef(*this)]() {
+					WTF::callOnMainThread([this, minfo, protectedThis = Ref{*this}]() {
 						if (m_client)
 						{
 							m_client->accSetDuration(m_duration);
@@ -749,7 +739,7 @@ bool Acinerella::initialize()
 				}
 				else
 				{
-					WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+					WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 						if (m_client)
 							m_client->accFailed();
 					});
@@ -759,7 +749,7 @@ bool Acinerella::initialize()
 	}
 	else
 	{
-		WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+		WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 		if (m_client)
 			m_client->accFailed();
 		});
@@ -782,7 +772,7 @@ void Acinerella::initializeAfterDiscontinuity()
 	auto acinerella = AcinerellaPointer::create();
 	if (-1 == ac_open(acinerella->instance(), static_cast<void *>(this), &acOpenCallback, &acReadCallback, &acSeekCallback, &acCloseCallback, nullptr))
 	{
-		WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+		WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 		if (m_client)
 			m_client->accFailed();
 		});
@@ -888,7 +878,7 @@ void Acinerella::initializeAfterDiscontinuity()
 			}
 		}
 
-		WTF::callOnMainThread([this, update = updateInfo, minfo = m_info, protectedThis = makeRef(*this)]() {
+		WTF::callOnMainThread([this, update = updateInfo, minfo = m_info, protectedThis = Ref{*this}]() {
 			if (m_client)
 			{
 				m_client->accSetReadyState(WebCore::MediaPlayerEnums::ReadyState::HaveFutureData);
@@ -942,7 +932,7 @@ void Acinerella::demuxMorePackages(bool untilEOS)
 				{
 					m_ioDiscontinuity = true;
 
-					dispatch([this, protectedThis = makeRef(*this)]() {
+					dispatch([this, protectedThis = Ref{*this}]() {
 						initializeAfterDiscontinuity();
 					});
 				}
@@ -973,7 +963,7 @@ void Acinerella::onDecoderWarmedUp(RefPtr<AcinerellaDecoder> decoder)
 {
 	D(dprintf("%s:\n", __func__));
 	(void)decoder;
-	WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+	WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 		if (m_client)
 		{
 			m_client->accSetReadyState(WebCore::MediaPlayerEnums::ReadyState::HaveEnoughData);
@@ -986,7 +976,7 @@ void Acinerella::onDecoderReadyToPlay(RefPtr<AcinerellaDecoder> decoder)
 	D(dprintf("%s:\n", __func__));
 	(void)decoder;
 
-	dispatch([this, protectedThis = makeRef(*this)]() {
+	dispatch([this, protectedThis = Ref{*this}]() {
 		D(dprintf("onDecoderReadyToPlay: ready %d\n", areDecodersReadyToPlay()));
 
 		if (areDecodersReadyToPlay()) {
@@ -1006,7 +996,7 @@ void Acinerella::onDecoderReadyToPlay(RefPtr<AcinerellaDecoder> decoder)
 	{
 		int width = static_cast<AcinerellaVideoDecoder *>(decoder.get())->frameWidth();
 		int height = static_cast<AcinerellaVideoDecoder *>(decoder.get())->frameHeight();
-		WTF::callOnMainThread([width, height, this, protect = makeRef(*this)]() {
+		WTF::callOnMainThread([width, height, this, protect = Ref{*this}]() {
 			if (m_client)
 				m_client->accSetVideoSize(width, height);
 		});
@@ -1015,7 +1005,7 @@ void Acinerella::onDecoderReadyToPlay(RefPtr<AcinerellaDecoder> decoder)
 
 void Acinerella::onDecoderPlaying(RefPtr<AcinerellaDecoder>, bool /*playing*/)
 {
-//	WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+//	WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 //	});
 }
 
@@ -1025,7 +1015,7 @@ void Acinerella::onDecoderEnded(RefPtr<AcinerellaDecoder>)
 	m_ended = true;
 	m_paused = true;
 
-	WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+	WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 		if (m_client)
 			m_client->accEnded();
 	});
@@ -1033,7 +1023,7 @@ void Acinerella::onDecoderEnded(RefPtr<AcinerellaDecoder>)
 
 void Acinerella::onDecoderUpdatedBufferLength(RefPtr<AcinerellaDecoder>, double buffer)
 {
-	WTF::callOnMainThread([this, buffer, protectedThis = makeRef(*this)]() {
+	WTF::callOnMainThread([this, buffer, protectedThis = Ref{*this}]() {
 		if (m_client)
 			m_client->accSetBufferLength(buffer);
 	});
@@ -1048,10 +1038,15 @@ void Acinerella::onDecoderUpdatedPosition(RefPtr<AcinerellaDecoder> decoder, dou
 		{
 			D(dprintf("--endseeking\n"));
 			m_isSeeking = false;
-	
+
+            WTF::callOnMainThread([this, protectedThis = Ref{*this}, pos]() {
+                if (m_client)
+                    m_client->accSeeked(pos);
+            });
+
 			if (!m_paused)
 			{
-				WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+				WTF::callOnMainThread([this, protectedThis = Ref{*this}]() {
 					if (m_client)
 						play();
 				});
@@ -1081,7 +1076,7 @@ void Acinerella::onDecoderUpdatedDuration(RefPtr<AcinerellaDecoder> decoder, dou
 
 void Acinerella::onDecoderWantsToRender(RefPtr<AcinerellaDecoder>)
 {
-	WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+	WTF::callOnMainThread([this, protect = Ref{*this}]() {
 		if (m_client)
 			m_client->accNextFrameReady();
 	});
@@ -1089,7 +1084,7 @@ void Acinerella::onDecoderWantsToRender(RefPtr<AcinerellaDecoder>)
 
 void Acinerella::onDecoderNotReadyToRender(RefPtr<AcinerellaDecoder>)
 {
-	WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+	WTF::callOnMainThread([this, protect = Ref{*this}]() {
 		if (m_client)
 			m_client->accNoFramesReady();
 	});
@@ -1097,7 +1092,7 @@ void Acinerella::onDecoderNotReadyToRender(RefPtr<AcinerellaDecoder>)
 
 void Acinerella::onDecoderRenderUpdate(RefPtr<AcinerellaDecoder>)
 {
-	WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+	WTF::callOnMainThread([this, protect = Ref{*this}]() {
 		if (m_client)
 			m_client->accFrameUpdateNeeded();
 	});
@@ -1140,7 +1135,7 @@ int Acinerella::read(uint8_t *buf, int size)
 			DIO(dprintf("%s: %p >> eRead_Discontinuity\n", "acRead", this));
 			rc = AcinerellaNetworkBuffer::eRead_EOF;
 			m_ioDiscontinuity = true;
-			dispatch([this, protectedThis = makeRef(*this)]() {
+			dispatch([this, protectedThis = Ref{*this}]() {
 				initializeAfterDiscontinuity();
 			});
 		}
@@ -1156,16 +1151,24 @@ int Acinerella::read(uint8_t *buf, int size)
 		{
 			rc = 0;
 		}
+        else if (rc == AcinerellaNetworkBuffer::eRead_Error)
+        {
+			DIO(dprintf("ERROR!\n"));
+                WTF::String message;
+                buffer->getErrorMessage(message);
+				WTF::callOnMainThread([this, protectedThis = Ref{*this}, error = message]() {
+					if (m_client)
+					{
+						m_client->accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState::FormatError, error);
+					}
+				});
+        }
 		
 		return rc;
 	}
 
 	return AcinerellaNetworkBuffer::eRead_EOF;
 }
-
-#ifndef AVSEEK_SIZE
-#define AVSEEK_SIZE 0x10000
-#endif
 
 // callback from acinerella on acinerella's main thread!
 int64_t Acinerella::seek(int64_t pos, int whence)

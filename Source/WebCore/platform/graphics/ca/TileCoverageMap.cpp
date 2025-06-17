@@ -29,18 +29,23 @@
 #include "GraphicsContext.h"
 #include "TileController.h"
 #include "TileGrid.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(TileCoverageMap);
 
 TileCoverageMap::TileCoverageMap(const TileController& controller)
     : m_controller(controller)
     , m_updateTimer(*this, &TileCoverageMap::updateTimerFired)
-    , m_layer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerTypeSimpleLayer, this))
-    , m_visibleViewportIndicatorLayer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerTypeLayer, nullptr))
-    , m_layoutViewportIndicatorLayer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerTypeLayer, nullptr))
-    , m_coverageRectIndicatorLayer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerTypeLayer, nullptr))
-    , m_position(FloatPoint(0, controller.topContentInset()))
+    , m_layer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerType::LayerTypeSimpleLayer, this))
+    , m_visibleViewportIndicatorLayer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerType::LayerTypeLayer, nullptr))
+    , m_layoutViewportIndicatorLayer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerType::LayerTypeLayer, nullptr))
+    , m_coverageRectIndicatorLayer(controller.rootLayer().createCompatibleLayer(PlatformCALayer::LayerType::LayerTypeLayer, nullptr))
 {
+    auto obscuredContentInsets = controller.obscuredContentInsets();
+    m_position = { obscuredContentInsets.left(), obscuredContentInsets.top() };
+
     m_layer.get().setOpacity(0.75);
     m_layer.get().setAnchorPoint(FloatPoint3D());
     m_layer.get().setBorderColor(Color::black);
@@ -98,7 +103,7 @@ void TileCoverageMap::update()
     float scale = 1;
     if (!containerBounds.isEmpty()) {
         widthScale = std::min<float>(visibleRect.width() / containerBounds.width(), 0.1);
-        float visibleHeight = visibleRect.height() - std::min(m_controller.topContentInset(), visibleRect.y());
+        float visibleHeight = visibleRect.height() - std::min(m_controller.obscuredContentInsets().top(), visibleRect.y());
         scale = std::min(widthScale, visibleHeight / containerBounds.height());
     }
 
@@ -152,7 +157,12 @@ void TileCoverageMap::update()
     m_visibleViewportIndicatorLayer.get().setBorderColor(visibleRectIndicatorColor);
 }
 
-void TileCoverageMap::platformCALayerPaintContents(PlatformCALayer* platformCALayer, GraphicsContext& context, const FloatRect&, GraphicsLayerPaintBehavior)
+PlatformLayerIdentifier TileCoverageMap::platformCALayerIdentifier() const
+{
+    return m_layer->layerID();
+}
+
+void TileCoverageMap::platformCALayerPaintContents(PlatformCALayer* platformCALayer, GraphicsContext& context, const FloatRect&, OptionSet<GraphicsLayerPaintBehavior>)
 {
     ASSERT_UNUSED(platformCALayer, platformCALayer == m_layer.ptr());
     m_controller.tileGrid().drawTileMapContents(context.platformContext(), m_layer.get().bounds());

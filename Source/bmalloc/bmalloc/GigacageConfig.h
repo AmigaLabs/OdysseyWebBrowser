@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2020-2021 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,10 +27,8 @@
 
 #include "Algorithm.h"
 #include "GigacageKind.h"
-#include "StdLibExtras.h"
+#include <bit>
 #include <inttypes.h>
-
-#if BENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
 
 namespace WebConfig {
 
@@ -39,45 +37,43 @@ extern "C" Slot g_config[];
 
 } // namespace WebConfig
 
-#endif // BENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
-
 namespace Gigacage {
 
 struct Config {
     void* basePtr(Kind kind) const
     {
         RELEASE_BASSERT(kind < NumberOfKinds);
-        return basePtrs[kind];
+        return basePtrs[static_cast<size_t>(kind)];
     }
 
     void setBasePtr(Kind kind, void* ptr)
     {
         RELEASE_BASSERT(kind < NumberOfKinds);
-        basePtrs[kind] = ptr;
+        basePtrs[static_cast<size_t>(kind)] = ptr;
     }
 
     void* allocBasePtr(Kind kind) const
     {
         RELEASE_BASSERT(kind < NumberOfKinds);
-        return allocBasePtrs[kind];
+        return allocBasePtrs[static_cast<size_t>(kind)];
     }
 
     void setAllocBasePtr(Kind kind, void* ptr)
     {
         RELEASE_BASSERT(kind < NumberOfKinds);
-        allocBasePtrs[kind] = ptr;
+        allocBasePtrs[static_cast<size_t>(kind)] = ptr;
     }
 
     size_t allocSize(Kind kind) const
     {
         RELEASE_BASSERT(kind < NumberOfKinds);
-        return allocSizes[kind];
+        return allocSizes[static_cast<size_t>(kind)];
     }
 
     void setAllocSize(Kind kind, size_t size)
     {
         RELEASE_BASSERT(kind < NumberOfKinds);
-        allocSizes[kind] = size;
+        allocSizes[static_cast<size_t>(kind)] = size;
     }
 
     // All the fields in this struct should be chosen such that their
@@ -97,34 +93,23 @@ struct Config {
 
     void* start;
     size_t totalSize;
-    void* basePtrs[NumberOfKinds];
-    void* allocBasePtrs[NumberOfKinds];
-    size_t allocSizes[NumberOfKinds];
+    void* basePtrs[static_cast<size_t>(NumberOfKinds)];
+    void* allocBasePtrs[static_cast<size_t>(NumberOfKinds)];
+    size_t allocSizes[static_cast<size_t>(NumberOfKinds)];
 };
 
-#if BENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
-
-constexpr size_t startSlotOfGigacageConfig = 0;
+// The first 4 slots are reserved for the use of the ExecutableAllocator.
+constexpr size_t startSlotOfGigacageConfig = 4;
 constexpr size_t startOffsetOfGigacageConfig = startSlotOfGigacageConfig * sizeof(WebConfig::Slot);
 
-constexpr size_t reservedSlotsForGigacageConfig = 10;
+constexpr size_t reservedSlotsForGigacageConfig = 16;
 constexpr size_t reservedBytesForGigacageConfig = reservedSlotsForGigacageConfig * sizeof(WebConfig::Slot);
 
 constexpr size_t alignmentOfGigacageConfig = std::alignment_of<Gigacage::Config>::value;
 
-static_assert(sizeof(Gigacage::Config) <= reservedBytesForGigacageConfig);
+static_assert(sizeof(Gigacage::Config) + startOffsetOfGigacageConfig <= reservedBytesForGigacageConfig);
 static_assert(bmalloc::roundUpToMultipleOf<alignmentOfGigacageConfig>(startOffsetOfGigacageConfig) == startOffsetOfGigacageConfig);
 
-#define g_gigacageConfig (*bmalloc::bitwise_cast<Gigacage::Config*>(&WebConfig::g_config[Gigacage::startSlotOfGigacageConfig]))
-
-#else // not BENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
-
-extern "C" BEXPORT Config g_gigacageConfig;
-
-#endif // BENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
+#define g_gigacageConfig (*std::bit_cast<Gigacage::Config*>(&WebConfig::g_config[Gigacage::startSlotOfGigacageConfig]))
 
 } // namespace Gigacage
-
-#if !BENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
-using Gigacage::g_gigacageConfig;
-#endif

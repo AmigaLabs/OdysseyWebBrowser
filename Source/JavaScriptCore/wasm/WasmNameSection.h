@@ -32,6 +32,8 @@
 #include <wtf/Vector.h>
 #include <utility>
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace JSC { namespace Wasm {
 
 struct NameSection : public ThreadSafeRefCounted<NameSection> {
@@ -62,7 +64,7 @@ public:
 
     std::pair<const Name*, RefPtr<NameSection>> get(size_t functionIndexSpace)
     {
-        return std::make_pair(functionIndexSpace < functionNames.size() ? &functionNames[functionIndexSpace] : nullptr, makeRefPtr(this));
+        return std::make_pair(functionIndexSpace < functionNames.size() ? &functionNames[functionIndexSpace] : nullptr, RefPtr { this });
     }
     Name moduleName;
     Name moduleHash;
@@ -70,3 +72,5 @@ public:
 };
 
 } } // namespace JSC::Wasm
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

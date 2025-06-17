@@ -24,87 +24,53 @@
  */
 
 #import "config.h"
-#import "Test.h"
 
 #if PLATFORM(MAC)
 
 #import "InstanceMethodSwizzler.h"
 #import "PlatformUtilities.h"
+#import "Test.h"
 #import "TestWKWebView.h"
 #import "WKWebViewConfigurationExtras.h"
+#import "WKWebViewForTestingImmediateActions.h"
 #import <WebKit/WKWebViewPrivate.h>
 #import <WebKit/_WKHitTestResult.h>
+#import <pal/spi/cocoa/RevealSPI.h>
 #import <pal/spi/mac/NSImmediateActionGestureRecognizerSPI.h>
 #import <wtf/RetainPtr.h>
 
-static NSPoint gSwizzledImmediateActionLocation = NSZeroPoint;
-static NSPoint swizzledImmediateActionLocationInView(id, SEL, NSView *)
-{
-    return gSwizzledImmediateActionLocation;
-}
-
-using ImmediateActionHitTestResult = std::pair<RetainPtr<_WKHitTestResult>, _WKImmediateActionType>;
-
-@interface WKWebViewForTestingImmediateActions : TestWKWebView
-
-@property (nonatomic, readonly) NSImmediateActionGestureRecognizer *immediateActionGesture;
-
-- (ImmediateActionHitTestResult)simulateImmediateAction:(NSPoint)location;
-
+@interface RVPresentingContext (Internal)
+@property (nonatomic, readonly, weak) id<RVPresenterHighlightDelegate> highlightDelegate;
 @end
 
-@implementation WKWebViewForTestingImmediateActions {
-    bool _hasReturnedImmediateActionController;
-    RetainPtr<_WKHitTestResult> _hitTestResult;
-    _WKImmediateActionType _actionType;
-}
+static RetainPtr<RVPresentingContext> lastPresentingContext;
 
-- (id)_immediateActionAnimationControllerForHitTestResult:(_WKHitTestResult *)hitTestResult withType:(_WKImmediateActionType)type userData:(id <NSSecureCoding>)userData
+@implementation RVPresentingContext (ImmediateActionTests)
+
+- (instancetype)swizzled_initWithPointerLocationInView:(NSPoint)location inView:(NSView *)view highlightDelegate:(id<RVPresenterHighlightDelegate>)delegate
 {
-    _hasReturnedImmediateActionController = true;
-    _hitTestResult = hitTestResult;
-    _actionType = type;
-    return [super _immediateActionAnimationControllerForHitTestResult:hitTestResult withType:type userData:userData];
-}
-
-- (NSImmediateActionGestureRecognizer *)immediateActionGesture
-{
-    for (NSGestureRecognizer *gesture in [self gestureRecognizers]) {
-        if ([gesture isKindOfClass:NSImmediateActionGestureRecognizer.class])
-            return static_cast<NSImmediateActionGestureRecognizer *>(gesture);
-    }
-    return nil;
-}
-
-- (ImmediateActionHitTestResult)simulateImmediateAction:(NSPoint)location
-{
-    auto immediateActionGesture = self.immediateActionGesture;
-    if (!immediateActionGesture.delegate)
-        return ImmediateActionHitTestResult { nil, _WKImmediateActionNone };
-
-    _hasReturnedImmediateActionController = false;
-
-    InstanceMethodSwizzler swizzleLocationInView {
-        NSImmediateActionGestureRecognizer.class,
-        @selector(locationInView:),
-        reinterpret_cast<IMP>(swizzledImmediateActionLocationInView),
-    };
-
-    gSwizzledImmediateActionLocation = location;
-    [immediateActionGesture.delegate immediateActionRecognizerWillPrepare:immediateActionGesture];
-
-    TestWebKitAPI::Util::run(&_hasReturnedImmediateActionController);
-
-    _hasReturnedImmediateActionController = false;
-    return { std::exchange(_hitTestResult, nil), std::exchange(_actionType, _WKImmediateActionNone) };
+    lastPresentingContext = [self swizzled_initWithPointerLocationInView:location inView:view highlightDelegate:delegate];
+    return lastPresentingContext.get();
 }
 
 @end
 
 namespace TestWebKitAPI {
 
+static void swizzlePresentingContextInitialization()
+{
+    auto originalMethod = class_getInstanceMethod(RVPresentingContext.class, @selector(initWithPointerLocationInView:inView:highlightDelegate:));
+    auto swizzledMethod = class_getInstanceMethod(RVPresentingContext.class, @selector(swizzled_initWithPointerLocationInView:inView:highlightDelegate:));
+    auto originalImplementation = method_getImplementation(originalMethod);
+    auto swizzledImplementation = method_getImplementation(swizzledMethod);
+    class_replaceMethod(RVPresentingContext.class, @selector(swizzled_initWithPointerLocationInView:inView:highlightDelegate:), originalImplementation, method_getTypeEncoding(originalMethod));
+    class_replaceMethod(RVPresentingContext.class, @selector(initWithPointerLocationInView:inView:highlightDelegate:), swizzledImplementation, method_getTypeEncoding(swizzledMethod));
+}
+
 TEST(ImmediateActionTests, ImmediateActionOverText)
 {
+    swizzlePresentingContextInitialization();
+
     auto webView = adoptNS([[WKWebViewForTestingImmediateActions alloc] initWithFrame:NSMakeRect(0, 0, 500, 500)]);
     [webView synchronouslyLoadHTMLString:@"<div style='font-size: 32px;'>Foobar</div>"];
 
@@ -112,6 +78,7 @@ TEST(ImmediateActionTests, ImmediateActionOverText)
     EXPECT_NOT_NULL([webView immediateActionGesture].animationController);
     EXPECT_EQ(actionType, _WKImmediateActionLookupText);
     EXPECT_WK_STREQ([hitTestResult lookupText], "Foobar");
+    EXPECT_NOT_NULL([lastPresentingContext highlightDelegate]);
 }
 
 TEST(ImmediateActionTests, ImmediateActionOverBody)

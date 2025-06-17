@@ -37,8 +37,8 @@ class RTCDataChannelRemoteHandlerConnection : public ThreadSafeRefCounted<RTCDat
 public:
     virtual ~RTCDataChannelRemoteHandlerConnection() = default;
 
-    virtual void connectToSource(RTCDataChannelRemoteHandler&, ScriptExecutionContextIdentifier, RTCDataChannelIdentifier, RTCDataChannelIdentifier) = 0;
-    virtual void sendData(RTCDataChannelIdentifier, bool isRaw, const unsigned char*, size_t) = 0;
+    virtual void connectToSource(RTCDataChannelRemoteHandler&, std::optional<ScriptExecutionContextIdentifier>, RTCDataChannelIdentifier, RTCDataChannelIdentifier) = 0;
+    virtual void sendData(RTCDataChannelIdentifier, bool isRaw, std::span<const uint8_t>) = 0;
     virtual void close(RTCDataChannelIdentifier) = 0;
 };
 

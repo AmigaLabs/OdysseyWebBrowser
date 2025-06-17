@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2010-2021 Apple Inc. All rights reserved.
  * Portions Copyright (c) 2011 Motorola Mobility, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,14 +27,18 @@
 #pragma once
 
 #include "APIObject.h"
-#include "Attachment.h"
+#include "Connection.h"
 #include "DebuggableInfoData.h"
 #include "MessageReceiver.h"
 #include "WebInspectorUtilities.h"
+#include "WebPageProxy.h"
+#include "WebPageProxyIdentifier.h"
 #include <JavaScriptCore/InspectorFrontendChannel.h>
+#include <WebCore/Color.h>
 #include <WebCore/FloatRect.h>
 #include <WebCore/InspectorClient.h>
 #include <WebCore/InspectorFrontendClient.h>
+#include <wtf/CheckedPtr.h>
 #include <wtf/Forward.h>
 #include <wtf/RefPtr.h>
 #include <wtf/WeakPtr.h>
@@ -47,6 +51,7 @@
 #include <wtf/RetainPtr.h>
 #include <wtf/RunLoop.h>
 
+OBJC_CLASS NSString;
 OBJC_CLASS NSURL;
 OBJC_CLASS NSView;
 OBJC_CLASS NSWindow;
@@ -54,6 +59,12 @@ OBJC_CLASS WKWebInspectorUIProxyObjCAdapter;
 OBJC_CLASS WKInspectorViewController;
 #elif PLATFORM(WIN)
 #include "WebView.h"
+#elif PLATFORM(GTK)
+#include <wtf/glib/GWeakPtr.h>
+#elif PLATFORM(WPE)
+#include "WPEWebView.h"
+#include <wtf/glib/GRefPtr.h>
+typedef struct _WPEToplevel WPEToplevel;
 #endif
 
 namespace WebCore {
@@ -68,7 +79,6 @@ namespace WebKit {
 
 class WebFrameProxy;
 class WebInspectorUIProxyClient;
-class WebPageProxy;
 class WebPreferences;
 #if ENABLE(INSPECTOR_EXTENSIONS)
 class WebInspectorUIExtensionControllerProxy;
@@ -97,17 +107,21 @@ public:
     explicit WebInspectorUIProxy(WebPageProxy&);
     virtual ~WebInspectorUIProxy();
 
+    void ref() const final { API::ObjectImpl<API::Object::Type::Inspector>::ref(); }
+    void deref() const final { API::ObjectImpl<API::Object::Type::Inspector>::deref(); }
+
     void invalidate();
 
     API::InspectorClient& inspectorClient() { return *m_inspectorClient; }
     void setInspectorClient(std::unique_ptr<API::InspectorClient>&&);
 
     // Public APIs
-    WebPageProxy* inspectedPage() const { return m_inspectedPage; }
-    WebPageProxy* inspectorPage() const { return m_inspectorPage; }
+    RefPtr<WebPageProxy> protectedInspectedPage() const { return m_inspectedPage.get(); }
+    RefPtr<WebPageProxy> protectedInspectorPage() const { return m_inspectorPage.get(); }
 
 #if ENABLE(INSPECTOR_EXTENSIONS)
     WebInspectorUIExtensionControllerProxy* extensionController() const { return m_extensionController.get(); }
+    RefPtr<WebInspectorUIExtensionControllerProxy> protectedExtensionController() const;
 #endif
 
     bool isConnected() const { return !!m_inspectorPage; }
@@ -128,7 +142,8 @@ public:
 
 #if PLATFORM(MAC)
     enum class InspectionTargetType { Local, Remote };
-    static RetainPtr<NSWindow> createFrontendWindow(NSRect savedWindowFrame, InspectionTargetType);
+    static RetainPtr<NSWindow> createFrontendWindow(NSRect savedWindowFrame, InspectionTargetType, WebPageProxy* inspectedPage = nullptr);
+    static void showSavePanel(NSWindow *, NSURL *, Vector<WebCore::InspectorFrontendClient::SaveData>&&, bool forceSaveAs, CompletionHandler<void(NSURL *)>&&);
 
     void didBecomeActive();
 
@@ -136,7 +151,6 @@ public:
     void inspectedViewFrameDidChange(CGFloat = 0);
     void windowFrameDidChange();
     void windowFullScreenDidChange();
-    NSWindow *inspectorWindow() const { return m_inspectorWindow.get(); }
 
     void closeFrontendPage();
     void closeFrontendAfterInactivityTimerFired();
@@ -148,15 +162,20 @@ public:
     const WebCore::FloatRect& sheetRect() const { return m_sheetRect; }
 #endif
 
+#if PLATFORM(WIN)
+    static void showSavePanelForSingleFile(HWND, Vector<WebCore::InspectorFrontendClient::SaveData>&&);
+#endif
+
 #if PLATFORM(GTK)
-    GtkWidget* inspectorView() const { return m_inspectorView; };
+    GtkWidget* inspectorView() const { return m_inspectorView.get(); };
     void setClient(std::unique_ptr<WebInspectorUIProxyClient>&&);
 #endif
 
     void showConsole();
     void showResources();
-    void showMainResourceForFrame(WebFrameProxy*);
+    void showMainResourceForFrame(WebCore::FrameIdentifier);
     void openURLExternally(const String& url);
+    void revealFileExternally(const String& path);
 
     AttachmentSide attachmentSide() const { return m_attachmentSide; }
     bool isAttached() const { return m_isAttached; }
@@ -180,6 +199,7 @@ public:
     void toggleElementSelection();
 
     bool isUnderTest() const { return m_underTest; }
+    void markAsUnderTest() { m_underTest = true; }
 
     void setDiagnosticLoggingAvailable(bool);
 
@@ -209,7 +229,7 @@ private:
     void sendMessageToFrontend(const String& message) override;
     ConnectionType connectionType() const override { return ConnectionType::Local; }
 
-    WebPageProxy* platformCreateFrontendPage();
+    RefPtr<WebPageProxy> platformCreateFrontendPage();
     void platformCreateFrontendWindow();
     void platformCloseFrontendPageAndWindow();
 
@@ -225,27 +245,30 @@ private:
     void platformOpenURLExternally(const String&);
     void platformInspectedURLChanged(const String&);
     void platformShowCertificate(const WebCore::CertificateInfo&);
-    unsigned platformInspectedWindowHeight();
-    unsigned platformInspectedWindowWidth();
     void platformAttach();
     void platformDetach();
     void platformSetAttachedWindowHeight(unsigned);
     void platformSetAttachedWindowWidth(unsigned);
     void platformSetSheetRect(const WebCore::FloatRect&);
     void platformStartWindowDrag();
-    void platformSave(const String& filename, const String& content, bool base64Encoded, bool forceSaveAs);
-    void platformAppend(const String& filename, const String& content);
+    void platformRevealFileExternally(const String&);
+    void platformSave(Vector<WebCore::InspectorFrontendClient::SaveData>&&, bool forceSaveAs);
+    void platformLoad(const String& path, CompletionHandler<void(const String&)>&&);
+    void platformPickColorFromScreen(CompletionHandler<void(const std::optional<WebCore::Color>&)>&&);
 
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || PLATFORM(GTK)
     bool platformCanAttach(bool webProcessCanAttach);
+#elif PLATFORM(WPE)
+    bool platformCanAttach(bool) { return false; }
 #else
     bool platformCanAttach(bool webProcessCanAttach) { return webProcessCanAttach; }
 #endif
 
     // Called by WebInspectorUIProxy messages
-    void openLocalInspectorFrontend(bool canAttach, bool underTest);
-    void setFrontendConnection(IPC::Attachment);
+    void requestOpenLocalInspectorFrontend();
+    void setFrontendConnection(IPC::Connection::Handle&&);
 
+    void openLocalInspectorFrontend();
     void sendMessageToBackend(const String&);
     void frontendLoaded();
     void didClose();
@@ -253,14 +276,21 @@ private:
     void bringInspectedPageToFront();
     void attachAvailabilityChanged(bool);
     void setForcedAppearance(WebCore::InspectorFrontendClient::Appearance);
+    void effectiveAppearanceDidChange(WebCore::InspectorFrontendClient::Appearance);
     void inspectedURLChanged(const String&);
     void showCertificate(const WebCore::CertificateInfo&);
+    void setInspectorPageDeveloperExtrasEnabled(bool);
     void elementSelectionChanged(bool);
     void timelineRecordingChanged(bool);
-    void setDeveloperPreferenceOverride(WebCore::InspectorClient::DeveloperPreference, std::optional<bool>);
 
-    void save(const String& filename, const String& content, bool base64Encoded, bool forceSaveAs);
-    void append(const String& filename, const String& content);
+    void setDeveloperPreferenceOverride(WebCore::InspectorClient::DeveloperPreference, std::optional<bool>);
+#if ENABLE(INSPECTOR_NETWORK_THROTTLING)
+    void setEmulatedConditions(std::optional<int64_t>&& bytesPerSecondLimit);
+#endif
+
+    void save(Vector<WebCore::InspectorFrontendClient::SaveData>&&, bool forceSaveAs);
+    void load(const String& path, CompletionHandler<void(const String&)>&&);
+    void pickColorFromScreen(CompletionHandler<void(const std::optional<WebCore::Color>&)>&&);
 
     bool canAttach() const { return m_canAttach; }
     bool shouldOpenAttached();
@@ -270,6 +300,7 @@ private:
     unsigned inspectionLevel() const;
 
     WebPreferences& inspectorPagePreferences() const;
+    Ref<WebPreferences> protectedInspectorPagePreferences() const;
 
 #if PLATFORM(MAC)
     void applyForcedAppearance();
@@ -285,9 +316,10 @@ private:
     void windowReceivedMessage(HWND, UINT, WPARAM, LPARAM) override;
 #endif
 
-    WebPageProxy* m_inspectedPage { nullptr };
-    WebPageProxy* m_inspectorPage { nullptr };
+    WeakPtr<WebPageProxy> m_inspectedPage;
+    WeakPtr<WebPageProxy> m_inspectorPage;
     std::unique_ptr<API::InspectorClient> m_inspectorClient;
+    WebPageProxyIdentifier m_inspectedPageIdentifier;
 
 #if ENABLE(INSPECTOR_EXTENSIONS)
     RefPtr<WebInspectorUIExtensionControllerProxy> m_extensionController;
@@ -303,6 +335,7 @@ private:
     bool m_elementSelectionActive { false };
     bool m_ignoreElementSelectionChange { false };
     bool m_isActiveFrontend { false };
+    bool m_isOpening { false };
     bool m_closing { false };
 
     AttachmentSide m_attachmentSide {AttachmentSide::Bottom};
@@ -312,18 +345,20 @@ private:
     RetainPtr<NSWindow> m_inspectorWindow;
     RetainPtr<WKWebInspectorUIProxyObjCAdapter> m_objCAdapter;
     HashMap<String, RetainPtr<NSURL>> m_suggestedToActualURLMap;
-    RunLoop::Timer<WebInspectorUIProxy> m_closeFrontendAfterInactivityTimer;
+    RunLoop::Timer m_closeFrontendAfterInactivityTimer;
     String m_urlString;
     WebCore::FloatRect m_sheetRect;
     WebCore::InspectorFrontendClient::Appearance m_frontendAppearance { WebCore::InspectorFrontendClient::Appearance::System };
     bool m_isObservingContentLayoutRect { false };
 #elif PLATFORM(GTK)
     std::unique_ptr<WebInspectorUIProxyClient> m_client;
-    GtkWidget* m_inspectorView { nullptr };
-    GtkWidget* m_inspectorWindow { nullptr };
+    GWeakPtr<GtkWidget> m_inspectorView;
+    GWeakPtr<GtkWidget> m_inspectorWindow;
     GtkWidget* m_headerBar { nullptr };
     String m_inspectedURLString;
-    bool m_isOpening { false };
+#elif PLATFORM(WPE)
+    RefPtr<WKWPE::View> m_inspectorView;
+    GRefPtr<WPEToplevel> m_inspectorWindow;
 #elif PLATFORM(WIN)
     HWND m_inspectedViewWindow { nullptr };
     HWND m_inspectedViewParentWindow { nullptr };

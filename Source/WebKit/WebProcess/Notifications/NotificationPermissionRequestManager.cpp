@@ -26,7 +26,8 @@
 #include "config.h"
 #include "NotificationPermissionRequestManager.h"
 
-#include "WebCoreArgumentCoders.h"
+#include "MessageSenderInlines.h"
+#include "NotificationManagerMessageHandlerMessages.h"
 #include "WebPage.h"
 #include "WebPageProxyMessages.h"
 #include "WebProcess.h"
@@ -38,6 +39,11 @@
 
 #if ENABLE(NOTIFICATIONS)
 #include "WebNotificationManager.h"
+#endif
+
+#if ENABLE(WEB_PUSH_NOTIFICATIONS)
+#include "NetworkProcessConnection.h"
+#include <WebCore/DeprecatedGlobalSettings.h>
 #endif
 
 namespace WebKit {
@@ -71,20 +77,21 @@ NotificationPermissionRequestManager::~NotificationPermissionRequestManager()
 #if ENABLE(NOTIFICATIONS)
 void NotificationPermissionRequestManager::startRequest(const SecurityOriginData& securityOrigin, PermissionHandler&& permissionHandler)
 {
-    auto permission = permissionLevel(securityOrigin);
-    if (permission != Permission::Default)
-        return permissionHandler(permission);
-
     auto addResult = m_requestsPerOrigin.add(securityOrigin, PermissionHandlers { });
     addResult.iterator->value.append(WTFMove(permissionHandler));
     if (!addResult.isNewEntry)
         return;
 
-    m_page->sendWithAsyncReply(Messages::WebPageProxy::RequestNotificationPermission(securityOrigin.toString()), [this, protectedThis = makeRef(*this), permissionHandler = WTFMove(permissionHandler), securityOrigin](bool allowed) mutable {
-        WebProcess::singleton().supplement<WebNotificationManager>()->didUpdateNotificationDecision(securityOrigin.toString(), allowed);
+    m_page->sendWithAsyncReply(Messages::WebPageProxy::RequestNotificationPermission(securityOrigin.toString()), [this, protectedThis = Ref { *this }, securityOrigin, permissionHandler = WTFMove(permissionHandler)](bool allowed) mutable {
 
-        auto permissionHandlers = m_requestsPerOrigin.take(securityOrigin);
-        callPermissionHandlersWith(permissionHandlers, allowed ? Permission::Granted : Permission::Denied);
+        auto innerPermissionHandler = [this, protectedThis = Ref { *this }, securityOrigin, permissionHandler = WTFMove(permissionHandler)] (bool allowed) mutable {
+            WebProcess::singleton().protectedNotificationManager()->didUpdateNotificationDecision(securityOrigin.toString(), allowed);
+
+            auto permissionHandlers = m_requestsPerOrigin.take(securityOrigin);
+            callPermissionHandlersWith(permissionHandlers, allowed ? Permission::Granted : Permission::Denied);
+        };
+
+        innerPermissionHandler(allowed);
     });
 }
 
@@ -101,7 +108,7 @@ auto NotificationPermissionRequestManager::permissionLevel(const SecurityOriginD
     if (!m_page->corePage()->settings().notificationsEnabled())
         return Permission::Denied;
     
-    return WebProcess::singleton().supplement<WebNotificationManager>()->policyForOrigin(securityOrigin.toString());
+    return WebProcess::singleton().protectedNotificationManager()->policyForOrigin(securityOrigin.toString());
 #else
     UNUSED_PARAM(securityOrigin);
     return Permission::Denied;
@@ -111,7 +118,7 @@ auto NotificationPermissionRequestManager::permissionLevel(const SecurityOriginD
 void NotificationPermissionRequestManager::setPermissionLevelForTesting(const String& originString, bool allowed)
 {
 #if ENABLE(NOTIFICATIONS)
-    WebProcess::singleton().supplement<WebNotificationManager>()->didUpdateNotificationDecision(originString, allowed);
+    WebProcess::singleton().protectedNotificationManager()->didUpdateNotificationDecision(originString, allowed);
 #else
     UNUSED_PARAM(originString);
     UNUSED_PARAM(allowed);
@@ -121,7 +128,7 @@ void NotificationPermissionRequestManager::setPermissionLevelForTesting(const St
 void NotificationPermissionRequestManager::removeAllPermissionsForTesting()
 {
 #if ENABLE(NOTIFICATIONS)
-    WebProcess::singleton().supplement<WebNotificationManager>()->removeAllPermissionsForTesting();
+    WebProcess::singleton().protectedNotificationManager()->removeAllPermissionsForTesting();
 #endif
 }
 

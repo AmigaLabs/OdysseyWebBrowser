@@ -25,6 +25,7 @@
 
 #include "config.h"
 #include "SpeechRecognitionCaptureSource.h"
+#include <wtf/TZoneMallocInlines.h>
 
 #if ENABLE(MEDIA_STREAM)
 #include "CaptureDeviceManager.h"
@@ -33,6 +34,8 @@
 #endif
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SpeechRecognitionCaptureSource);
 
 void SpeechRecognitionCaptureSource::mute()
 {
@@ -62,9 +65,9 @@ std::optional<CaptureDevice> SpeechRecognitionCaptureSource::findCaptureDevice()
     return captureDevice;
 }
 
-CaptureSourceOrError SpeechRecognitionCaptureSource::createRealtimeMediaSource(const CaptureDevice& captureDevice)
+CaptureSourceOrError SpeechRecognitionCaptureSource::createRealtimeMediaSource(const CaptureDevice& captureDevice, PageIdentifier pageIdentifier)
 {
-    return RealtimeMediaSourceCenter::singleton().audioCaptureFactory().createAudioCaptureSource(captureDevice, "SpeechID"_s, { });
+    return RealtimeMediaSourceCenter::singleton().audioCaptureFactory().createAudioCaptureSource(captureDevice, { "SpeechID"_s, "SpeechID"_s }, { }, pageIdentifier);
 }
 
 SpeechRecognitionCaptureSource::SpeechRecognitionCaptureSource(SpeechRecognitionConnectionClientIdentifier clientIdentifier, DataCallback&& dataCallback, StateUpdateCallback&& stateUpdateCallback, Ref<RealtimeMediaSource>&& source)

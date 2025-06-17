@@ -47,8 +47,6 @@ WallTime wallTimeForEvent(const GdkEventType* event)
 template<>
 WallTime wallTimeForEvent(const GdkEvent*);
 
-String defaultGtkSystemFont();
-
 WEBCORE_EXPORT unsigned stateModifierForGdkButton(unsigned button);
 
 WEBCORE_EXPORT OptionSet<DragOperation> gdkDragActionToDragOperation(GdkDragAction);
@@ -56,5 +54,9 @@ WEBCORE_EXPORT GdkDragAction dragOperationToGdkDragActions(OptionSet<DragOperati
 WEBCORE_EXPORT GdkDragAction dragOperationToSingleGdkDragAction(OptionSet<DragOperation>);
 
 void monitorWorkArea(GdkMonitor*, GdkRectangle*);
+
+bool shouldUseOverlayScrollbars();
+
+WEBCORE_EXPORT bool eventModifiersContainCapsLock(GdkEvent*);
 
 } // namespace WebCore

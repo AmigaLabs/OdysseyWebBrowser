@@ -1,5 +1,5 @@
 set(jsc_SOURCES ../jsc.cpp)
-if (NOT "${PORT}" STREQUAL "MorphOS")
+if (NOT "${PORT}" STREQUAL "MorphOS" AND NOT "${PORT}" STREQUAL "MUI")
     set(jsc_LIBRARIES $(jsc_LIBRARIES)
         ${CMAKE_DL_LIBS}
     )
@@ -17,7 +17,7 @@ set(jsc_PRIVATE_INCLUDE_DIRECTORIES
     $<TARGET_PROPERTY:JavaScriptCore,INCLUDE_DIRECTORIES>
 )
 
-if (WTF_OS_MAC_OS_X)
+if (WTF_OS_MACOS)
     list(APPEND jsc_LIBRARIES edit)
 endif ()
 
@@ -30,17 +30,20 @@ WEBKIT_EXECUTABLE_DECLARE(jsc)
 if (DEVELOPER_MODE)
     set(testapi_SOURCES
         ../API/tests/CompareAndSwapTest.cpp
-        ../API/tests/CustomGlobalObjectClassTest.c
         ../API/tests/ExecutionTimeLimitTest.cpp
         ../API/tests/FunctionOverridesTest.cpp
+        ../API/tests/FunctionToStringTests.cpp
         ../API/tests/GlobalContextWithFinalizerTest.cpp
         ../API/tests/JSONParseTest.cpp
         ../API/tests/JSObjectGetProxyTargetTest.cpp
         ../API/tests/MultithreadedMultiVMExecutionTest.cpp
         ../API/tests/PingPongStackOverflowTest.cpp
         ../API/tests/TypedArrayCTest.cpp
-        ../API/tests/testapi.c
         ../API/tests/testapi.cpp
+    )
+    set(testapi_C_SOURCES
+        ../API/tests/CustomGlobalObjectClassTest.c
+        ../API/tests/testapi.c
     )
     set(testapi_DEFINITIONS ${jsc_PRIVATE_DEFINITIONS})
     set(testapi_PRIVATE_INCLUDE_DIRECTORIES ${jsc_PRIVATE_INCLUDE_DIRECTORIES})

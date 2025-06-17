@@ -68,6 +68,8 @@ public:
     }
     static Operand tmp(uint32_t index) { return Operand(OperandKind::Tmp, index); }
 
+    Operand& operator=(const Operand&) = default;
+
     OperandKind kind() const { return m_kind; }
     int value() const { return m_operand; }
     VirtualRegister virtualRegister() const
@@ -77,7 +79,7 @@ public:
     }
     uint64_t asBits() const
     {
-        uint64_t bits = bitwise_cast<uint64_t>(*this);
+        uint64_t bits = std::bit_cast<uint64_t>(*this);
         ASSERT(bits < (1ULL << maxBits));
         return bits;
     }
@@ -126,7 +128,7 @@ inline bool Operand::isValid() const
 
 inline Operand Operand::fromBits(uint64_t value)
 {
-    Operand result = bitwise_cast<Operand>(value);
+    Operand result = std::bit_cast<Operand>(value);
     ASSERT(result.isValid());
     return result;
 }
@@ -156,20 +158,18 @@ public:
     }
 
     explicit Operands(size_t numArguments, size_t numLocals, size_t numTmps, const T& initialValue)
-        : m_values(numArguments + numLocals + numTmps)
+        : m_values(numArguments + numLocals + numTmps, initialValue)
         , m_numArguments(numArguments)
         , m_numLocals(numLocals)
     {
-        m_values.fill(initialValue);
     }
     
     template<typename U, typename V>
     explicit Operands(OperandsLikeTag, const Operands<U, V>& other, const T& initialValue = T())
-        : m_values(other.size())
+        : m_values(other.size(), initialValue)
         , m_numArguments(other.numberOfArguments())
         , m_numLocals(other.numberOfLocals())
     {
-        m_values.fill(initialValue);
     }
 
     template<typename U>
@@ -398,7 +398,7 @@ public:
         
         return m_values == other.m_values;
     }
-    
+
     void dumpInContext(PrintStream& out, DumpContext* context) const;
     void dump(PrintStream& out) const;
     

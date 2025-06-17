@@ -27,6 +27,7 @@
 #pragma once
 
 #include <wtf/EnumTraits.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -43,7 +44,7 @@ enum ContextMenuAction {
     ContextMenuItemTagDownloadImageToDisk,
     ContextMenuItemTagCopyImageToClipboard,
 #if PLATFORM(GTK)
-    ContextMenuItemTagCopyImageUrlToClipboard,
+    ContextMenuItemTagCopyImageURLToClipboard,
 #endif
     ContextMenuItemTagOpenFrameInNewWindow,
     ContextMenuItemTagCopy,
@@ -76,8 +77,11 @@ enum ContextMenuAction {
     ContextMenuItemTagIgnoreSpelling,
     ContextMenuItemTagLearnSpelling,
     ContextMenuItemTagOther,
-    ContextMenuItemTagSearchInSpotlight,
-    ContextMenuItemTagSearchWeb,
+#if PLATFORM(GTK)
+    ContextMenuItemTagSearchWeb = 38,
+#else
+    ContextMenuItemTagSearchWeb = 21,
+#endif
     ContextMenuItemTagLookUpInDictionary,
     ContextMenuItemTagOpenWithDefaultApplication,
     ContextMenuItemPDFActualSize,
@@ -142,27 +146,40 @@ enum ContextMenuAction {
     ContextMenuItemTagMediaPlayPause,
     ContextMenuItemTagMediaMute,
     ContextMenuItemTagDictationAlternative,
+    ContextMenuItemTagPlayAllAnimations,
+    ContextMenuItemTagPauseAllAnimations,
+    ContextMenuItemTagPlayAnimation,
+    ContextMenuItemTagPauseAnimation,
     ContextMenuItemTagToggleVideoFullscreen,
     ContextMenuItemTagShareMenu,
     ContextMenuItemTagToggleVideoEnhancedFullscreen,
+    ContextMenuItemTagToggleVideoViewer,
     ContextMenuItemTagAddHighlightToCurrentQuickNote,
     ContextMenuItemTagAddHighlightToNewQuickNote,
-    ContextMenuItemTagQuickLookImage,
+    ContextMenuItemTagLookUpImage,
     ContextMenuItemTagTranslate,
+    ContextMenuItemTagWritingTools,
+    ContextMenuItemTagCopySubject,
+    ContextMenuItemPDFSinglePageContinuous,
+    ContextMenuItemPDFTwoPages,
+    ContextMenuItemPDFTwoPagesContinuous,
+    ContextMenuItemTagShowMediaStats,
+    ContextMenuItemTagCopyLinkWithHighlight,
+    ContextMenuItemLastNonCustomTag = ContextMenuItemTagCopyLinkWithHighlight,
     ContextMenuItemBaseCustomTag = 5000,
     ContextMenuItemLastCustomTag = 5999,
     ContextMenuItemBaseApplicationTag = 10000
 };
 
-enum ContextMenuItemType {
-    ActionType,
-    CheckableActionType,
-    SeparatorType,
-    SubmenuType
+enum class ContextMenuItemType : uint8_t {
+    Action,
+    CheckableAction,
+    Separator,
+    Submenu,
 };
 
 class ContextMenuItem {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(ContextMenuItem, WEBCORE_EXPORT);
 public:
     WEBCORE_EXPORT ContextMenuItem(ContextMenuItemType, ContextMenuAction, const String&, ContextMenu* subMenu = 0);
     WEBCORE_EXPORT ContextMenuItem(ContextMenuItemType, ContextMenuAction, const String&, bool enabled, bool checked, unsigned indentationLevel = 0);
@@ -205,29 +222,10 @@ private:
     Vector<ContextMenuItem> m_subMenuItems;
 };
 
-WEBCORE_EXPORT bool isValidContextMenuAction(ContextMenuAction);
-
 } // namespace WebCore
 
 namespace WTF {
 
-template<>
-struct EnumTraits<WebCore::ContextMenuAction> {
-    template<typename T>
-    static std::enable_if_t<sizeof(T) == sizeof(WebCore::ContextMenuAction), bool> isValidEnum(T action)
-    {
-        return WebCore::isValidContextMenuAction(static_cast<WebCore::ContextMenuAction>(action));
-    };
-};
-
-template<> struct EnumTraits<WebCore::ContextMenuItemType> {
-    using values = EnumValues<
-        WebCore::ContextMenuItemType,
-        WebCore::ContextMenuItemType::ActionType,
-        WebCore::ContextMenuItemType::CheckableActionType,
-        WebCore::ContextMenuItemType::SeparatorType,
-        WebCore::ContextMenuItemType::SubmenuType
-    >;
-};
+template<> WEBCORE_EXPORT bool isValidEnum<WebCore::ContextMenuAction>(std::underlying_type_t<WebCore::ContextMenuAction>);
 
 } // namespace WTF

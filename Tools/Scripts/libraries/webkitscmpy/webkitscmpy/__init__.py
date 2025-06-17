@@ -1,4 +1,4 @@
-# Copyright (C) 2020, 2021 Apple Inc. All rights reserved.
+# Copyright (C) 2020-2024 Apple Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -20,9 +20,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import sys
+
+if sys.version_info < (3, 9):  # noqa: UP036
+    raise ImportError("webkitscmpy requires Python 3.9 or above")
+
 import logging
 import os
-import sys
 
 log = logging.getLogger('webkitscmpy')
 
@@ -42,19 +46,24 @@ try:
 except ImportError:
     raise ImportError(
         "'webkitcorepy' could not be found on your Python path.\n" +
-        "You are not running from a WebKit checkout.\n" +
-        "Please install webkitcorepy with `pip install webkitcorepy --extra-index-url <package index URL>`"
+        "You are not running from a complete WebKit checkout.\n" +
+        "See https://github.com/WebKit/WebKit/tree/main/Tools/Scripts/libraries/webkitcorepy"
     )
 
-version = Version(2, 0, 1)
+version = Version(7, 0, 0)
 
 AutoInstall.register(Package('fasteners', Version(0, 15, 0)))
+AutoInstall.register(Package('markupsafe', Version(3, 0, 2), pypi_name='MarkupSafe', wheel=True))
+AutoInstall.register(Package('jinja2', Version(3, 1, 4), implicit_deps=['markupsafe']))
 AutoInstall.register(Package('monotonic', Version(1, 5)))
-AutoInstall.register(Package('whichcraft', Version(0, 6, 1)))
 AutoInstall.register(Package('xmltodict', Version(0, 11, 0)))
+AutoInstall.register(Package('webkitbugspy', Version(0, 8, 0)), local=True)
+
+AutoInstall.register(Package('rapidfuzz', Version(3, 4, 0)))
 
 from webkitscmpy.contributor import Contributor
 from webkitscmpy.commit import Commit
+from webkitscmpy.commit_classifier import CommitClassifier
 from webkitscmpy.pull_request import PullRequest
 from webkitscmpy.scm_base import ScmBase
 

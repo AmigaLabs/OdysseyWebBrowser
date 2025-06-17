@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 Apple Inc. All rights reserved.
+ * Copyright (C) 2019-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,21 +26,21 @@
 #include "config.h"
 #include "TableGrid.h"
 
-#if ENABLE(LAYOUT_FORMATTING_CONTEXT)
-
-#include <wtf/IsoMallocInlines.h>
+#include "RenderObject.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 namespace Layout {
 
-WTF_MAKE_ISO_ALLOCATED_IMPL(TableGrid);
+WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(TableGrid);
+WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(TableGridCell);
 
-TableGrid::Column::Column(const ContainerBox* columnBox)
-    : m_layoutBox(makeWeakPtr(columnBox))
+TableGrid::Column::Column(const ElementBox* columnBox)
+    : m_layoutBox(columnBox)
 {
 }
 
-void TableGrid::Columns::addColumn(const ContainerBox& columnBox)
+void TableGrid::Columns::addColumn(const ElementBox& columnBox)
 {
     m_columnList.append({ &columnBox });
 }
@@ -50,25 +50,25 @@ void TableGrid::Columns::addAnonymousColumn()
     m_columnList.append({ nullptr });
 }
 
-void TableGrid::Rows::addRow(const ContainerBox& rowBox)
+void TableGrid::Rows::addRow(const ElementBox& rowBox)
 {
     m_rowList.append({ rowBox });
 }
 
-TableGrid::Row::Row(const ContainerBox& rowBox)
-    : m_layoutBox(makeWeakPtr(rowBox))
+TableGrid::Row::Row(const ElementBox& rowBox)
+    : m_layoutBox(rowBox)
 {
 }
 
-TableGrid::Cell::Cell(const ContainerBox& cellBox, SlotPosition position, CellSpan span)
-    : m_layoutBox(makeWeakPtr(cellBox))
+TableGridCell::TableGridCell(const ElementBox& cellBox, SlotPosition position, CellSpan span)
+    : m_layoutBox(cellBox)
     , m_position(position)
     , m_span(span)
 {
 }
 
-TableGrid::Slot::Slot(Cell& cell, bool isColumnSpanned, bool isRowSpanned)
-    : m_cell(makeWeakPtr(cell))
+TableGrid::Slot::Slot(TableGridCell& cell, bool isColumnSpanned, bool isRowSpanned)
+    : m_cell(cell)
     , m_isColumnSpanned(isColumnSpanned)
     , m_isRowSpanned(isRowSpanned)
 {
@@ -83,7 +83,7 @@ TableGrid::Slot* TableGrid::slot(SlotPosition position)
     return m_slotMap.get(position);
 }
 
-void TableGrid::appendCell(const ContainerBox& cellBox)
+void TableGrid::appendCell(const ElementBox& cellBox)
 {
     auto rowSpan = cellBox.rowSpan();
     auto columnSpan = cellBox.columnSpan();
@@ -106,7 +106,7 @@ void TableGrid::appendCell(const ContainerBox& cellBox)
             ++initialSlotPosition.column;
         }
     }
-    auto cell = makeUnique<Cell>(cellBox, initialSlotPosition, CellSpan { columnSpan, rowSpan });
+    auto cell = makeUnique<TableGridCell>(cellBox, initialSlotPosition, CellSpan { columnSpan, rowSpan });
     // Row and column spanners create additional slots.
     for (size_t row = 0; row < rowSpan; ++row) {
         for (auto column = cell->startColumn(); column < cell->endColumn(); ++column) {
@@ -129,17 +129,16 @@ void TableGrid::appendCell(const ContainerBox& cellBox)
     m_cells.add(WTFMove(cell));
 }
 
-void TableGrid::insertCell(const ContainerBox& cellBox, const ContainerBox& before)
+void TableGrid::insertCell(const ElementBox& cellBox, const ElementBox& before)
 {
     UNUSED_PARAM(cellBox);
     UNUSED_PARAM(before);
 }
 
-void TableGrid::removeCell(const ContainerBox& cellBox)
+void TableGrid::removeCell(const ElementBox& cellBox)
 {
     UNUSED_PARAM(cellBox);
 }
 
 }
 }
-#endif

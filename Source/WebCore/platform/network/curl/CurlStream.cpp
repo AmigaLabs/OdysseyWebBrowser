@@ -9,7 +9,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
  * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -27,21 +27,25 @@
 #include "CurlStream.h"
 
 #include "CurlStreamScheduler.h"
+#include "SharedBuffer.h"
 #include "SocketStreamError.h"
+#include <wtf/TZoneMallocInlines.h>
 
 #if USE(CURL)
 
 namespace WebCore {
 
-CurlStream::CurlStream(CurlStreamScheduler& scheduler, CurlStreamID streamID, URL&& url)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(CurlStream);
+
+CurlStream::CurlStream(CurlStreamScheduler& scheduler, CurlStreamID streamID, URL&& url, ServerTrustEvaluation serverTrustEvaluation, LocalhostAlias localhostAlias)
     : m_scheduler(scheduler)
     , m_streamID(streamID)
 {
     ASSERT(!isMainThread());
 
-    m_curlHandle = WTF::makeUnique<CurlHandle>();
+    m_curlHandle = makeUnique<CurlHandle>();
 
-    url.setProtocol(url.protocolIs("wss") ? "https" : "http");
+    url.setProtocol(url.protocolIs("wss"_s) ? "https"_s : "http"_s);
     m_curlHandle->setUrl(WTFMove(url));
 
     m_curlHandle->enableConnectionOnly();
@@ -129,10 +133,10 @@ void CurlStream::tryToReceive()
     if (!m_curlHandle)
         return;
 
-    auto receiveBuffer = makeUniqueArray<uint8_t>(kReceiveBufferSize);
+    Vector<uint8_t> receiveBuffer(kReceiveBufferSize);
     size_t bytesReceived = 0;
 
-    auto errorCode = m_curlHandle->receive(receiveBuffer.get(), kReceiveBufferSize, bytesReceived);
+    auto errorCode = m_curlHandle->receive(receiveBuffer.data(), kReceiveBufferSize, bytesReceived);
     if (errorCode != CURLE_OK) {
         if (errorCode != CURLE_AGAIN)
             notifyFailure(errorCode);
@@ -143,8 +147,9 @@ void CurlStream::tryToReceive()
     if (!bytesReceived)
         destroyHandle();
 
-    m_scheduler.callClientOnMainThread(m_streamID, [streamID = m_streamID, buffer = WTFMove(receiveBuffer), length = bytesReceived](Client& client) mutable {
-        client.didReceiveData(streamID, buffer.get(), length);
+    receiveBuffer.resize(bytesReceived);
+    m_scheduler.callClientOnMainThread(m_streamID, [streamID = m_streamID, buffer = SharedBuffer::create(WTFMove(receiveBuffer))](Client& client) {
+        client.didReceiveData(streamID, buffer);
     });
 }
 
@@ -153,10 +158,10 @@ void CurlStream::tryToSend()
     if (!m_curlHandle || !m_sendBuffers.size())
         return;
 
-    auto& elem = m_sendBuffers.first();
+    auto& [buffer, length] = m_sendBuffers.first();
     size_t bytesSent = 0;
 
-    auto errorCode = m_curlHandle->send(std::get<0>(elem).get() + m_sendBufferOffset, std::get<1>(elem) - m_sendBufferOffset, bytesSent);
+    auto errorCode = m_curlHandle->send(buffer.get() + m_sendBufferOffset, length - m_sendBufferOffset, bytesSent);
     if (errorCode != CURLE_OK) {
         if (errorCode != CURLE_AGAIN)
             notifyFailure(errorCode);
@@ -165,7 +170,7 @@ void CurlStream::tryToSend()
 
     m_sendBufferOffset += bytesSent;
 
-    if (m_sendBufferOffset >= std::get<1>(elem)) {
+    if (m_sendBufferOffset >= length) {
         m_sendBuffers.remove(0);
         m_sendBufferOffset = 0;
     }

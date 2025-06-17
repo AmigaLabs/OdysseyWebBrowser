@@ -27,19 +27,27 @@
 
 #include "SQLValue.h"
 #include "SQLiteDatabase.h"
-#include <wtf/Span.h>
+#include <span>
+#include <wtf/CheckedRef.h>
+#include <wtf/TZoneMalloc.h>
 
 struct sqlite3_stmt;
 
 namespace WebCore {
 
-class SQLiteStatement {
-    WTF_MAKE_NONCOPYABLE(SQLiteStatement); WTF_MAKE_FAST_ALLOCATED;
+class SQLiteStatement : public CanMakeThreadSafeCheckedPtr<SQLiteStatement> {
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(SQLiteStatement, WEBCORE_EXPORT);
+    WTF_MAKE_NONCOPYABLE(SQLiteStatement);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(SQLiteStatement);
 public:
     WEBCORE_EXPORT ~SQLiteStatement();
     WEBCORE_EXPORT SQLiteStatement(SQLiteStatement&&);
-    
-    WEBCORE_EXPORT int bindBlob(int index, Span<const uint8_t>);
+
+    // Binds multiple parameters. Returns true if all were successfully bound.
+    template<typename T, typename... Args>
+    bool bind(T, Args&&...);
+
+    WEBCORE_EXPORT int bindBlob(int index, std::span<const uint8_t>);
     WEBCORE_EXPORT int bindBlob(int index, const String&);
     WEBCORE_EXPORT int bindText(int index, StringView);
     WEBCORE_EXPORT int bindInt(int index, int);
@@ -74,9 +82,9 @@ public:
     WEBCORE_EXPORT Vector<uint8_t> columnBlob(int col);
 
     // The returned Span stays valid until the next step() / reset() or destruction of the statement.
-    Span<const uint8_t> columnBlobAsSpan(int col);
+    std::span<const uint8_t> columnBlobAsSpan(int col);
 
-    SQLiteDatabase& database() { return m_database; }
+    SQLiteDatabase& database() { return m_database.get(); }
     
 private:
     friend class SQLiteDatabase;
@@ -85,8 +93,40 @@ private:
     // Returns true if the prepared statement has been stepped at least once using step() but has neither run to completion (returned SQLITE_DONE from step()) nor been reset().
     bool hasStartedStepping();
 
-    SQLiteDatabase& m_database;
+    template<typename T, typename... Args> bool bindImpl(int i, T first, Args&&... args);
+    template<typename T> bool bindImpl(int, T);
+
+    CheckedRef<SQLiteDatabase> m_database;
     sqlite3_stmt* m_statement;
 };
+
+template<typename T, typename... Args>
+inline bool SQLiteStatement::bind(T first, Args&&... args)
+{
+    return bindImpl(1, first, std::forward<Args>(args)...);
+}
+
+template<typename T, typename... Args>
+inline bool SQLiteStatement::bindImpl(int i, T first, Args&&... args)
+{
+    return bindImpl(i, first) && bindImpl(i+1, std::forward<Args>(args)...);
+}
+
+template<typename T>
+inline bool SQLiteStatement::bindImpl(int i, T value)
+{
+    if constexpr (std::is_convertible_v<T, std::span<const uint8_t>>)
+        return bindBlob(i, value) == SQLITE_OK;
+    else if constexpr (std::is_convertible_v<T, StringView>)
+        return bindText(i, value) == SQLITE_OK;
+    else if constexpr (std::is_same_v<T, std::nullptr_t>)
+        return bindNull(i) == SQLITE_OK;
+    else if constexpr (std::is_floating_point_v<T>)
+        return bindDouble(i, value) == SQLITE_OK;
+    else if constexpr (std::is_same_v<T, SQLValue>)
+        return bindValue(i, value) == SQLITE_OK;
+    else
+        return bindInt64(i, value) == SQLITE_OK;
+}
 
 } // namespace WebCore

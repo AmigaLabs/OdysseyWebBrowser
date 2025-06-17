@@ -42,7 +42,7 @@ namespace JSC {
 #define USES USES_OR_DEFS
 #define DEFS USES_OR_DEFS
 
-void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instruction* instruction, Checkpoint checkpoint, const ScopedLambda<void(VirtualRegister)>& functor)
+void computeUsesForBytecodeIndexImpl(const JSInstruction* instruction, Checkpoint checkpoint, const ScopedLambda<void(VirtualRegister)>& functor)
 {
     OpcodeID opcodeID = instruction->opcodeID();
 
@@ -58,8 +58,6 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
         int lastArg = -static_cast<int>(op.m_argv) + CallFrame::thisArgumentOffset();
         for (int i = 0; i < static_cast<int>(op.m_argc); i++)
             functor(VirtualRegister { lastArg + i });
-        if (opcodeID == op_call_eval)
-            functor(scopeRegister);
         return;
     };
 
@@ -72,6 +70,11 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
             (functor(virtualRegisters), ...);
     };
 
+    auto useAt = [&] (Checkpoint target, auto... virtualRegisters) {
+        if (target == checkpoint)
+            (functor(virtualRegisters), ...);
+    };
+
     switch (opcodeID) {
     case op_wide16:
     case op_wide32:
@@ -80,7 +83,6 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     // No uses.
     case op_new_regexp:
     case op_debug:
-    case op_jneq_ptr:
     case op_loop_hint:
     case op_jmp:
     case op_new_object:
@@ -92,7 +94,6 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     case op_profile_control_flow:
     case op_create_direct_arguments:
     case op_create_cloned_arguments:
-    case op_create_arguments_butterfly:
     case op_get_rest_length:
     case op_check_traps:
     case op_get_argument:
@@ -135,6 +136,9 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     USES(OpJnstricteq, lhs, rhs)
     USES(OpJbelow, lhs, rhs)
     USES(OpJbeloweq, lhs, rhs)
+    USES(OpJeqPtr, value, specialPointer)
+    USES(OpJneqPtr, value, specialPointer)
+
     USES(OpSetFunctionName, function, name)
     USES(OpLogShadowChickenTail, thisValue, scope)
 
@@ -173,8 +177,10 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     USES(OpGetFromScope, scope)
     USES(OpToPrimitive, src)
     USES(OpToPropertyKey, src)
+    USES(OpToPropertyKeyOrNumber, src)
     USES(OpTryGetById, base)
     USES(OpGetById, base)
+    USES(OpGetLength, base)
     USES(OpGetByIdDirect, base)
     USES(OpGetPrototypeOf, value)
     USES(OpInById, base)
@@ -203,6 +209,7 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     USES(OpUnsigned, operand)
     USES(OpMov, src)
     USES(OpNewArrayWithSize, length)
+    USES(OpNewArrayWithSpecies, length, array)
     USES(OpCreateThis, callee)
     USES(OpCreatePromise, callee)
     USES(OpCreateGenerator, callee)
@@ -227,8 +234,8 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     USES(OpInByVal, base, property)
     USES(OpHasPrivateName, base, property)
     USES(OpHasPrivateBrand, base, brand)
+    USES(OpHasStructureWithFlags, operand)
     USES(OpOverridesHasInstance, constructor, hasInstanceValue)
-    USES(OpInstanceof, value, prototype)
     USES(OpAdd, lhs, rhs)
     USES(OpMul, lhs, rhs)
     USES(OpDiv, lhs, rhs)
@@ -257,7 +264,6 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     USES(OpTailCallForwardArguments, callee, thisValue)
 
     USES(OpGetByValWithThis, base, thisValue, property)
-    USES(OpInstanceofCustom, value, constructor, hasInstanceValue)
 
     case op_call_varargs: {
         auto bytecode = instruction->as<OpCallVarargs>();
@@ -274,6 +280,11 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
         useAtEachCheckpoint(bytecode.m_callee, bytecode.m_thisValue, bytecode.m_arguments);
         return;
     }
+    case op_super_construct_varargs: {
+        auto bytecode = instruction->as<OpSuperConstructVarargs>();
+        useAtEachCheckpoint(bytecode.m_callee, bytecode.m_thisValue, bytecode.m_arguments);
+        return;
+    }
 
     USES(OpSwitchString, scrutinee)
     USES(OpSwitchChar, scrutinee)
@@ -287,6 +298,7 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     USES(OpEnumeratorNext, mode, index, base, enumerator)
     USES(OpEnumeratorGetByVal, base, mode, propertyName, index, enumerator)
     USES(OpEnumeratorInByVal, base, mode, propertyName, index, enumerator)
+    USES(OpEnumeratorPutByVal, base, mode, propertyName, index, enumerator, value)
     USES(OpEnumeratorHasOwnProperty, base, mode, propertyName, index, enumerator)
 
     case op_iterator_open: {
@@ -298,8 +310,8 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
 
     case op_iterator_next: {
         auto bytecode = instruction->as<OpIteratorNext>();
-        useAtEachCheckpoint(bytecode.m_iterator);
-        useAtEachCheckpointStartingWith(OpIteratorNext::computeNext, bytecode.m_next, bytecode.m_iterable);
+        useAtEachCheckpoint(bytecode.m_iterator, bytecode.m_next);
+        useAtEachCheckpointStartingWith(OpIteratorNext::computeNext, bytecode.m_iterable);
         return;
     }
 
@@ -321,15 +333,35 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     case op_construct:
         handleOpCallLike(instruction->as<OpConstruct>());
         return;
-    case op_call_eval:
-        handleOpCallLike(instruction->as<OpCallEval>());
+
+    case op_super_construct:
+        handleOpCallLike(instruction->as<OpSuperConstruct>());
         return;
+
+    case op_call_direct_eval: {
+        auto bytecode = instruction->as<OpCallDirectEval>();
+        handleOpCallLike(bytecode);
+        functor(bytecode.m_thisValue);
+        functor(bytecode.m_scope);
+        return;
+    }
     case op_call:
         handleOpCallLike(instruction->as<OpCall>());
         return;
     case op_tail_call:
         handleOpCallLike(instruction->as<OpTailCall>());
         return;
+    case op_call_ignore_result:
+        handleOpCallLike(instruction->as<OpCallIgnoreResult>());
+        return;
+
+    case op_instanceof: {
+        auto bytecode = instruction->as<OpInstanceof>();
+        useAt(OpInstanceof::getHasInstance, bytecode.m_constructor);
+        useAt(OpInstanceof::getPrototype, bytecode.m_value, bytecode.m_constructor, bytecode.m_hasInstanceOrPrototype);
+        useAt(OpInstanceof::instanceof, bytecode.m_value, bytecode.m_hasInstanceOrPrototype);
+        return;
+    }
 
     default:
         RELEASE_ASSERT_NOT_REACHED();
@@ -337,7 +369,7 @@ void computeUsesForBytecodeIndexImpl(VirtualRegister scopeRegister, const Instru
     }
 }
 
-void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instruction, Checkpoint checkpoint, const ScopedLambda<void(VirtualRegister)>& functor)
+void computeDefsForBytecodeIndexImpl(unsigned numVars, const JSInstruction* instruction, Checkpoint checkpoint, const ScopedLambda<void(VirtualRegister)>& functor)
 {
 
     auto defAt = [&] (Checkpoint target, VirtualRegister operand) {
@@ -365,6 +397,7 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     case op_jneq_null:
     case op_jundefined_or_null:
     case op_jnundefined_or_null:
+    case op_jeq_ptr:
     case op_jneq_ptr:
     case op_jless:
     case op_jlesseq:
@@ -394,6 +427,7 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     case op_put_setter_by_val:
     case op_put_by_val:
     case op_put_by_val_direct:
+    case op_enumerator_put_by_val:
     case op_put_private_name:
     case op_set_private_brand:
     case op_check_private_brand:
@@ -403,6 +437,7 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     case op_profile_type:
     case op_profile_control_flow:
     case op_put_to_arguments:
+    case op_call_ignore_result:
     case op_set_function_name:
     case op_check_traps:
     case op_log_shadow_chicken_prologue:
@@ -428,6 +463,7 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     DEFS(OpStrcat, dst)
     DEFS(OpToPrimitive, dst)
     DEFS(OpToPropertyKey, dst)
+    DEFS(OpToPropertyKeyOrNumber, dst)
     DEFS(OpCreateThis, dst)
     DEFS(OpCreatePromise, dst)
     DEFS(OpCreateGenerator, dst)
@@ -437,6 +473,7 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     DEFS(OpSpread, dst)
     DEFS(OpNewArrayBuffer, dst)
     DEFS(OpNewArrayWithSize, dst)
+    DEFS(OpNewArrayWithSpecies, dst)
     DEFS(OpNewRegexp, dst)
     DEFS(OpNewFunc, dst)
     DEFS(OpNewFuncExp, dst)
@@ -461,22 +498,27 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
         defAt(OpConstructVarargs::makeCall, bytecode.m_dst);
         return;
     }
+    case op_super_construct_varargs: {
+        auto bytecode = instruction->as<OpSuperConstructVarargs>();
+        defAt(OpSuperConstructVarargs::makeCall, bytecode.m_dst);
+        return;
+    }
 
     DEFS(OpTailCallForwardArguments, dst)
     DEFS(OpGetFromScope, dst)
     DEFS(OpCall, dst)
     DEFS(OpTailCall, dst)
-    DEFS(OpCallEval, dst)
+    DEFS(OpCallDirectEval, dst)
     DEFS(OpConstruct, dst)
+    DEFS(OpSuperConstruct, dst)
     DEFS(OpTryGetById, dst)
     DEFS(OpGetById, dst)
+    DEFS(OpGetLength, dst)
     DEFS(OpGetByIdDirect, dst)
     DEFS(OpGetByIdWithThis, dst)
     DEFS(OpGetByValWithThis, dst)
     DEFS(OpGetPrototypeOf, dst)
     DEFS(OpOverridesHasInstance, dst)
-    DEFS(OpInstanceof, dst)
-    DEFS(OpInstanceofCustom, dst)
     DEFS(OpGetByVal, dst)
     DEFS(OpGetPrivateName, dst)
     DEFS(OpTypeof, dst)
@@ -497,6 +539,7 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     DEFS(OpInByVal, dst)
     DEFS(OpHasPrivateName, dst)
     DEFS(OpHasPrivateBrand, dst)
+    DEFS(OpHasStructureWithFlags, dst)
     DEFS(OpToNumber, dst)
     DEFS(OpToNumeric, dst)
     DEFS(OpToString, dst)
@@ -539,7 +582,6 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     DEFS(OpCreateDirectArguments, dst)
     DEFS(OpCreateScopedArguments, dst)
     DEFS(OpCreateClonedArguments, dst)
-    DEFS(OpCreateArgumentsButterfly, dst)
     DEFS(OpDelById, dst)
     DEFS(OpDelByVal, dst)
     DEFS(OpUnsigned, dst)
@@ -578,6 +620,14 @@ void computeDefsForBytecodeIndexImpl(unsigned numVars, const Instruction* instru
     case op_enter: {
         for (unsigned i = numVars; i--;)
             functor(virtualRegisterForLocal(i));
+        return;
+    }
+
+    case op_instanceof: {
+        auto bytecode = instruction->as<OpInstanceof>();
+        defAt(OpInstanceof::getHasInstance, bytecode.m_hasInstanceOrPrototype);
+        defAt(OpInstanceof::getPrototype, bytecode.m_hasInstanceOrPrototype);
+        defAt(OpInstanceof::instanceof, bytecode.m_dst);
         return;
     }
     }

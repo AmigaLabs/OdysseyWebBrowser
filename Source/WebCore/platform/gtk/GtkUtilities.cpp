@@ -21,6 +21,7 @@
 
 #include "GtkVersioning.h"
 #include "IntPoint.h"
+#include "SystemSettings.h"
 #include <gtk/gtk.h>
 #include <wtf/glib/GUniquePtr.h>
 
@@ -126,8 +127,10 @@ WallTime wallTimeForEvent(const GdkEvent* event)
     // This works if and only if the X server or Wayland compositor happens to
     // be using CLOCK_MONOTONIC for its monotonic time, and so long as
     // g_get_monotonic_time() continues to do so as well, and so long as
-    // WTF::MonotonicTime continues to use g_get_monotonic_time().
+    // MonotonicTime continues to use g_get_monotonic_time().
 #if USE(GTK4)
+    if (!event)
+        return WallTime::now();
     auto time = gdk_event_get_time(const_cast<GdkEvent*>(event));
 #else
     auto time = gdk_event_get_time(event);
@@ -135,17 +138,6 @@ WallTime wallTimeForEvent(const GdkEvent* event)
     if (time == GDK_CURRENT_TIME)
         return WallTime::now();
     return MonotonicTime::fromRawSeconds(time / 1000.).approximateWallTime();
-}
-
-String defaultGtkSystemFont()
-{
-    GUniqueOutPtr<char> fontString;
-    g_object_get(gtk_settings_get_default(), "gtk-font-name", &fontString.outPtr(), nullptr);
-    // We need to remove the size from the value of the property,
-    // which is separated from the font family using a space.
-    if (auto* spaceChar = strrchr(fontString.get(), ' '))
-        *spaceChar = '\0';
-    return String::fromUTF8(fontString.get());
 }
 
 unsigned stateModifierForGdkButton(unsigned button)
@@ -204,6 +196,28 @@ void monitorWorkArea(GdkMonitor* monitor, GdkRectangle* area)
     gdk_monitor_get_geometry(monitor, area);
 #else
     gdk_monitor_get_workarea(monitor, area);
+#endif
+}
+
+bool shouldUseOverlayScrollbars()
+{
+#if !USE(GTK4)
+    if (!g_strcmp0 (g_getenv ("GTK_OVERLAY_SCROLLING"), "0"))
+        return false;
+#endif
+
+    return SystemSettings::singleton().overlayScrolling().value_or(true);
+}
+
+bool eventModifiersContainCapsLock(GdkEvent* event)
+{
+#if USE(GTK4)
+    auto* device = gdk_event_get_source_device(event);
+    if (!device || gdk_device_get_source(device) != GDK_SOURCE_KEYBOARD)
+        device = gdk_seat_get_keyboard(gdk_display_get_default_seat(gdk_event_get_display(event)));
+    return gdk_device_get_caps_lock_state(device);
+#else
+    return gdk_keymap_get_caps_lock_state(gdk_keymap_get_for_display(gdk_event_get_display(event)));
 #endif
 }
 

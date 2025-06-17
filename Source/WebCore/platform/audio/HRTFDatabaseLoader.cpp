@@ -40,9 +40,9 @@
 namespace WebCore {
 
 // Keeps track of loaders on a per-sample-rate basis.
-static HashMap<double, HRTFDatabaseLoader*>& loaderMap()
+static UncheckedKeyHashMap<double, HRTFDatabaseLoader*>& loaderMap()
 {
-    static NeverDestroyed<HashMap<double, HRTFDatabaseLoader*>> loaderMap;
+    static NeverDestroyed<UncheckedKeyHashMap<double, HRTFDatabaseLoader*>> loaderMap;
     return loaderMap;
 }
 
@@ -97,7 +97,7 @@ void HRTFDatabaseLoader::loadAsynchronously()
     
     if (!m_hrtfDatabase.get() && !m_databaseLoaderThread) {
         // Start the asynchronous database loading process.
-        m_databaseLoaderThread = Thread::create("HRTF database loader", [this] {
+        m_databaseLoaderThread = Thread::create("HRTF database loader"_s, [this] {
             load();
         });
     }

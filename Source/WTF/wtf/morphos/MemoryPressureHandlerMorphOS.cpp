@@ -31,7 +31,6 @@
 #if !OS(AMIGAOS)
 extern "C" { void dprintf(const char *,...); }
 #endif
-
 namespace WebKit {
 	extern void reactOnMemoryPressureInWebKit();
 }
@@ -44,7 +43,7 @@ void MemoryPressureHandler::platformReleaseMemory(Critical)
 
 void MemoryPressureHandler::morphosMeasurementTimerFired()
 {
-    setUnderMemoryPressure(false);
+    setMemoryPressureStatus(SystemMemoryPressureStatus::Normal);
 
 	bool memoryLow = false;
 	
@@ -76,7 +75,7 @@ void MemoryPressureHandler::morphosMeasurementTimerFired()
 	
 	if (memoryLow)
 	{
-        setUnderMemoryPressure(true);
+        setMemoryPressureStatus(SystemMemoryPressureStatus::Critical);
         releaseMemory(Critical::Yes);
         WebKit::reactOnMemoryPressureInWebKit();
         return;

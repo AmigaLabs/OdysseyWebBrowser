@@ -32,6 +32,7 @@
 #include <JavaScriptCore/InspectorBackendDispatchers.h>
 #include <JavaScriptCore/InspectorFrontendDispatchers.h>
 #include <JavaScriptCore/InspectorProtocolObjects.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakHashMap.h>
 #include <wtf/text/WTFString.h>
 
@@ -42,10 +43,11 @@ class Node;
 class PseudoElement;
 class RenderElement;
 class RenderLayer;
+class WeakPtrImplWithEventTargetData;
 
 class InspectorLayerTreeAgent final : public InspectorAgentBase, public Inspector::LayerTreeBackendDispatcherHandler {
     WTF_MAKE_NONCOPYABLE(InspectorLayerTreeAgent);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(InspectorLayerTreeAgent);
 public:
     InspectorLayerTreeAgent(WebAgentContext&);
     ~InspectorLayerTreeAgent();
@@ -88,8 +90,8 @@ private:
     HashMap<const RenderLayer*, Inspector::Protocol::LayerTree::LayerId> m_documentLayerToIdMap;
     HashMap<Inspector::Protocol::LayerTree::LayerId, const RenderLayer*> m_idToLayer;
 
-    WeakHashMap<PseudoElement, Inspector::Protocol::LayerTree::PseudoElementId> m_pseudoElementToIdMap;
-    HashMap<Inspector::Protocol::LayerTree::PseudoElementId, WeakPtr<PseudoElement>> m_idToPseudoElement;
+    WeakHashMap<PseudoElement, Inspector::Protocol::LayerTree::PseudoElementId, WeakPtrImplWithEventTargetData> m_pseudoElementToIdMap;
+    HashMap<Inspector::Protocol::LayerTree::PseudoElementId, WeakPtr<PseudoElement, WeakPtrImplWithEventTargetData>> m_idToPseudoElement;
 
     bool m_suppressLayerChangeEvents { false };
 };

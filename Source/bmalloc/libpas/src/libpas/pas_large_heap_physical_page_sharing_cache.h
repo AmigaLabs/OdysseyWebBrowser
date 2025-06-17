@@ -33,7 +33,9 @@
 
 PAS_BEGIN_EXTERN_C;
 
+struct pas_heap_config;
 struct pas_large_heap_physical_page_sharing_cache;
+typedef struct pas_heap_config pas_heap_config;
 typedef struct pas_large_heap_physical_page_sharing_cache pas_large_heap_physical_page_sharing_cache;
 
 struct pas_large_heap_physical_page_sharing_cache {
@@ -41,6 +43,13 @@ struct pas_large_heap_physical_page_sharing_cache {
     pas_heap_page_provider provider;
     void* provider_arg;
 };
+
+#define PAS_MEGAPAGE_LARGE_FREE_HEAP_PHYSICAL_PAGE_SHARING_CACHE_INITIALIZER \
+    ((pas_large_heap_physical_page_sharing_cache){ \
+         .free_heap = PAS_SIMPLE_LARGE_FREE_HEAP_INITIALIZER, \
+         .provider = pas_small_medium_bootstrap_heap_page_provider, \
+         .provider_arg = NULL \
+     })
 
 #define PAS_LARGE_FREE_HEAP_PHYSICAL_PAGE_SHARING_CACHE_INITIALIZER \
     ((pas_large_heap_physical_page_sharing_cache){ \
@@ -64,6 +73,7 @@ pas_large_heap_physical_page_sharing_cache_try_allocate_with_alignment(
     pas_large_heap_physical_page_sharing_cache* cache,
     size_t size,
     pas_alignment alignment,
+    const pas_heap_config* config,
     bool should_zero);
 
 PAS_END_EXTERN_C;

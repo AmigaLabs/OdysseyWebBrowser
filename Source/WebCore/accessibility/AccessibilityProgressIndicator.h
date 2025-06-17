@@ -32,32 +32,25 @@ class RenderProgress;
     
 class AccessibilityProgressIndicator final : public AccessibilityRenderObject {
 public:
-    static Ref<AccessibilityProgressIndicator> create(RenderProgress*);
-    static Ref<AccessibilityProgressIndicator> create(RenderMeter*);
-    Element* element() const override;
+    static Ref<AccessibilityProgressIndicator> create(AXID, RenderObject&);
+
+    bool isIndeterminate() const final;
 
 private:
-    AccessibilityRole roleValue() const override;
-    bool isProgressIndicator() const override { return true; }
+    explicit AccessibilityProgressIndicator(AXID, RenderObject&);
 
-    // Used in type checking function is<AccessibilityProgressIndicator>.
-    bool isAccessibilityProgressIndicatorInstance() const final { return true; }
+    AccessibilityRole determineAccessibilityRole() final;
 
-    String valueDescription() const override;
+    String valueDescription() const final;
     String gaugeRegionValueDescription() const;
-    float valueForRange() const override;
-    float maxValueForRange() const override;
-    float minValueForRange() const override;
+    float valueForRange() const final;
+    float maxValueForRange() const final;
+    float minValueForRange() const final;
 
-    explicit AccessibilityProgressIndicator(RenderProgress*);
     HTMLProgressElement* progressElement() const;
-
-    explicit AccessibilityProgressIndicator(RenderMeter*);
     HTMLMeterElement* meterElement() const;
     
-    bool computeAccessibilityIsIgnored() const override;
+    bool computeIsIgnored() const final;
 };
 
 } // namespace WebCore
-
-SPECIALIZE_TYPE_TRAITS_ACCESSIBILITY(AccessibilityProgressIndicator, isAccessibilityProgressIndicatorInstance())

@@ -29,6 +29,7 @@
 #include "CompositionUnderline.h"
 #include "KeypressCommand.h"
 #include "PlatformEvent.h"
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WindowsExtras.h>
 #include <wtf/text/WTFString.h>
 
@@ -45,17 +46,13 @@ OBJC_CLASS WebEvent;
 struct IntuiMessage;
 #endif
 
-#if PLATFORM(MUI)
-#include "BALBase.h"
-#endif
-
 namespace WebCore {
 
     class PlatformKeyboardEvent : public PlatformEvent {
-        WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_TZONE_ALLOCATED(PlatformKeyboardEvent);
     public:
         PlatformKeyboardEvent()
-            : PlatformEvent(PlatformEvent::KeyDown)
+            : PlatformEvent(PlatformEvent::Type::KeyDown)
         {
         }
 
@@ -71,9 +68,6 @@ namespace WebCore {
             , m_code(code)
             , m_keyIdentifier(keyIdentifier)
             , m_windowsVirtualKeyCode(windowsVirtualKeyCode)
-#if PLATFORM(MUI)
-            , m_balEventKey(0)
-#endif
         {
         }
 
@@ -136,7 +130,7 @@ namespace WebCore {
 #endif
 
 #if PLATFORM(WIN)
-        PlatformKeyboardEvent(HWND, WPARAM, LPARAM, Type, bool);
+        WEBCORE_EXPORT PlatformKeyboardEvent(HWND, WPARAM, LPARAM, Type, bool);
 #endif
 
 #if OS(MORPHOS)
@@ -150,7 +144,6 @@ namespace WebCore {
         static String keyIdentifierForGdkKeyCode(unsigned);
         static int windowsKeyCodeForGdkKeyCode(unsigned);
         static String singleCharacterString(unsigned);
-        static bool modifiersContainCapsLock(unsigned);
 #endif
 
 #if USE(LIBWPE)
@@ -159,11 +152,6 @@ namespace WebCore {
         static String keyIdentifierForWPEKeyCode(unsigned);
         static int windowsKeyCodeForWPEKeyCode(unsigned);
         static String singleCharacterString(unsigned);
-#endif
-
-#if PLATFORM(MUI)
-        PlatformKeyboardEvent(BalEventKey*);
-        BalEventKey* balEventKey() const;
 #endif
 
     protected:
@@ -206,10 +194,6 @@ namespace WebCore {
 #endif
         // The modifier state is optional, since it is not needed in the UI process or in legacy WebKit.
         static std::optional<OptionSet<Modifier>> s_currentModifiers;
-
-#if PLATFORM(MUI)
-        BalEventKey* m_balEventKey;
-#endif
     };
     
 } // namespace WebCore

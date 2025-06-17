@@ -75,11 +75,7 @@ class TypedResourceManager : public ResourceManagerBase
         return GetIDValue(handle) == 0 || mObjectMap.contains(handle);
     }
 
-    typename ResourceMap<ResourceType, IDType>::Iterator begin() const
-    {
-        return mObjectMap.begin();
-    }
-    typename ResourceMap<ResourceType, IDType>::Iterator end() const { return mObjectMap.end(); }
+    const ResourceMap<ResourceType, IDType> &getResourcesForCapture() const { return mObjectMap; }
 
   protected:
     ~TypedResourceManager() override;
@@ -126,7 +122,25 @@ class TypedResourceManager : public ResourceManagerBase
     }
 };
 
-class BufferManager : public TypedResourceManager<Buffer, BufferManager, BufferID>
+template <typename ResourceType, typename ImplT, typename IDType>
+class TypedResourceManagerWithTotalMemorySize
+    : public TypedResourceManager<ResourceType, ImplT, IDType>
+{
+  public:
+    size_t getTotalMemorySize() const
+    {
+        size_t totalBytes = 0;
+
+        for (const auto &rb : UnsafeResourceMapIter(this->mObjectMap))
+        {
+            totalBytes += static_cast<size_t>(rb.second->getMemorySize());
+        }
+        return totalBytes;
+    }
+};
+
+class BufferManager
+    : public TypedResourceManagerWithTotalMemorySize<Buffer, BufferManager, BufferID>
 {
   public:
     BufferID createBuffer();
@@ -212,12 +226,15 @@ class TextureManager : public TypedResourceManager<Texture, TextureManager, Text
 
     void enableHandleAllocatorLogging();
 
+    size_t getTotalMemorySize() const;
+
   protected:
     ~TextureManager() override;
 };
 
-class RenderbufferManager
-    : public TypedResourceManager<Renderbuffer, RenderbufferManager, RenderbufferID>
+class RenderbufferManager : public TypedResourceManagerWithTotalMemorySize<Renderbuffer,
+                                                                           RenderbufferManager,
+                                                                           RenderbufferID>
 {
   public:
     RenderbufferID createRenderbuffer();
@@ -239,8 +256,8 @@ class SamplerManager : public TypedResourceManager<Sampler, SamplerManager, Samp
 {
   public:
     SamplerID createSampler();
-    Sampler *getSampler(SamplerID handle) const;
-    bool isSampler(SamplerID sampler) const;
+    Sampler *getSampler(SamplerID handle) const { return mObjectMap.query(handle); }
+    bool isSampler(SamplerID sampler) const { return mObjectMap.contains(sampler); }
 
     Sampler *checkSamplerAllocation(rx::GLImplFactory *factory, SamplerID handle)
     {
@@ -254,11 +271,11 @@ class SamplerManager : public TypedResourceManager<Sampler, SamplerManager, Samp
     ~SamplerManager() override;
 };
 
-class SyncManager : public TypedResourceManager<Sync, SyncManager, GLuint>
+class SyncManager : public TypedResourceManager<Sync, SyncManager, SyncID>
 {
   public:
-    GLuint createSync(rx::GLImplFactory *factory);
-    Sync *getSync(GLuint handle) const;
+    SyncID createSync(rx::GLImplFactory *factory);
+    Sync *getSync(SyncID handle) const;
 
     static void DeleteObject(const Context *context, Sync *sync);
 
@@ -273,21 +290,20 @@ class FramebufferManager
     FramebufferID createFramebuffer();
     Framebuffer *getFramebuffer(FramebufferID handle) const;
     void setDefaultFramebuffer(Framebuffer *framebuffer);
+    Framebuffer *getDefaultFramebuffer() const;
 
     void invalidateFramebufferCompletenessCache() const;
 
     Framebuffer *checkFramebufferAllocation(rx::GLImplFactory *factory,
-                                            const Caps &caps,
-                                            FramebufferID handle,
-                                            egl::ShareGroup *shareGroup)
+                                            const Context *context,
+                                            FramebufferID handle)
     {
-        return checkObjectAllocation<const Caps &>(factory, handle, caps, shareGroup);
+        return checkObjectAllocation(factory, handle, context);
     }
 
     static Framebuffer *AllocateNewObject(rx::GLImplFactory *factory,
                                           FramebufferID handle,
-                                          const Caps &caps,
-                                          egl::ShareGroup *shareGroup);
+                                          const Context *context);
     static void DeleteObject(const Context *context, Framebuffer *framebuffer);
 
   protected:

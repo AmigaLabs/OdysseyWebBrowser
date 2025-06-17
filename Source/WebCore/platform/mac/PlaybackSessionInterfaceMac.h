@@ -31,6 +31,7 @@
 #include "PlaybackSessionModel.h"
 #include <wtf/RefCounted.h>
 #include <wtf/RetainPtr.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakObjCPtr.h>
 #include <wtf/WeakPtr.h>
 #include <wtf/text/WTFString.h>
@@ -43,11 +44,18 @@ class PlaybackSessionModel;
 
 class WEBCORE_EXPORT PlaybackSessionInterfaceMac final
     : public PlaybackSessionModelClient
-    , public RefCounted<PlaybackSessionInterfaceMac> {
+    , public RefCounted<PlaybackSessionInterfaceMac>
+    , public CanMakeCheckedPtr<PlaybackSessionInterfaceMac> {
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(PlaybackSessionInterfaceMac, WEBCORE_EXPORT);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(PlaybackSessionInterfaceMac);
 public:
     static Ref<PlaybackSessionInterfaceMac> create(PlaybackSessionModel&);
     virtual ~PlaybackSessionInterfaceMac();
     PlaybackSessionModel* playbackSessionModel() const;
+
+    bool isInWindowFullscreenActive() const;
+    void enterInWindowFullscreen();
+    void exitInWindowFullscreen();
 
     // PlaybackSessionModelClient
     void durationChanged(double) final;
@@ -72,10 +80,26 @@ public:
     void beginScrubbing();
     void endScrubbing();
 
+    void swapFullscreenModesWith(PlaybackSessionInterfaceMac&) { }
+
     void invalidate();
+
+#if !RELEASE_LOG_DISABLED
+    uint64_t logIdentifier() const;
+    const Logger* loggerPtr() const;
+    ASCIILiteral logClassName() const { return "PlaybackSessionInterfaceMac"_s; };
+    WTFLogChannel& logChannel() const;
+#endif
 
 private:
     PlaybackSessionInterfaceMac(PlaybackSessionModel&);
+
+    // CheckedPtr interface
+    uint32_t checkedPtrCount() const final;
+    uint32_t checkedPtrCountWithoutThreadCheck() const final;
+    void incrementCheckedPtrCount() const final;
+    void decrementCheckedPtrCount() const final;
+
     WeakPtr<PlaybackSessionModel> m_playbackSessionModel;
 #if ENABLE(WEB_PLAYBACK_CONTROLS_MANAGER)
     WeakObjCPtr<WebPlaybackControlsManager> m_playbackControlsManager;

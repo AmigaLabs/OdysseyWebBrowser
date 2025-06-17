@@ -26,6 +26,7 @@
 #pragma once
 
 #include "IDBResourceIdentifier.h"
+#include <wtf/CheckedPtr.h>
 #include <wtf/Forward.h>
 #include <wtf/text/WTFString.h>
 
@@ -40,11 +41,13 @@ namespace IDBServer {
 
 class UniqueIDBDatabaseConnection;
 
-class IDBConnectionToClientDelegate {
+class IDBConnectionToClientDelegate : public CanMakeThreadSafeCheckedPtr<IDBConnectionToClientDelegate> {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(IDBConnectionToClientDelegate);
 public:
     virtual ~IDBConnectionToClientDelegate() = default;
     
-    virtual IDBConnectionIdentifier identifier() const = 0;
+    virtual std::optional<IDBConnectionIdentifier> identifier() const = 0;
 
     virtual void didDeleteDatabase(const IDBResultData&) = 0;
     virtual void didOpenDatabase(const IDBResultData&) = 0;
@@ -70,7 +73,7 @@ public:
     virtual void didCloseFromServer(UniqueIDBDatabaseConnection&, const IDBError&) = 0;
     virtual void notifyOpenDBRequestBlocked(const IDBResourceIdentifier& requestIdentifier, uint64_t oldVersion, uint64_t newVersion) = 0;
 
-    virtual void didGetAllDatabaseNamesAndVersions(const IDBResourceIdentifier&, const Vector<IDBDatabaseNameAndVersion>&) = 0;
+    virtual void didGetAllDatabaseNamesAndVersions(const IDBResourceIdentifier&, Vector<IDBDatabaseNameAndVersion>&&) = 0;
 };
 
 } // namespace IDBServer

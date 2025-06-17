@@ -31,7 +31,6 @@
 #include <JavaScriptCore/JSExportMacros.h>
 #include <WebCore/PlatformExportMacros.h>
 #include <pal/ExportMacros.h>
-#include <wtf/DisallowCType.h>
 
 #ifdef __cplusplus
 
@@ -40,24 +39,8 @@
 #undef new
 #undef delete
 #include <wtf/FastMalloc.h>
+#include <wtf/TZoneMalloc.h>
 
-#endif
-
-#ifndef PLUGIN_ARCHITECTURE_UNSUPPORTED
-#if PLATFORM(MAC)
-#define PLUGIN_ARCHITECTURE_MAC 1
-#elif PLATFORM(GTK) && OS(UNIX) && !OS(MAC_OS_X)
-#define PLUGIN_ARCHITECTURE_UNIX 1
-#else
-#define PLUGIN_ARCHITECTURE_UNSUPPORTED 1
-#endif
-#endif
-
-#define PLUGIN_ARCHITECTURE(ARCH) (defined PLUGIN_ARCHITECTURE_##ARCH && PLUGIN_ARCHITECTURE_##ARCH)
-
-// FIXME: We should work towards not using CredentialStorage in WebKit to not have problems with digest authentication.
-#ifndef USE_CREDENTIAL_STORAGE_WITH_NETWORK_SESSION
-#define USE_CREDENTIAL_STORAGE_WITH_NETWORK_SESSION 1
 #endif
 
 // ENABLE_WEBDRIVER_ACTIONS_API represents whether mouse, keyboard, touch or wheel interactions are defined

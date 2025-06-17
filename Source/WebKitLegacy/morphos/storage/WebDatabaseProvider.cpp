@@ -23,10 +23,11 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "WebKit.h"
 #include "WebDatabaseProvider.h"
 #include "wtf/text/WTFString.h"
 
 String WebDatabaseProvider::indexedDatabaseDirectoryPath()
 {
-    return String("PROGDIR:Cache/___IndexedDB");
+    return String("PROGDIR:Cache/___IndexedDB"_s);
 }

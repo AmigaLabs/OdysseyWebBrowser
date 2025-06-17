@@ -31,28 +31,28 @@
 namespace WebCore {
 
 CSSLineBoxContainValue::CSSLineBoxContainValue(OptionSet<LineBoxContain> value)
-    : CSSValue(LineBoxContainClass)
+    : CSSValue(ClassType::LineBoxContain)
     , m_value(value)
 {
 }
 
-String CSSLineBoxContainValue::customCSSText() const
+String CSSLineBoxContainValue::customCSSText(const CSS::SerializationContext&) const
 {
     StringBuilder text;
     if (m_value.contains(LineBoxContain::Block))
-        text.append("block");
+        text.append("block"_s);
     if (m_value.contains(LineBoxContain::Inline))
-        text.append(text.isEmpty() ? "" : " ", "inline");
+        text.append(text.isEmpty() ? ""_s : " "_s, "inline"_s);
     if (m_value.contains(LineBoxContain::Font))
-        text.append(text.isEmpty() ? "" : " ", "font");
+        text.append(text.isEmpty() ? ""_s : " "_s, "font"_s);
     if (m_value.contains(LineBoxContain::Glyphs))
-        text.append(text.isEmpty() ? "" : " ", "glyphs");
+        text.append(text.isEmpty() ? ""_s : " "_s, "glyphs"_s);
     if (m_value.contains(LineBoxContain::Replaced))
-        text.append(text.isEmpty() ? "" : " ", "replaced");
+        text.append(text.isEmpty() ? ""_s : " "_s, "replaced"_s);
     if (m_value.contains(LineBoxContain::InlineBox))
-        text.append(text.isEmpty() ? "" : " ", "inline-box");
+        text.append(text.isEmpty() ? ""_s : " "_s, "inline-box"_s);
     if (m_value.contains(LineBoxContain::InitialLetter))
-        text.append(text.isEmpty() ? "" : " ", "initial-letter");
+        text.append(text.isEmpty() ? ""_s : " "_s, "initial-letter"_s);
     return text.toString();
 }
 

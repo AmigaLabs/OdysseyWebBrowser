@@ -29,11 +29,33 @@
 #include "RsaOtherPrimesInfo.h"
 #include <wtf/Vector.h>
 
-#if ENABLE(WEB_CRYPTO)
-
 namespace WebCore {
 
 struct JsonWebKey {
+    JsonWebKey isolatedCopy() && {
+        return {
+            crossThreadCopy(WTFMove(kty)),
+            crossThreadCopy(WTFMove(use)),
+            key_ops,
+            usages,
+            crossThreadCopy(WTFMove(alg)),
+            ext,
+            crossThreadCopy(WTFMove(crv)),
+            crossThreadCopy(WTFMove(x)),
+            crossThreadCopy(WTFMove(y)),
+            crossThreadCopy(WTFMove(d)),
+            crossThreadCopy(WTFMove(n)),
+            crossThreadCopy(WTFMove(e)),
+            crossThreadCopy(WTFMove(p)),
+            crossThreadCopy(WTFMove(q)),
+            crossThreadCopy(WTFMove(dp)),
+            crossThreadCopy(WTFMove(dq)),
+            crossThreadCopy(WTFMove(qi)),
+            crossThreadCopy(WTFMove(oth)),
+            crossThreadCopy(WTFMove(k))
+        };
+    }
+
     String kty;
     String use;
     // FIXME: Consider merging key_ops and usages.
@@ -59,5 +81,3 @@ struct JsonWebKey {
 };
 
 } // namespace WebCore
-
-#endif // ENABLE(WEB_CRYPTO)

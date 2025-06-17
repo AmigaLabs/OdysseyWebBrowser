@@ -31,14 +31,17 @@
 #import "AudioBus.h"
 #import "AudioChannel.h"
 #import "AudioSourceProviderClient.h"
+#import "CAAudioStreamDescription.h"
 #import "CARingBuffer.h"
 #import "Logging.h"
+#import "SpanCoreAudio.h"
 #import <AVFoundation/AVAssetTrack.h>
 #import <AVFoundation/AVAudioMix.h>
 #import <AVFoundation/AVMediaFormat.h>
 #import <AVFoundation/AVPlayerItem.h>
 #import <objc/runtime.h>
 #import <pal/avfoundation/MediaTimeAVFoundation.h>
+#import <wtf/IndexedRange.h>
 #import <wtf/Lock.h>
 #import <wtf/MainThread.h>
 
@@ -71,7 +74,9 @@ RefPtr<AudioSourceProviderAVFObjC> AudioSourceProviderAVFObjC::create(AVPlayerIt
 
 AudioSourceProviderAVFObjC::AudioSourceProviderAVFObjC(AVPlayerItem *item)
     : m_avPlayerItem(item)
-    , m_ringBufferCreationCallback([] { return makeUniqueRef<CARingBuffer>(); })
+    , m_configureAudioStorageCallback([](const CAAudioStreamDescription& format, size_t frameCount) {
+        return InProcessCARingBuffer::allocate(format, frameCount);
+    })
 {
 }
 
@@ -104,13 +109,12 @@ void AudioSourceProviderAVFObjC::provideInput(AudioBus* bus, size_t framesToProc
         return;
     }
 
-    uint64_t startFrame = 0;
-    uint64_t endFrame = 0;
+
     uint64_t seekTo = std::exchange(m_seekTo, NoSeek);
     if (seekTo != NoSeek)
         m_readCount = seekTo;
 
-    m_ringBuffer->getCurrentFrameBounds(startFrame, endFrame);
+    auto [startFrame, endFrame] = m_ringBuffer->getFetchTimeBounds();
 
     if (!m_readCount || m_readCount == seekTo) {
         // We have not started rendering yet. If there aren't enough frames in the buffer, then output
@@ -132,11 +136,11 @@ void AudioSourceProviderAVFObjC::provideInput(AudioBus* bus, size_t framesToProc
 
     ASSERT(bus->numberOfChannels() == m_ringBuffer->channelCount());
 
-    for (unsigned i = 0; i < m_list->mNumberBuffers; ++i) {
+    for (auto [i, buffer] : indexedRange(span(*m_list))) {
         AudioChannel* channel = bus->channel(i);
-        m_list->mBuffers[i].mNumberChannels = 1;
-        m_list->mBuffers[i].mData = channel->mutableData();
-        m_list->mBuffers[i].mDataByteSize = channel->length() * sizeof(float);
+        buffer.mNumberChannels = 1;
+        buffer.mData = channel->mutableData();
+        buffer.mDataByteSize = channel->length() * sizeof(float);
     }
 
     m_ringBuffer->fetch(m_list.get(), framesToProcess, m_readCount);
@@ -146,12 +150,12 @@ void AudioSourceProviderAVFObjC::provideInput(AudioBus* bus, size_t framesToProc
         PAL::AudioConverterConvertComplexBuffer(m_converter.get(), framesToProcess, m_list.get(), m_list.get());
 }
 
-void AudioSourceProviderAVFObjC::setClient(AudioSourceProviderClient* client)
+void AudioSourceProviderAVFObjC::setClient(WeakPtr<AudioSourceProviderClient>&& client)
 {
     if (m_client == client)
         return;
     destroyMixIfNeeded();
-    m_client = client;
+    m_client = WTFMove(client);
     createMixIfNeeded();
 }
 
@@ -170,6 +174,15 @@ void AudioSourceProviderAVFObjC::setAudioTrack(AVAssetTrack *avAssetTrack)
         return;
     destroyMixIfNeeded();
     m_avAssetTrack = avAssetTrack;
+    createMixIfNeeded();
+}
+
+void AudioSourceProviderAVFObjC::recreateAudioMixIfNeeded()
+{
+    if (!m_avAudioMix)
+        return;
+
+    destroyMixIfNeeded();
     createMixIfNeeded();
 }
 
@@ -315,16 +328,15 @@ void AudioSourceProviderAVFObjC::prepare(CMItemCount maxFrames, const AudioStrea
     // Make the ringbuffer large enough to store at least two callbacks worth of audio, or 1s, whichever is larger.
     size_t capacity = std::max(static_cast<size_t>(2 * maxFrames), static_cast<size_t>(kRingBufferDuration * sampleRate));
 
-    CAAudioStreamDescription description { *processingFormat };
-    if (!m_ringBuffer)
-        m_ringBuffer = m_ringBufferCreationCallback().moveToUniquePtr();
-    m_ringBuffer->allocate(description, capacity);
+    m_ringBuffer = m_configureAudioStorageCallback(*processingFormat, capacity);
 
     // AudioBufferList is a variable-length struct, so create on the heap with a generic new() operator
     // with a custom size, and initialize the struct manually.
     size_t bufferListSize = sizeof(AudioBufferList) + (sizeof(AudioBuffer) * std::max(1, numberOfChannels - 1));
     m_list = std::unique_ptr<AudioBufferList>((AudioBufferList*) ::operator new (bufferListSize));
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
     memset(m_list.get(), 0, bufferListSize);
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     m_list->mNumberBuffers = numberOfChannels;
 
     callOnMainThread([weakThis = m_weakFactory.createWeakPtr(*this), numberOfChannels, sampleRate] {
@@ -345,7 +357,9 @@ void AudioSourceProviderAVFObjC::unprepare()
 void AudioSourceProviderAVFObjC::process(MTAudioProcessingTapRef tap, CMItemCount numberOfFrames, MTAudioProcessingTapFlags flags, AudioBufferList* bufferListInOut, CMItemCount* numberFramesOut, MTAudioProcessingTapFlags* flagsOut)
 {
     UNUSED_PARAM(flags);
-    
+    if (!m_ringBuffer)
+        return;
+
     CMItemCount itemCount = 0;
     CMTimeRange rangeOut;
     OSStatus status = PAL::MTAudioProcessingTapGetSourceAudio(tap, numberOfFrames, bufferListInOut, flagsOut, &rangeOut, &itemCount);
@@ -376,9 +390,7 @@ void AudioSourceProviderAVFObjC::process(MTAudioProcessingTapRef tap, CMItemCoun
         m_writeAheadCount = m_tapDescription->mSampleRate * earlyBy.toDouble();
     }
 
-    uint64_t startFrame = 0;
-    uint64_t endFrame = 0;
-    m_ringBuffer->getCurrentFrameBounds(startFrame, endFrame);
+    auto [startFrame, endFrame] = m_ringBuffer->getStoreTimeBounds();
 
     // Check to see if the underlying media has seeked, which would require us to "flush"
     // our outstanding buffers.
@@ -396,10 +408,9 @@ void AudioSourceProviderAVFObjC::process(MTAudioProcessingTapRef tap, CMItemCoun
     m_ringBuffer->store(bufferListInOut, itemCount, endFrame);
 
     // Mute the default audio playback by zeroing the tap-owned buffers.
-    for (uint32_t i = 0; i < bufferListInOut->mNumberBuffers; ++i) {
-        AudioBuffer& buffer = bufferListInOut->mBuffers[i];
-        memset(buffer.mData, 0, buffer.mDataByteSize);
-    }
+    for (auto& buffer : span(*bufferListInOut))
+        zeroSpan(mutableSpan<uint8_t>(buffer));
+
     *numberFramesOut = 0;
 
     if (m_audioCallback)
@@ -412,10 +423,10 @@ void AudioSourceProviderAVFObjC::setAudioCallback(AudioCallback&& callback)
     m_audioCallback = WTFMove(callback);
 }
 
-void AudioSourceProviderAVFObjC::setRingBufferCreationCallback(RingBufferCreationCallback&& callback)
+void AudioSourceProviderAVFObjC::setConfigureAudioStorageCallback(ConfigureAudioStorageCallback&& callback)
 {
     ASSERT(!m_avAudioMix);
-    m_ringBufferCreationCallback = WTFMove(callback);
+    m_configureAudioStorageCallback = WTFMove(callback);
 }
 
 }

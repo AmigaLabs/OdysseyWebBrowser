@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,23 +29,27 @@
 #if PLATFORM(IOS_FAMILY)
 
 #import "Logging.h"
+#import "MediaConfiguration.h"
 #import "MediaPlaybackTargetCocoa.h"
 #import "MediaPlayer.h"
 #import "PlatformMediaSession.h"
-#import "RuntimeApplicationChecks.h"
 #import "SystemMemory.h"
 #import "WebCoreThreadRun.h"
 #import <wtf/MainThread.h>
 #import <wtf/RAMSize.h>
 #import <wtf/RetainPtr.h>
+#import <wtf/RuntimeApplicationChecks.h>
+#import <wtf/TZoneMalloc.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaSessionManageriOS);
 
 std::unique_ptr<PlatformMediaSessionManager> PlatformMediaSessionManager::create()
 {
     auto manager = std::unique_ptr<MediaSessionManageriOS>(new MediaSessionManageriOS);
     MediaSessionHelper::sharedHelper().addClient(*manager);
-    return WTFMove(manager);
+    return manager;
 }
 
 MediaSessionManageriOS::MediaSessionManageriOS()
@@ -87,7 +91,12 @@ bool MediaSessionManageriOS::hasWirelessTargetsAvailable()
     return MediaSessionHelper::sharedHelper().isExternalOutputDeviceAvailable();
 }
 
-void MediaSessionManageriOS::configureWireLessTargetMonitoring()
+bool MediaSessionManageriOS::isMonitoringWirelessTargets() const
+{
+    return m_isMonitoringWirelessRoutes;
+}
+
+void MediaSessionManageriOS::configureWirelessTargetMonitoring()
 {
 #if !PLATFORM(WATCHOS)
     bool requiresMonitoring = anyOfSessions([] (auto& session) {
@@ -108,32 +117,26 @@ void MediaSessionManageriOS::configureWireLessTargetMonitoring()
 #endif
 }
 
-void MediaSessionManageriOS::providePresentingApplicationPIDIfNecessary()
+void MediaSessionManageriOS::providePresentingApplicationPIDIfNecessary(ProcessID pid)
 {
-#if HAVE(CELESTIAL)
+#if HAVE(MEDIAEXPERIENCE_AVSYSTEMCONTROLLER)
     if (m_havePresentedApplicationPID)
         return;
     m_havePresentedApplicationPID = true;
-    MediaSessionHelper::sharedHelper().providePresentingApplicationPID(presentingApplicationPID());
+    MediaSessionHelper::sharedHelper().providePresentingApplicationPID(pid);
+#else
+    UNUSED_PARAM(pid);
 #endif
 }
 
-void MediaSessionManageriOS::mediaServerConnectionDied()
+void MediaSessionManageriOS::updatePresentingApplicationPIDIfNecessary(ProcessID pid)
 {
-    ALWAYS_LOG(LOGIDENTIFIER, m_havePresentedApplicationPID);
-
-    if (!m_havePresentedApplicationPID)
-        return;
-
-    m_havePresentedApplicationPID = false;
-    callOnMainThread([] () {
-        providePresentingApplicationPID();
-    });
-}
-
-void MediaSessionManageriOS::providePresentingApplicationPID()
-{
-    MediaSessionHelper::sharedHelper().providePresentingApplicationPID(presentingApplicationPID());
+#if HAVE(MEDIAEXPERIENCE_AVSYSTEMCONTROLLER)
+    if (m_havePresentedApplicationPID)
+        MediaSessionHelper::sharedHelper().providePresentingApplicationPID(pid, MediaSessionHelper::ShouldOverride::Yes);
+#else
+    UNUSED_PARAM(pid);
+#endif
 }
 
 bool MediaSessionManageriOS::sessionWillBeginPlayback(PlatformMediaSession& session)
@@ -149,7 +152,7 @@ bool MediaSessionManageriOS::sessionWillBeginPlayback(PlatformMediaSession& sess
     session.setShouldPlayToPlaybackTarget(playbackTargetSupportsAirPlayVideo);
 #endif
 
-    providePresentingApplicationPIDIfNecessary();
+    providePresentingApplicationPIDIfNecessary(session.presentingApplicationPID());
 
     return true;
 }
@@ -159,7 +162,7 @@ void MediaSessionManageriOS::sessionWillEndPlayback(PlatformMediaSession& sessio
     MediaSessionManagerCocoa::sessionWillEndPlayback(session, delayCallingUpdateNowPlaying);
 
 #if USE(AUDIO_SESSION)
-    if (isApplicationInBackground() && !anyOfSessions([] (auto& session) { return session.state() == PlatformMediaSession::Playing; }))
+    if (isApplicationInBackground() && !anyOfSessions([] (auto& session) { return session.state() == PlatformMediaSession::State::Playing; }))
         maybeDeactivateAudioSession();
 #endif
 }
@@ -176,6 +179,28 @@ void MediaSessionManageriOS::externalOutputDeviceAvailableDidChange(HasAvailable
 void MediaSessionManageriOS::isPlayingToAutomotiveHeadUnitDidChange(PlayingToAutomotiveHeadUnit playingToAutomotiveHeadUnit)
 {
     setIsPlayingToAutomotiveHeadUnit(playingToAutomotiveHeadUnit == PlayingToAutomotiveHeadUnit::Yes);
+}
+
+void MediaSessionManageriOS::activeAudioRouteSupportsSpatialPlaybackDidChange(SupportsSpatialAudioPlayback supportsSpatialPlayback)
+{
+    setSupportsSpatialAudioPlayback(supportsSpatialPlayback == SupportsSpatialAudioPlayback::Yes);
+}
+
+std::optional<bool> MediaSessionManagerCocoa::supportsSpatialAudioPlaybackForConfiguration(const MediaConfiguration& configuration)
+{
+    ASSERT(configuration.audio);
+
+    // Only multichannel audio can be spatially rendered on iOS.
+    if (!configuration.audio || configuration.audio->channels.toDouble() <= 2)
+        return { false };
+
+    auto supportsSpatialAudioPlayback = this->supportsSpatialAudioPlayback();
+    if (supportsSpatialAudioPlayback.has_value())
+        return supportsSpatialAudioPlayback;
+
+    MediaSessionHelper::sharedHelper().updateActiveAudioRouteSupportsSpatialPlayback();
+
+    return this->supportsSpatialAudioPlayback();
 }
 
 void MediaSessionManageriOS::activeAudioRouteDidChange(ShouldPause shouldPause)
@@ -200,7 +225,7 @@ void MediaSessionManageriOS::activeVideoRouteDidChange(SupportsAirPlayVideo supp
     m_playbackTargetSupportsAirPlayVideo = supportsAirPlayVideo == SupportsAirPlayVideo::Yes;
 #endif
 
-    auto nowPlayingSession = nowPlayingEligibleSession();
+    CheckedPtr nowPlayingSession = nowPlayingEligibleSession().get();
     if (!nowPlayingSession)
         return;
 
@@ -241,6 +266,5 @@ void MediaSessionManageriOS::applicationWillBecomeInactive()
 }
 
 } // namespace WebCore
-
 
 #endif // PLATFORM(IOS_FAMILY)

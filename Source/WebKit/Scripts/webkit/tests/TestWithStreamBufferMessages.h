@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2021-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,8 +27,8 @@
 #include "ArgumentCoders.h"
 #include "Connection.h"
 #include "MessageNames.h"
-#include "TestWithStreamBufferMessagesReplies.h"
 #include <wtf/Forward.h>
+#include <wtf/RuntimeApplicationChecks.h>
 #include <wtf/ThreadSafeRefCounted.h>
 
 namespace IPC {
@@ -45,23 +45,26 @@ static inline IPC::ReceiverName messageReceiverName()
 
 class SendStreamBuffer {
 public:
-    using Arguments = std::tuple<const IPC::StreamConnectionBuffer&>;
+    using Arguments = std::tuple<IPC::StreamConnectionBuffer>;
 
     static IPC::MessageName name() { return IPC::MessageName::TestWithStreamBuffer_SendStreamBuffer; }
     static constexpr bool isSync = false;
+    static constexpr bool canDispatchOutOfOrder = false;
+    static constexpr bool replyCanDispatchOutOfOrder = false;
+    static constexpr bool deferSendingIfSuspended = false;
 
     explicit SendStreamBuffer(const IPC::StreamConnectionBuffer& stream)
         : m_arguments(stream)
     {
     }
 
-    const Arguments& arguments() const
+    auto&& arguments()
     {
-        return m_arguments;
+        return WTFMove(m_arguments);
     }
 
 private:
-    Arguments m_arguments;
+    std::tuple<const IPC::StreamConnectionBuffer&> m_arguments;
 };
 
 } // namespace TestWithStreamBuffer

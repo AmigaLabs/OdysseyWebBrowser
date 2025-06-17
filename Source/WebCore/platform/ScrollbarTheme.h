@@ -23,12 +23,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef ScrollbarTheme_h
-#define ScrollbarTheme_h
+#pragma once
 
 #include "GraphicsContext.h"
 #include "IntRect.h"
 #include "ScrollTypes.h"
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 
@@ -37,12 +37,13 @@ class ScrollableArea;
 class Scrollbar;
 class ScrollView;
 
-#if ENABLE(RUBBER_BANDING)
+#if HAVE(RUBBER_BANDING)
 class GraphicsLayer;
 #endif
 
 class ScrollbarTheme {
-    WTF_MAKE_NONCOPYABLE(ScrollbarTheme); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(ScrollbarTheme);
+    WTF_MAKE_NONCOPYABLE(ScrollbarTheme);
 public:
     ScrollbarTheme() = default;
     virtual ~ScrollbarTheme() {};
@@ -52,7 +53,7 @@ public:
     virtual bool paint(Scrollbar&, GraphicsContext&, const IntRect& /*damageRect*/) { return false; }
     virtual ScrollbarPart hitTest(Scrollbar&, const IntPoint&) { return NoPart; }
     
-    virtual int scrollbarThickness(ScrollbarControlSize = ScrollbarControlSize::Regular, ScrollbarExpansionState = ScrollbarExpansionState::Expanded) { return 0; }
+    virtual int scrollbarThickness(ScrollbarWidth = ScrollbarWidth::Auto, ScrollbarExpansionState = ScrollbarExpansionState::Expanded, OverlayScrollbarSizeRelevancy = OverlayScrollbarSizeRelevancy::IncludeOverlayScrollbarSize) { return 0; }
 
     virtual ScrollbarButtonsPlacement buttonsPlacement() const { return ScrollbarButtonsSingle; }
 
@@ -91,11 +92,6 @@ public:
     virtual void paintTickmarks(GraphicsContext&, Scrollbar&, const IntRect&) { }
     virtual void paintOverhangAreas(ScrollView&, GraphicsContext&, const IntRect&, const IntRect&, const IntRect&) { }
 
-#if ENABLE(RUBBER_BANDING)
-    virtual void setUpOverhangAreasLayerContents(GraphicsLayer*, const Color&) { }
-    virtual void setUpContentShadowLayer(GraphicsLayer*) { }
-#endif
-
     virtual ScrollbarButtonPressAction handleMousePressEvent(Scrollbar&, const PlatformMouseEvent&, ScrollbarPart);
     virtual bool shouldSnapBackToDragOrigin(Scrollbar&, const PlatformMouseEvent&) { return false; }
     virtual bool shouldDragDocumentInsteadOfThumb(Scrollbar&, const PlatformMouseEvent&) { return false; }
@@ -111,6 +107,7 @@ public:
 
     virtual void registerScrollbar(Scrollbar&) { }
     virtual void unregisterScrollbar(Scrollbar&) { }
+    virtual void didCreateScrollerImp(Scrollbar&) { };
 
     virtual bool isMockTheme() const { return false; }
 
@@ -121,4 +118,3 @@ private:
 };
 
 }
-#endif

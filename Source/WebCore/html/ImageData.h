@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2008-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,25 +28,27 @@
 
 #pragma once
 
+#include "ByteArrayPixelBuffer.h"
 #include "ExceptionOr.h"
+#include "ImageDataArray.h"
 #include "ImageDataSettings.h"
 #include "IntSize.h"
-#include "PixelBuffer.h"
 #include "PredefinedColorSpace.h"
-#include <JavaScriptCore/Uint8ClampedArray.h>
+#include <JavaScriptCore/Forward.h>
 #include <wtf/Forward.h>
 
 namespace WebCore {
 
 class ImageData : public RefCounted<ImageData> {
 public:
-    WEBCORE_EXPORT static Ref<ImageData> create(PixelBuffer&&);
-    WEBCORE_EXPORT static RefPtr<ImageData> create(std::optional<PixelBuffer>&&);
-    WEBCORE_EXPORT static RefPtr<ImageData> create(const IntSize&);
-    WEBCORE_EXPORT static RefPtr<ImageData> create(const IntSize&, Ref<Uint8ClampedArray>&&, PredefinedColorSpace);
-    WEBCORE_EXPORT static ExceptionOr<Ref<ImageData>> createUninitialized(unsigned rows, unsigned pixelsPerRow, PredefinedColorSpace defaultColorSpace, std::optional<ImageDataSettings> = std::nullopt);
+    WEBCORE_EXPORT static Ref<ImageData> create(Ref<ByteArrayPixelBuffer>&&, std::optional<ImageDataStorageFormat> = { });
+    WEBCORE_EXPORT static RefPtr<ImageData> create(RefPtr<ByteArrayPixelBuffer>&&, std::optional<ImageDataStorageFormat> = { });
+    WEBCORE_EXPORT static RefPtr<ImageData> create(const IntSize&, PredefinedColorSpace, ImageDataStorageFormat = ImageDataStorageFormat::Uint8);
+    WEBCORE_EXPORT static RefPtr<ImageData> create(const IntSize&, ImageDataArray&&, PredefinedColorSpace);
+
+    WEBCORE_EXPORT static ExceptionOr<Ref<ImageData>> create(unsigned sw, unsigned sh, PredefinedColorSpace defaultColorSpace, std::optional<ImageDataSettings> = std::nullopt, std::span<const uint8_t> = { });
     WEBCORE_EXPORT static ExceptionOr<Ref<ImageData>> create(unsigned sw, unsigned sh, std::optional<ImageDataSettings>);
-    WEBCORE_EXPORT static ExceptionOr<Ref<ImageData>> create(Ref<Uint8ClampedArray>&&, unsigned sw, std::optional<unsigned> sh, std::optional<ImageDataSettings>);
+    WEBCORE_EXPORT static ExceptionOr<Ref<ImageData>> create(ImageDataArray&&, unsigned sw, std::optional<unsigned> sh, std::optional<ImageDataSettings>);
 
     WEBCORE_EXPORT ~ImageData();
 
@@ -56,16 +58,18 @@ public:
 
     int width() const { return m_size.width(); }
     int height() const { return m_size.height(); }
-    Uint8ClampedArray& data() const { return m_data.get(); }
+    const ImageDataArray& data() const { return m_data; }
     PredefinedColorSpace colorSpace() const { return m_colorSpace; }
+    ImageDataStorageFormat storageFormat() const { return m_data.storageFormat(); }
 
-    PixelBuffer pixelBuffer() const;
+    Ref<ByteArrayPixelBuffer> pixelBuffer() const;
 
 private:
-    explicit ImageData(const IntSize&, Ref<JSC::Uint8ClampedArray>&&, PredefinedColorSpace);
+    explicit ImageData(const IntSize&, ImageDataArray&&, PredefinedColorSpace);
+    explicit ImageData(const IntSize&, ImageDataArray&&, PredefinedColorSpace, std::optional<ImageDataStorageFormat>);
 
     IntSize m_size;
-    Ref<JSC::Uint8ClampedArray> m_data;
+    ImageDataArray m_data;
     PredefinedColorSpace m_colorSpace;
 };
 

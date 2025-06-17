@@ -29,28 +29,31 @@
 #include "config.h"
 #include "AccessibilitySVGRoot.h"
 
+#include "AXObjectCache.h"
+#include "ElementInlines.h"
 #include "RenderObject.h"
 #include "SVGDescElement.h"
+#include "SVGElementTypeHelpers.h"
 #include "SVGTitleElement.h"
-#include "TypedElementDescendantIterator.h"
+#include "TypedElementDescendantIteratorInlines.h"
 
 namespace WebCore {
 
-AccessibilitySVGRoot::AccessibilitySVGRoot(RenderObject* renderer)
-    : AccessibilitySVGElement(renderer)
+AccessibilitySVGRoot::AccessibilitySVGRoot(AXID axID, RenderObject& renderer, AXObjectCache* cache)
+    : AccessibilitySVGObject(axID, renderer, cache)
 {
 }
 
 AccessibilitySVGRoot::~AccessibilitySVGRoot() = default;
 
-Ref<AccessibilitySVGRoot> AccessibilitySVGRoot::create(RenderObject* renderer)
+Ref<AccessibilitySVGRoot> AccessibilitySVGRoot::create(AXID axID, RenderObject& renderer, AXObjectCache* cache)
 {
-    return adoptRef(*new AccessibilitySVGRoot(renderer));
+    return adoptRef(*new AccessibilitySVGRoot(axID, renderer, cache));
 }
 
 void AccessibilitySVGRoot::setParent(AccessibilityRenderObject* parent)
 {
-    m_parent = makeWeakPtr(parent);
+    m_parent = parent;
 }
     
 AccessibilityObject* AccessibilitySVGRoot::parentObject() const
@@ -60,16 +63,14 @@ AccessibilityObject* AccessibilitySVGRoot::parentObject() const
     if (m_parent)
         return m_parent.get();
     
-    return AccessibilitySVGElement::parentObject();
+    return AccessibilitySVGObject::parentObject();
 }
 
-AccessibilityRole AccessibilitySVGRoot::roleValue() const
+AccessibilityRole AccessibilitySVGRoot::determineAccessibilityRole()
 {
-    AccessibilityRole ariaRole = ariaRoleAttribute();
-    if (ariaRole != AccessibilityRole::Unknown)
-        return ariaRole;
-
-    return AccessibilityRole::Group;
+    if ((m_ariaRole = determineAriaRoleAttribute()) != AccessibilityRole::Unknown)
+        return m_ariaRole;
+    return AccessibilityRole::Generic;
 }
 
 bool AccessibilitySVGRoot::hasAccessibleContent() const
@@ -78,17 +79,14 @@ bool AccessibilitySVGRoot::hasAccessibleContent() const
     if (!rootElement)
         return false;
 
-    auto isAccessibleSVGElement = [] (const Element& element) -> bool {
-        if (!is<SVGElement>(element))
-            return false;
-
+    auto isAccessibleSVGElement = [] (const SVGElement& element) -> bool {
         // The presence of an SVGTitle or SVGDesc element is enough to deem the SVG hierarchy as accessible.
         if (is<SVGTitleElement>(element)
             || is<SVGDescElement>(element))
             return true;
 
         // Text content is accessible.
-        if (downcast<SVGElement>(element).isTextContent())
+        if (element.isTextContent())
             return true;
 
         // If the role or aria-label attributes are specified, this is accessible.
@@ -99,7 +97,8 @@ bool AccessibilitySVGRoot::hasAccessibleContent() const
         return false;
     };
 
-    if (isAccessibleSVGElement(*rootElement))
+    auto* svgRootElement = dynamicDowncast<SVGElement>(*rootElement);
+    if (svgRootElement && isAccessibleSVGElement(*svgRootElement))
         return true;
 
     // This SVG hierarchy is accessible if any of its descendants is accessible.

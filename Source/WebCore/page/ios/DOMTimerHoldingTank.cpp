@@ -25,10 +25,13 @@
 
 #include "config.h"
 #include "DOMTimerHoldingTank.h"
+#include <wtf/TZoneMallocInlines.h>
 
 #if ENABLE(CONTENT_CHANGE_OBSERVER)
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(DOMTimerHoldingTank);
 
 #if PLATFORM(IOS_SIMULATOR)
 constexpr Seconds maximumHoldTimeLimit { 50_ms };
@@ -47,7 +50,7 @@ DOMTimerHoldingTank::~DOMTimerHoldingTank() = default;
 
 void DOMTimerHoldingTank::add(const DOMTimer& timer)
 {
-    m_timers.add(&timer);
+    m_timers.add(timer);
     if (!m_exceededMaximumHoldTimer.isActive())
         m_exceededMaximumHoldTimer.startOneShot(maximumHoldTimeLimit);
 }
@@ -55,12 +58,12 @@ void DOMTimerHoldingTank::add(const DOMTimer& timer)
 void DOMTimerHoldingTank::remove(const DOMTimer& timer)
 {
     stopExceededMaximumHoldTimer();
-    m_timers.remove(&timer);
+    m_timers.remove(timer);
 }
 
 bool DOMTimerHoldingTank::contains(const DOMTimer& timer)
 {
-    return m_timers.contains(&timer);
+    return m_timers.contains(timer);
 }
 
 void DOMTimerHoldingTank::removeAll()

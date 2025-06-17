@@ -25,8 +25,11 @@
 
 #import "_WKInspectorConfiguration.h"
 
+#import <WebKit/WKWebViewConfiguration.h>
+
 #import "APIInspectorConfiguration.h"
 #import "WKObject.h"
+#import <wtf/AlignedStorage.h>
 
 namespace WebKit {
 
@@ -40,7 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface _WKInspectorConfiguration () <WKObject> {
 @package
-    API::ObjectStorage<API::InspectorConfiguration> _configuration;
+    AlignedStorage<API::InspectorConfiguration> _configuration;
 }
 
 - (void)applyToWebViewConfiguration:(WKWebViewConfiguration *)webViewConfiguration;

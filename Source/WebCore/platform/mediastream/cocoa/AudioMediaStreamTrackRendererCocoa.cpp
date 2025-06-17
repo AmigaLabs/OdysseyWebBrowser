@@ -33,50 +33,110 @@
 #include "CAAudioStreamDescription.h"
 #include "LibWebRTCAudioModule.h"
 #include <wtf/CompletionHandler.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
-AudioMediaStreamTrackRendererCocoa::AudioMediaStreamTrackRendererCocoa() = default;
+WTF_MAKE_TZONE_ALLOCATED_IMPL(AudioMediaStreamTrackRendererCocoa);
 
-AudioMediaStreamTrackRendererCocoa::~AudioMediaStreamTrackRendererCocoa() = default;
+AudioMediaStreamTrackRendererCocoa::AudioMediaStreamTrackRendererCocoa(Init&& init)
+    : AudioMediaStreamTrackRenderer(WTFMove(init))
+    , m_resetObserver([this] { reset(); })
+    , m_deviceID(AudioMediaStreamTrackRenderer::defaultDeviceID())
+{
+}
+
+AudioMediaStreamTrackRendererCocoa::~AudioMediaStreamTrackRendererCocoa()
+{
+    ASSERT(!m_registeredDataSource);
+}
 
 void AudioMediaStreamTrackRendererCocoa::start(CompletionHandler<void()>&& callback)
 {
     clear();
 
-    AudioMediaStreamTrackRendererUnit::singleton().retrieveFormatDescription([weakThis = makeWeakPtr(this), callback = WTFMove(callback)](auto* formatDescription) mutable {
-        if (weakThis && formatDescription)
-            weakThis->m_outputDescription = makeUnique<CAAudioStreamDescription>(*formatDescription);
+    AudioMediaStreamTrackRendererUnit::singleton().retrieveFormatDescription([weakThis = ThreadSafeWeakPtr { *this }, callback = WTFMove(callback)](auto formatDescription) mutable {
+        RefPtr protectedThis = weakThis.get();
+        if (protectedThis && formatDescription) {
+            protectedThis->m_outputDescription = *formatDescription;
+            protectedThis->m_shouldRecreateDataSource = true;
+        }
         callback();
     });
 }
 
+BaseAudioMediaStreamTrackRendererUnit& AudioMediaStreamTrackRendererCocoa::rendererUnit()
+{
+#if USE(LIBWEBRTC)
+    if (RefPtr audioModule = this->audioModule())
+        return audioModule->incomingAudioMediaStreamTrackRendererUnit();
+#endif
+    return AudioMediaStreamTrackRendererUnit::singleton();
+}
+
 void AudioMediaStreamTrackRendererCocoa::stop()
 {
-    if (m_dataSource)
-        AudioMediaStreamTrackRendererUnit::singleton().removeSource(*m_dataSource);
+    ASSERT(isMainThread());
+
+    if (auto source = m_registeredDataSource)
+        rendererUnit().removeSource(m_deviceID, *source);
 }
 
 void AudioMediaStreamTrackRendererCocoa::clear()
 {
     stop();
 
-    m_dataSource = nullptr;
-    m_outputDescription = { };
+    setRegisteredDataSource(nullptr);
+    m_outputDescription = std::nullopt;
 }
 
 void AudioMediaStreamTrackRendererCocoa::setVolume(float volume)
 {
+    ASSERT(isMainThread());
+
     AudioMediaStreamTrackRenderer::setVolume(volume);
-    if (m_dataSource)
-        m_dataSource->setVolume(volume);
+    if (auto source = m_registeredDataSource)
+        source->setVolume(volume);
 }
 
-void AudioMediaStreamTrackRendererCocoa::setAudioOutputDevice(const String& deviceId)
+void AudioMediaStreamTrackRendererCocoa::reset()
 {
-    // FIXME: We should create a unit for ourselves here or use the default unit if deviceId is matching.
-    AudioMediaStreamTrackRendererUnit::singleton().setAudioOutputDevice(deviceId);
-    m_shouldReset = true;
+    ASSERT(isMainThread());
+
+    if (auto source = m_registeredDataSource)
+        source->recomputeSampleOffset();
+}
+
+void AudioMediaStreamTrackRendererCocoa::setAudioOutputDevice(const String& deviceID)
+{
+    auto registeredDataSource = m_registeredDataSource;
+
+    setRegisteredDataSource(nullptr);
+
+    m_deviceID = deviceID;
+    setRegisteredDataSource(WTFMove(registeredDataSource));
+
+    m_shouldRecreateDataSource = true;
+}
+
+void AudioMediaStreamTrackRendererCocoa::setRegisteredDataSource(RefPtr<AudioSampleDataSource>&& source)
+{
+    ASSERT(isMainThread());
+
+    if (m_registeredDataSource)
+        rendererUnit().removeSource(m_deviceID, *m_registeredDataSource);
+
+    if (!m_outputDescription)
+        return;
+
+    m_registeredDataSource = source;
+    if (!m_registeredDataSource)
+        return;
+
+    source->setLogger(logger(), logIdentifier());
+    source->setVolume(volume());
+    rendererUnit().addResetObserver(m_deviceID, m_resetObserver);
+    rendererUnit().addSource(m_deviceID, *m_registeredDataSource);
 }
 
 static unsigned pollSamplesCount()
@@ -92,12 +152,13 @@ void AudioMediaStreamTrackRendererCocoa::pushSamples(const MediaTime& sampleTime
 {
     ASSERT(!isMainThread());
     ASSERT(description.platformDescription().type == PlatformDescription::CAAudioStreamBasicType);
-    if (!m_dataSource || m_shouldReset || !m_dataSource->inputDescription() || *m_dataSource->inputDescription() != description) {
+    RefPtr dataSource = m_dataSource;
+    if (!dataSource || m_shouldRecreateDataSource || !dataSource->inputDescription() || *dataSource->inputDescription() != description) {
         DisableMallocRestrictionsForCurrentThreadScope scope;
 
         // FIXME: For non libwebrtc sources, we can probably reduce poll samples count to 2.
         
-        auto dataSource = AudioSampleDataSource::create(description.sampleRate() * 0.5, *this, pollSamplesCount());
+        dataSource = AudioSampleDataSource::create(description.sampleRate() * 0.5, *this, pollSamplesCount());
 
         if (dataSource->setInputFormat(toCAAudioStreamDescription(description))) {
             ERROR_LOG(LOGIDENTIFIER, "Unable to set the input format of data source");
@@ -109,24 +170,15 @@ void AudioMediaStreamTrackRendererCocoa::pushSamples(const MediaTime& sampleTime
             return;
         }
 
-        callOnMainThread([this, weakThis = makeWeakPtr(this), oldSource = m_dataSource, newSource = dataSource]() mutable {
-            if (!weakThis)
-                return;
-
-#if !RELEASE_LOG_DISABLED
-            newSource->setLogger(logger(), logIdentifier());
-#endif
-            if (oldSource)
-                AudioMediaStreamTrackRendererUnit::singleton().removeSource(*oldSource);
-
-            newSource->setVolume(volume());
-            AudioMediaStreamTrackRendererUnit::singleton().addSource(WTFMove(newSource));
+        callOnMainThread([weakThis = ThreadSafeWeakPtr { *this }, newSource = dataSource]() mutable {
+            if (RefPtr protectedThis = weakThis.get())
+                protectedThis->setRegisteredDataSource(WTFMove(newSource));
         });
-        m_dataSource = WTFMove(dataSource);
-        m_shouldReset = false;
+        m_dataSource = dataSource;
+        m_shouldRecreateDataSource = false;
     }
 
-    m_dataSource->pushSamples(sampleTime, audioData, sampleCount);
+    dataSource->pushSamples(sampleTime, audioData, sampleCount);
 }
 
 } // namespace WebCore

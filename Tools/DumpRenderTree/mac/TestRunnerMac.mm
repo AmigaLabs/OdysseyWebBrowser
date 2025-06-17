@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2007-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -41,12 +41,12 @@
 #import "WorkQueue.h"
 #import "WorkQueueItem.h"
 #import <Foundation/Foundation.h>
+#import <JavaScriptCore/APICast.h>
 #import <JavaScriptCore/JSStringRefCF.h>
 #import <WebCore/GeolocationPositionData.h>
 #import <WebKit/DOMDocument.h>
 #import <WebKit/DOMElement.h>
 #import <WebKit/DOMHTMLInputElementPrivate.h>
-#import <WebKit/WebApplicationCache.h>
 #import <WebKit/WebBackForwardList.h>
 #import <WebKit/WebCoreStatistics.h>
 #import <WebKit/WebDOMOperationsPrivate.h>
@@ -56,6 +56,7 @@
 #import <WebKit/WebDeviceOrientationProviderMock.h>
 #import <WebKit/WebFrame.h>
 #import <WebKit/WebFrameLoadDelegate.h>
+#import <WebKit/WebFramePrivate.h>
 #import <WebKit/WebFrameViewPrivate.h>
 #import <WebKit/WebGeolocationPosition.h>
 #import <WebKit/WebHTMLRepresentation.h>
@@ -77,12 +78,17 @@
 #import <wtf/HashMap.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/WallTime.h>
+#import <wtf/cocoa/TypeCastsCocoa.h>
 
 #if PLATFORM(IOS_FAMILY)
-#import "UIKitSPI.h"
+#import "UIKitSPIForTesting.h"
 #import <WebKit/WebCoreThread.h>
 #import <WebKit/WebCoreThreadMessage.h>
 #import <WebKit/WebDOMOperationsPrivate.h>
+#endif
+
+#if PLATFORM(MAC)
+#import "WebHTMLViewForTestingMac.h"
 #endif
 
 #if !PLATFORM(IOS_FAMILY)
@@ -123,9 +129,7 @@
 - (id)initWithGeolocationPosition:(WebCore::GeolocationPositionData&&)coreGeolocationPosition;
 @end
 
-TestRunner::~TestRunner()
-{
-}
+TestRunner::~TestRunner() = default;
 
 JSContextRef TestRunner::mainFrameJSContext()
 {
@@ -151,47 +155,15 @@ bool TestRunner::callShouldCloseOnWebView()
     return [[mainFrame webView] shouldClose];
 }
 
-void TestRunner::clearAllApplicationCaches()
-{
-    [WebApplicationCache deleteAllApplicationCaches];
-}
-
-long long TestRunner::applicationCacheDiskUsageForOrigin(JSStringRef url)
-{
-    auto urlCF = adoptCF(JSStringCopyCFString(kCFAllocatorDefault, url));
-    auto origin = adoptNS([[WebSecurityOrigin alloc] initWithURL:[NSURL URLWithString:(__bridge NSString *)urlCF.get()]]);
-    long long usage = [WebApplicationCache diskUsageForOrigin:origin.get()];
-    return usage;
-}
-
-void TestRunner::clearApplicationCacheForOrigin(JSStringRef url)
-{
-    auto urlCF = adoptCF(JSStringCopyCFString(kCFAllocatorDefault, url));
-    auto origin = adoptNS([[WebSecurityOrigin alloc] initWithURL:[NSURL URLWithString:(__bridge NSString *)urlCF.get()]]);
-    [WebApplicationCache deleteCacheForOrigin:origin.get()];
-}
-
-static JSObjectRef originsArrayToJS(JSContextRef context, NSArray *origins)
-{
-    auto count = [origins count];
-    auto array = JSObjectMakeArray(context, 0, nullptr, nullptr);
-    for (NSUInteger i = 0; i < count; i++) {
-        NSString *origin = [[origins objectAtIndex:i] databaseIdentifier];
-        auto originJS = adopt(JSStringCreateWithCFString((__bridge CFStringRef)origin));
-        JSObjectSetPropertyAtIndex(context, array, i, JSValueMakeString(context, originJS.get()), 0);
-    }
-    return array;
-}
-
-JSValueRef TestRunner::originsWithApplicationCache(JSContextRef context)
-{
-    return originsArrayToJS(context, [WebApplicationCache originsWithCache]);
-}
-
 void TestRunner::clearAllDatabases()
 {
     [[WebDatabaseManager sharedWebDatabaseManager] deleteAllDatabases];
     [[WebDatabaseManager sharedWebDatabaseManager] deleteAllIndexedDatabases];
+}
+
+void TestRunner::clearNotificationPermissionState()
+{
+    [[mainFrame webView] _clearNotificationPermissionState];
 }
 
 void TestRunner::setStorageDatabaseIdleInterval(double interval)
@@ -280,6 +252,11 @@ void TestRunner::notifyDone()
             dump();
     } else
         fprintf(stderr, "TestRunner::notifyDone() called unexpectedly.");
+}
+
+void TestRunner::stopLoading()
+{
+    [mainFrame.webView stopLoading:nil];
 }
 
 void TestRunner::forceImmediateCompletion()
@@ -392,11 +369,6 @@ void TestRunner::setOnlyAcceptFirstPartyCookies(bool onlyAcceptFirstPartyCookies
     [WebPreferences _setCurrentNetworkLoaderSessionCookieAcceptPolicy:cookieAcceptPolicy];
 }
 
-void TestRunner::setAppCacheMaximumSize(unsigned long long size)
-{
-    [WebApplicationCache setMaximumSize:size];
-}
-
 void TestRunner::setCustomPolicyDelegate(bool setDelegate, bool permissive)
 {
     if (!setDelegate) {
@@ -502,6 +474,20 @@ void TestRunner::setAutomaticLinkDetectionEnabled(bool enabled)
 #endif
 }
 
+JSValueRef TestRunner::alwaysResolvePromise(JSContextRef context)
+{
+    JSContext *jsContext = [JSContext contextWithJSGlobalContextRef:toGlobalRef(toJS(context))];
+    auto callback = ^(JSValue *resolve, JSValue *) {
+        [resolve callWithArguments:nil];
+    };
+    return [[JSValue valueWithNewPromiseInContext:jsContext fromExecutor:callback] JSValueRef];
+}
+
+void TestRunner::setPageScaleFactor(double scaleFactor, long x, long y)
+{
+    [[mainFrame webView] _scaleWebView:scaleFactor atOrigin:NSMakePoint(x, y)];
+}
+
 void TestRunner::setTabKeyCyclesThroughElements(bool cycles)
 {
     [[mainFrame webView] setTabKeyCyclesThroughElements:cycles];
@@ -539,6 +525,16 @@ void TestRunner::setValueForUser(JSContextRef context, JSValueRef nodeObject, JS
 void TestRunner::dispatchPendingLoadRequests()
 {
     [[mainFrame webView] _dispatchPendingLoadRequests];
+}
+
+void TestRunner::removeAllCookies(JSValueRef callback)
+{
+    static uint64_t callbackIDGenerator = 0;
+    auto callbackID = ++callbackIDGenerator;
+    cacheTestRunnerCallback(callbackID, callback);
+    [WebPreferences _clearNetworkLoaderSession:^{
+        callTestRunnerCallback(callbackID);
+    }];
 }
 
 void TestRunner::removeAllVisitedLinks()
@@ -953,12 +949,6 @@ void TestRunner::apiTestGoToCurrentBackForwardItem()
     [view goToBackForwardItem:[[view backForwardList] currentItem]];
 }
 
-void TestRunner::setWebViewEditable(bool editable)
-{
-    WebView *view = [mainFrame webView];
-    [view setEditable:editable];
-}
-
 static NSString *SynchronousLoaderRunLoopMode = @"DumpRenderTreeSynchronousLoaderRunLoopMode";
 
 @interface SynchronousLoader : NSObject <NSURLConnectionDelegate>
@@ -1153,7 +1143,7 @@ void TestRunner::removeAllWebNotificationPermissions()
 
 void TestRunner::simulateWebNotificationClick(JSValueRef jsNotification)
 {
-    uint64_t notificationID = [[mainFrame webView] _notificationIDForTesting:jsNotification];
+    NSString *notificationID = [[mainFrame webView] _notificationIDForTesting:jsNotification];
     m_hasPendingWebNotificationClick = true;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!m_hasPendingWebNotificationClick)
@@ -1197,4 +1187,29 @@ unsigned TestRunner::imageCountInGeneralPasteboard() const
         return 0;
     
     return imagesArray.count;
+}
+
+
+void TestRunner::generateTestReport(JSStringRef message, JSStringRef group)
+{
+    ASSERT(message);
+    auto messageCF = adoptCF(JSStringCopyCFString(kCFAllocatorDefault, message));
+    RetainPtr<CFStringRef> groupCF;
+    if (group)
+        groupCF = adoptCF(JSStringCopyCFString(kCFAllocatorDefault, group));
+    [mainFrame _generateTestReport:(__bridge NSString *)messageCF.get() withGroup:(__bridge NSString *)groupCF.get()];
+}
+
+#if PLATFORM(MAC)
+
+bool TestRunner::isSecureEventInputEnabled() const
+{
+    return dynamic_objc_cast<WebHTMLView>(mainFrame.frameView.documentView)._secureEventInputEnabledForTesting;
+}
+
+#endif // PLATFORM(MAC)
+
+void TestRunner::setObscuredContentInsets(double top, double right, double bottom, double left)
+{
+    [[mainFrame webView] _setObscuredTopContentInsetForTesting:top right:right bottom:bottom left:left];
 }

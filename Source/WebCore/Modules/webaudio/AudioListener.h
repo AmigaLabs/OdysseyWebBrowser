@@ -73,19 +73,24 @@ public:
     bool hasSampleAccurateValues() const;
     bool shouldUseARate() const;
 
-    const float* positionXValues(size_t framesToProcess);
-    const float* positionYValues(size_t framesToProcess);
-    const float* positionZValues(size_t framesToProcess);
+    std::span<const float> positionXValues(size_t framesToProcess);
+    std::span<const float> positionYValues(size_t framesToProcess);
+    std::span<const float> positionZValues(size_t framesToProcess);
 
-    const float* forwardXValues(size_t framesToProcess);
-    const float* forwardYValues(size_t framesToProcess);
-    const float* forwardZValues(size_t framesToProcess);
+    std::span<const float> forwardXValues(size_t framesToProcess);
+    std::span<const float> forwardYValues(size_t framesToProcess);
+    std::span<const float> forwardZValues(size_t framesToProcess);
 
-    const float* upXValues(size_t framesToProcess);
-    const float* upYValues(size_t framesToProcess);
-    const float* upZValues(size_t framesToProcess);
+    std::span<const float> upXValues(size_t framesToProcess);
+    std::span<const float> upYValues(size_t framesToProcess);
+    std::span<const float> upZValues(size_t framesToProcess);
 
     void updateValuesIfNeeded(size_t framesToProcess);
+
+    void updateDirtyState();
+    bool isPositionDirty() const { return m_isPositionDirty; }
+    bool isOrientationDirty() const { return m_isOrientationDirty; }
+    bool isUpVectorDirty() const { return m_isUpVectorDirty; }
 
 protected:
     explicit AudioListener(BaseAudioContext&);
@@ -116,6 +121,13 @@ private:
     AudioFloatArray m_upXValues;
     AudioFloatArray m_upYValues;
     AudioFloatArray m_upZValues;
+
+    FloatPoint3D m_lastPosition;
+    FloatPoint3D m_lastOrientation;
+    FloatPoint3D m_lastUpVector;
+    bool m_isPositionDirty { false };
+    bool m_isOrientationDirty { false };
+    bool m_isUpVectorDirty { false };
 };
 
 } // namespace WebCore

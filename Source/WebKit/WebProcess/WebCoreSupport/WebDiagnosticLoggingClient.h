@@ -27,12 +27,16 @@
 #define WebDiagnosticLoggingClient_h
 
 #include <WebCore/DiagnosticLoggingClient.h>
+#include <wtf/TZoneMalloc.h>
+#include <wtf/WeakPtr.h>
 
 namespace WebKit {
 
 class WebPage;
 
 class WebDiagnosticLoggingClient : public WebCore::DiagnosticLoggingClient {
+    WTF_MAKE_TZONE_ALLOCATED(WebDiagnosticLoggingClient);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(WebDiagnosticLoggingClient);
 public:
     WebDiagnosticLoggingClient(WebPage&);
     virtual ~WebDiagnosticLoggingClient();
@@ -45,7 +49,7 @@ private:
     void logDiagnosticMessageWithValueDictionary(const String& message, const String& description, const ValueDictionary&, WebCore::ShouldSample) override;
     void logDiagnosticMessageWithDomain(const String& message, WebCore::DiagnosticLoggingDomain) override;
 
-    WebPage& m_page;
+    WeakPtr<WebPage> m_page;
 };
 
 }

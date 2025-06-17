@@ -25,12 +25,16 @@
 
 #pragma once
 
+#if !BUSE(TZONE)
+
 #include "BMalloced.h"
 #include "IsoAllocator.h"
 #include "IsoDirectoryPage.h"
 #include "IsoTLSAllocatorEntry.h"
 #include "Packed.h"
 #include "PhysicalPageMap.h"
+
+#if !BUSE(LIBPAS)
 
 namespace bmalloc {
 
@@ -43,8 +47,8 @@ class BEXPORT IsoHeapImplBase {
 public:
     static constexpr unsigned maxAllocationFromShared = 8;
     static constexpr unsigned maxAllocationFromSharedMask = (1U << maxAllocationFromShared) - 1U;
-    static_assert(maxAllocationFromShared <= bmalloc::alignment, "");
-    static_assert(isPowerOfTwo(maxAllocationFromShared), "");
+    static_assert(maxAllocationFromShared <= bmalloc::alignment);
+    static_assert(isPowerOfTwo(maxAllocationFromShared));
 
     virtual ~IsoHeapImplBase();
     
@@ -53,14 +57,14 @@ public:
     void scavengeNow();
     static void finishScavenging(Vector<DeferredDecommit>&);
 
-    void didCommit(void* ptr, size_t bytes);
-    void didDecommit(void* ptr, size_t bytes);
+    inline void didCommit(void* ptr, size_t bytes);
+    inline void didDecommit(void* ptr, size_t bytes);
 
-    void isNowFreeable(void* ptr, size_t bytes);
-    void isNoLongerFreeable(void* ptr, size_t bytes);
+    inline void isNowFreeable(void* ptr, size_t bytes);
+    inline void isNoLongerFreeable(void* ptr, size_t bytes);
 
-    size_t freeableMemory();
-    size_t footprint();
+    inline size_t freeableMemory();
+    inline size_t footprint();
 
     void addToAllIsoHeaps();
 
@@ -91,7 +95,7 @@ protected:
     unsigned m_availableShared { maxAllocationFromSharedMask };
     AllocationMode m_allocationMode { AllocationMode::Init };
     bool m_isInlineDirectoryEligibleOrDecommitted { true };
-    static_assert(sizeof(m_availableShared) * 8 >= maxAllocationFromShared, "");
+    static_assert(sizeof(m_availableShared) * 8 >= maxAllocationFromShared);
 };
 
 template<typename Config>
@@ -142,4 +146,5 @@ private:
 
 } // namespace bmalloc
 
-
+#endif
+#endif // !BUSE(TZONE)

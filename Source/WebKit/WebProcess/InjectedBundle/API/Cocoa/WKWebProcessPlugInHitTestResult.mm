@@ -28,9 +28,10 @@
 
 #import "WKWebProcessPlugInNodeHandleInternal.h"
 #import <WebCore/WebCoreObjCExtras.h>
+#import <wtf/AlignedStorage.h>
 
 @implementation WKWebProcessPlugInHitTestResult {
-    API::ObjectStorage<WebKit::InjectedBundleHitTestResult> _hitTestResult;
+    AlignedStorage<WebKit::InjectedBundleHitTestResult> _hitTestResult;
 }
 
 - (void)dealloc
@@ -43,7 +44,7 @@
 
 - (WKWebProcessPlugInNodeHandle *)nodeHandle
 {
-    return WebKit::wrapper(_hitTestResult->nodeHandle());
+    return WebKit::wrapper(_hitTestResult->nodeHandle()).autorelease();
 }
 
 #pragma mark WKObject protocol implementation

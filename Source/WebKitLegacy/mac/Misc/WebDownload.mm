@@ -35,18 +35,18 @@
 #import <WebCore/CredentialStorage.h>
 #import <WebCore/NetworkStorageSession.h>
 #import <WebCore/ProtectionSpace.h>
-#import <WebCore/RuntimeApplicationChecks.h>
 #import <WebKitLegacy/WebPanelAuthenticationHandler.h>
 #import <pal/spi/cocoa/NSURLDownloadSPI.h>
 #import <wtf/Assertions.h>
 #import <wtf/MainThread.h>
 #import <wtf/WorkQueue.h>
+#import <wtf/cocoa/RuntimeApplicationChecksCocoa.h>
 #import <wtf/spi/darwin/dyldSPI.h>
 
 static bool shouldCallOnNetworkThread()
 {
 #if PLATFORM(MAC)
-    static bool isOldEpsonSoftwareUpdater = WebCore::MacApplication::isEpsonSoftwareUpdater() && dyld_get_program_sdk_version() < DYLD_MACOSX_VERSION_10_15;
+    static bool isOldEpsonSoftwareUpdater = WTF::MacApplication::isEpsonSoftwareUpdater() && !linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::DownloadDelegatesCalledOnTheMainThread);
     return isOldEpsonSoftwareUpdater;
 #else
     return false;
@@ -66,7 +66,7 @@ static void callOnDelegateThreadAndWait(Callable&& work)
     if (shouldCallOnNetworkThread() || isMainThread())
         work();
     else {
-        WorkQueue::main().dispatchSync([work = WTFMove(work)]() mutable {
+        WorkQueue::protectedMain()->dispatchSync([work = std::forward<Callable>(work)]() mutable {
             work();
         });
     }
@@ -224,12 +224,13 @@ using namespace WebCore;
 - (id)init
 {
     self = [super init];
-    if (self != nil) {
-        // _webInternal can be set up before init by _setRealDelegate
-        if (_webInternal == nil) {
-            _webInternal = [[WebDownloadInternal alloc] init];
-        }
-    }
+    if (self == nil)
+        return nil;
+
+    // _webInternal can be set up before init by _setRealDelegate
+    if (_webInternal == nil)
+        _webInternal = [[WebDownloadInternal alloc] init];
+
     return self;
 }
 

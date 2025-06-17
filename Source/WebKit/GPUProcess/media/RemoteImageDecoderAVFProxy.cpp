@@ -32,22 +32,38 @@
 #include "GPUProcess.h"
 #include "RemoteImageDecoderAVFManagerMessages.h"
 #include "RemoteImageDecoderAVFProxyMessages.h"
-#include "WebCoreArgumentCoders.h"
-#include <WebCore/IOSurface.h>
+#include "SharedBufferReference.h"
+#include <CoreGraphics/CGImage.h>
+#include <WebCore/GraphicsContext.h>
 #include <WebCore/ImageDecoderAVFObjC.h>
+#include <wtf/Scope.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebKit {
 
 using namespace WebCore;
 
 RemoteImageDecoderAVFProxy::RemoteImageDecoderAVFProxy(GPUConnectionToWebProcess& connectionToWebProcess)
-    : m_connectionToWebProcess(makeWeakPtr(connectionToWebProcess))
+    : m_connectionToWebProcess(connectionToWebProcess)
+    , m_resourceOwner(connectionToWebProcess.webProcessIdentity())
 {
 }
 
-void RemoteImageDecoderAVFProxy::createDecoder(const IPC::DataReference& data, const String& mimeType, CompletionHandler<void(std::optional<ImageDecoderIdentifier>&&)>&& completionHandler)
+void RemoteImageDecoderAVFProxy::ref() const
 {
-    auto imageDecoder = ImageDecoderAVFObjC::create(SharedBuffer::create(data.data(), data.size()), mimeType, AlphaOption::Premultiplied, GammaAndColorProfileOption::Ignored);
+    m_connectionToWebProcess.get()->ref();
+}
+
+void RemoteImageDecoderAVFProxy::deref() const
+{
+    m_connectionToWebProcess.get()->deref();
+}
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RemoteImageDecoderAVFProxy);
+
+void RemoteImageDecoderAVFProxy::createDecoder(const IPC::SharedBufferReference& data, const String& mimeType, CompletionHandler<void(std::optional<ImageDecoderIdentifier>&&)>&& completionHandler)
+{
+    auto imageDecoder = ImageDecoderAVFObjC::create(data.isNull() ? SharedBuffer::create() : data.unsafeBuffer().releaseNonNull(), mimeType, AlphaOption::Premultiplied, GammaAndColorProfileOption::Ignored, m_resourceOwner);
 
     std::optional<ImageDecoderIdentifier> imageDecoderIdentifier;
     if (!imageDecoder)
@@ -56,8 +72,9 @@ void RemoteImageDecoderAVFProxy::createDecoder(const IPC::DataReference& data, c
     auto identifier = ImageDecoderIdentifier::generate();
     m_imageDecoders.add(identifier, imageDecoder.copyRef());
 
-    imageDecoder->setEncodedDataStatusChangeCallback([this, identifier](auto) mutable {
-        encodedDataStatusChanged(identifier);
+    imageDecoder->setEncodedDataStatusChangeCallback([proxy = WeakPtr { *this },  identifier](auto) mutable {
+        if (RefPtr protectedProxy = proxy.get())
+            protectedProxy->encodedDataStatusChanged(identifier);
     });
 
     imageDecoderIdentifier = identifier;
@@ -71,17 +88,24 @@ void RemoteImageDecoderAVFProxy::deleteDecoder(ImageDecoderIdentifier identifier
         return;
 
     m_imageDecoders.take(identifier);
-    if (m_connectionToWebProcess && allowsExitUnderMemoryPressure())
-        m_connectionToWebProcess->gpuProcess().tryExitIfUnusedAndUnderMemoryPressure();
+    RefPtr connection = m_connectionToWebProcess.get();
+    if (!connection)
+        return;
+    if (allowsExitUnderMemoryPressure())
+        connection->protectedGPUProcess()->tryExitIfUnusedAndUnderMemoryPressure();
 }
 
 void RemoteImageDecoderAVFProxy::encodedDataStatusChanged(ImageDecoderIdentifier identifier)
 {
-    if (!m_connectionToWebProcess || !m_imageDecoders.contains(identifier))
+    RefPtr connection = m_connectionToWebProcess.get();
+    if (!connection)
         return;
 
-    auto imageDecoder = m_imageDecoders.get(identifier);
-    m_connectionToWebProcess->connection().send(Messages::RemoteImageDecoderAVFManager::EncodedDataStatusChanged(identifier, imageDecoder->frameCount(), imageDecoder->size(), imageDecoder->hasTrack()), 0);
+    RefPtr imageDecoder = m_imageDecoders.get(identifier);
+    if (!imageDecoder)
+        return;
+
+    connection->protectedConnection()->send(Messages::RemoteImageDecoderAVFManager::EncodedDataStatusChanged(identifier, imageDecoder->frameCount(), imageDecoder->size(), imageDecoder->hasTrack()), 0);
 }
 
 void RemoteImageDecoderAVFProxy::setExpectedContentSize(ImageDecoderIdentifier identifier, long long expectedContentSize)
@@ -90,10 +114,10 @@ void RemoteImageDecoderAVFProxy::setExpectedContentSize(ImageDecoderIdentifier i
     if (!m_imageDecoders.contains(identifier))
         return;
 
-    m_imageDecoders.get(identifier)->setExpectedContentSize(expectedContentSize);
+    RefPtr { m_imageDecoders.get(identifier) }->setExpectedContentSize(expectedContentSize);
 }
 
-void RemoteImageDecoderAVFProxy::setData(ImageDecoderIdentifier identifier, const IPC::DataReference& data, bool allDataReceived, CompletionHandler<void(size_t frameCount, const IntSize& size, bool hasTrack, std::optional<Vector<ImageDecoder::FrameInfo>>&&)>&& completionHandler)
+void RemoteImageDecoderAVFProxy::setData(ImageDecoderIdentifier identifier, const IPC::SharedBufferReference& data, bool allDataReceived, CompletionHandler<void(size_t frameCount, const IntSize& size, bool hasTrack, std::optional<Vector<ImageDecoder::FrameInfo>>&&)>&& completionHandler)
 {
     ASSERT(m_imageDecoders.contains(identifier));
     if (!m_imageDecoders.contains(identifier)) {
@@ -101,8 +125,8 @@ void RemoteImageDecoderAVFProxy::setData(ImageDecoderIdentifier identifier, cons
         return;
     }
 
-    auto imageDecoder = m_imageDecoders.get(identifier);
-    imageDecoder->setData(SharedBuffer::create(data.data(), data.size()), allDataReceived);
+    RefPtr imageDecoder = m_imageDecoders.get(identifier);
+    imageDecoder->setData(data.isNull() ? SharedBuffer::create() : data.unsafeBuffer().releaseNonNull(), allDataReceived);
 
     auto frameCount = imageDecoder->frameCount();
 
@@ -113,40 +137,55 @@ void RemoteImageDecoderAVFProxy::setData(ImageDecoderIdentifier identifier, cons
     completionHandler(frameCount, imageDecoder->size(), imageDecoder->hasTrack(), WTFMove(frameInfos));
 }
 
-void RemoteImageDecoderAVFProxy::createFrameImageAtIndex(ImageDecoderIdentifier identifier, size_t index, CompletionHandler<void(std::optional<WTF::MachSendRight>&&, std::optional<WebCore::DestinationColorSpace>&&)>&& completionHandler)
+void RemoteImageDecoderAVFProxy::createFrameImageAtIndex(ImageDecoderIdentifier identifier, size_t index, CompletionHandler<void(std::optional<WebCore::ShareableBitmap::Handle>&&)>&& completionHandler)
 {
     ASSERT(m_imageDecoders.contains(identifier));
-    std::optional<WTF::MachSendRight> sendRight;
-    std::optional<WebCore::DestinationColorSpace> colorSpace;
-    if (!m_imageDecoders.contains(identifier)) {
-        completionHandler(WTFMove(sendRight), WTFMove(colorSpace));
+
+    std::optional<ShareableBitmap::Handle> imageHandle;
+
+    auto invokeCallbackAtScopeExit = makeScopeExit([&] {
+        completionHandler(WTFMove(imageHandle));
+    });
+
+    RefPtr imageDecoder = m_imageDecoders.get(identifier);
+    if (!imageDecoder)
         return;
-    }
 
-    auto frameImage = m_imageDecoders.get(identifier)->createFrameImageAtIndex(index);
-    if (!frameImage) {
-        completionHandler(WTFMove(sendRight), WTFMove(colorSpace));
+    auto nativeImage = NativeImage::createTransient(imageDecoder->createFrameImageAtIndex(index));
+    if (!nativeImage)
         return;
-    }
+    bool isOpaque = false;
+    auto imageSize = nativeImage->size();
+    auto bitmap = ShareableBitmap::create({ imageSize, nativeImage->colorSpace(), isOpaque });
+    if (!bitmap)
+        return;
+    auto context = bitmap->createGraphicsContext();
+    if (!context)
+        return;
 
-    if (auto surface = IOSurface::createFromImage(frameImage.get())) {
-        sendRight = surface->createSendRight();
-        colorSpace = surface->colorSpace();
-    }
-
-    completionHandler(WTFMove(sendRight), WTFMove(colorSpace));
+    FloatRect imageRect { { }, imageSize };
+    context->drawNativeImage(*nativeImage, imageRect, imageRect, { CompositeOperator::Copy });
+    imageHandle = bitmap->createHandle();
 }
 
 void RemoteImageDecoderAVFProxy::clearFrameBufferCache(ImageDecoderIdentifier identifier, size_t index)
 {
     ASSERT(m_imageDecoders.contains(identifier));
-    if (auto* imageDecoder = m_imageDecoders.get(identifier))
+    if (RefPtr imageDecoder = m_imageDecoders.get(identifier))
         imageDecoder->clearFrameBufferCache(std::min(index, imageDecoder->frameCount() - 1));
 }
 
 bool RemoteImageDecoderAVFProxy::allowsExitUnderMemoryPressure() const
 {
     return m_imageDecoders.isEmpty();
+}
+
+std::optional<SharedPreferencesForWebProcess> RemoteImageDecoderAVFProxy::sharedPreferencesForWebProcess() const
+{
+    if (RefPtr connectionToWebProcess = m_connectionToWebProcess.get())
+        return connectionToWebProcess->sharedPreferencesForWebProcess();
+
+    return std::nullopt;
 }
 
 }

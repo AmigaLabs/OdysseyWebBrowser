@@ -27,6 +27,7 @@
 
 #include "CertificateSummary.h"
 #include "NotImplemented.h"
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/Vector.h>
 #include <wtf/persistence/PersistentCoders.h>
 #include <wtf/persistence/PersistentDecoder.h>
@@ -35,6 +36,7 @@
 namespace WebCore {
 
 class CertificateInfo {
+    WTF_MAKE_TZONE_ALLOCATED_INLINE(CertificateInfo);
 public:
     using Certificate = Vector<uint8_t>;
     using CertificateChain = Vector<Certificate>;
@@ -56,57 +58,16 @@ public:
 
     static Certificate makeCertificate(const uint8_t*, size_t);
 
+    bool operator==(const CertificateInfo& other) const
+    {
+        return verificationError() == other.verificationError()
+            && certificateChain() == other.certificateChain();
+    }
+    bool operator!=(const CertificateInfo& other) const { return !(*this == other); }
+
 private:
     int m_verificationError { 0 };
     CertificateChain m_certificateChain;
 };
 
-inline bool operator==(const CertificateInfo& a, const CertificateInfo& b)
-{
-    return a.verificationError() == b.verificationError() && a.certificateChain() == b.certificateChain();
-}
-
 } // namespace WebCore
-
-namespace WTF {
-namespace Persistence {
-
-template<> struct Coder<WebCore::CertificateInfo> {
-    static void encode(Encoder& encoder, const WebCore::CertificateInfo& certificateInfo)
-    {
-        auto& certificateChain = certificateInfo.certificateChain();
-
-        encoder << certificateInfo.verificationError();
-        encoder << certificateChain.size();
-        for (auto& certificate : certificateChain)
-            encoder << certificate;
-    }
-
-    static std::optional<WebCore::CertificateInfo> decode(Decoder& decoder)
-    {
-        std::optional<int> verificationError;
-        decoder >> verificationError;
-        if (!verificationError)
-            return std::nullopt;
-
-        std::optional<size_t> numOfCerts;
-        decoder >> numOfCerts;
-        if (!numOfCerts)
-            return std::nullopt;
-
-        WebCore::CertificateInfo::CertificateChain certificateChain;
-        for (size_t i = 0; i < numOfCerts.value(); i++) {
-            std::optional<WebCore::CertificateInfo::Certificate> certificate;
-            decoder >> certificate;
-            if (!certificate)
-                return std::nullopt;
-
-            certificateChain.append(WTFMove(certificate.value()));
-        }
-
-        return WebCore::CertificateInfo(verificationError.value(), WTFMove(certificateChain));
-    }
-};
-
-} // namespace WTF::Persistence
-} // namespace WTF

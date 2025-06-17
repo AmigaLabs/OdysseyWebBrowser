@@ -25,17 +25,16 @@
 
 #pragma once
 
+#include <span>
 #include <wtf/EnumTraits.h>
 #include <wtf/SHA1.h>
-#include <wtf/Span.h>
+#include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
-#include <wtf/persistence/PersistentCoder.h>
+#include <wtf/persistence/PersistentCoders.h>
 
-namespace WTF {
-namespace Persistence {
+namespace WTF::Persistence {
 
-class Encoder;
-class DataReference;
+template<typename> struct Coder;
 
 class Encoder {
     WTF_MAKE_FAST_ALLOCATED;
@@ -44,7 +43,7 @@ public:
     WTF_EXPORT_PRIVATE ~Encoder();
 
     WTF_EXPORT_PRIVATE void encodeChecksum();
-    WTF_EXPORT_PRIVATE void encodeFixedLengthData(Span<const uint8_t>);
+    WTF_EXPORT_PRIVATE void encodeFixedLengthData(std::span<const uint8_t>);
 
     template<typename T, std::enable_if_t<std::is_enum<T>::value>* = nullptr>
     Encoder& operator<<(const T& t)
@@ -56,7 +55,7 @@ public:
     template<typename T, std::enable_if_t<!std::is_enum<T>::value && !std::is_arithmetic<typename std::remove_const<T>>::value>* = nullptr>
     Encoder& operator<<(const T& t)
     {
-        Coder<T>::encode(*this, t);
+        Coder<T>::encodeForPersistence(*this, t);
         return *this;
     }
 
@@ -71,10 +70,11 @@ public:
     WTF_EXPORT_PRIVATE Encoder& operator<<(float);
     WTF_EXPORT_PRIVATE Encoder& operator<<(double);
 
-    const uint8_t* buffer() const { return m_buffer.data(); }
+    const uint8_t* buffer() const LIFETIME_BOUND { return m_buffer.data(); }
     size_t bufferSize() const { return m_buffer.size(); }
+    std::span<const uint8_t> span() const LIFETIME_BOUND { return m_buffer.span(); }
 
-    WTF_EXPORT_PRIVATE static void updateChecksumForData(SHA1&, Span<const uint8_t>);
+    WTF_EXPORT_PRIVATE static void updateChecksumForData(SHA1&, std::span<const uint8_t>);
     template <typename Type> static void updateChecksumForNumber(SHA1&, Type);
 
     static constexpr bool isIPCEncoder = false;
@@ -83,7 +83,7 @@ private:
 
     template<typename Type> Encoder& encodeNumber(Type);
 
-    uint8_t* grow(size_t);
+    std::span<uint8_t> grow(size_t);
 
     template <typename Type> struct Salt;
 
@@ -107,9 +107,8 @@ template <typename Type>
 void Encoder::updateChecksumForNumber(SHA1& sha1, Type value)
 {
     auto typeSalt = Salt<Type>::value;
-    sha1.addBytes(reinterpret_cast<uint8_t*>(&typeSalt), sizeof(typeSalt));
-    sha1.addBytes(reinterpret_cast<uint8_t*>(&value), sizeof(value));
+    sha1.addBytes(asByteSpan(typeSalt));
+    sha1.addBytes(asByteSpan(value));
 }
 
-}
 }

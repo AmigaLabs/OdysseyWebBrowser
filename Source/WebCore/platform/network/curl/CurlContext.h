@@ -30,6 +30,7 @@
 #define PROTO_SOCKET_H
 #endif
 
+#include "CertificateInfo.h"
 #include "CurlProxySettings.h"
 #include "CurlSSLHandle.h"
 
@@ -38,6 +39,7 @@
 #include <wtf/NeverDestroyed.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/Seconds.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/Threading.h>
 #include <wtf/URL.h>
 
@@ -63,11 +65,10 @@ class CurlGlobal {
 protected:
     CurlGlobal()
     {
-#if OS(AROS) || OS(AMIGAOS)
-        // 7.76.0 does not have CURL_GLOBAL_NO_GETENV
-        curl_global_init(CURL_GLOBAL_ALL );
-#else
+#if !OS(AMIGAOS) && !OS(AROS)        
         curl_global_init(CURL_GLOBAL_ALL | CURL_GLOBAL_NO_GETENV);
+#else
+        curl_global_init(CURL_GLOBAL_ALL);        
 #endif
     }
     
@@ -112,15 +113,11 @@ public:
     const CurlShareHandle& shareHandle() { return m_shareHandle; }
 
     CurlRequestScheduler& scheduler() { return *m_scheduler; }
-    CurlStreamScheduler& streamScheduler();
-
-#if PLATFORM(MUI)
-	void stopThread();
-#endif
+    WEBCORE_EXPORT CurlStreamScheduler& streamScheduler();
 
     // Proxy
     const CurlProxySettings& proxySettings() const { return m_proxySettings; }
-    void setProxySettings(CurlProxySettings&& settings) { m_proxySettings = WTFMove(settings); }
+    void setProxySettings(const CurlProxySettings& settings) { m_proxySettings = settings; }
     void setProxyUserPass(const String& user, const String& password) { m_proxySettings.setUserPass(user, password); }
     void setDefaultProxyAuthMethod() { m_proxySettings.setDefaultAuthMethod(); }
     void setProxyAuthMethod(long authMethod) { m_proxySettings.setAuthMethod(authMethod); }
@@ -128,22 +125,25 @@ public:
     // SSL
     CurlSSLHandle& sslHandle() { return m_sslHandle; }
 
-    // HTTP/2
-    bool isHttp2Enabled() const;
+    // HTTP/2-3
+    bool isHttp2Enabled(bool forPost = false) const;
+    bool isHttp3Enabled() const { return m_http3Enabled; }
+
+    void setIsHttp2Enabled(bool enabled, bool enabledForPost) { m_http2Enabled = enabled; m_http2POSTEnabled = enabledForPost; }
+    void setIsHttp3Enabled(bool enabled) { m_http3Enabled = enabled; }
 
     // Timeout
     Seconds dnsCacheTimeout() const { return m_dnsCacheTimeout; }
     Seconds connectTimeout() const { return m_connectTimeout; }
     Seconds defaultTimeoutInterval() const { return m_defaultTimeoutInterval; }
 
+#if OS(MORPHOS) || OS(AMIGAOS)
+    void stopThread();
+#endif
+
 #ifndef NDEBUG
     FILE* getLogFile() const { return m_logFile; }
     bool isVerbose() const { return m_verbose; }
-#endif
-
-#if ENABLE(TLS_DEBUG)
-    bool shouldLogTLSKey() const { return !m_tlsKeyLogFilePath.isEmpty(); }
-    const String& tlsKeyLogFilePath() const { return m_tlsKeyLogFilePath; }
 #endif
 
 private:
@@ -159,20 +159,20 @@ private:
     Seconds m_connectTimeout { 30.0 };
     Seconds m_defaultTimeoutInterval { 60.0 };
 
+    bool m_http2Enabled { true };
+    bool m_http3Enabled { true };
+    bool m_http2POSTEnabled { true };
+
 #ifndef NDEBUG
     FILE* m_logFile { nullptr };
     bool m_verbose { false };
-#endif
-
-#if ENABLE(TLS_DEBUG)
-    String m_tlsKeyLogFilePath;
 #endif
 };
 
 // CurlMultiHandle --------------------------------------------
 
 class CurlMultiHandle {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(CurlMultiHandle);
     WTF_MAKE_NONCOPYABLE(CurlMultiHandle);
 
 public:
@@ -231,7 +231,7 @@ class HTTPHeaderMap;
 class NetworkLoadMetrics;
 
 class CurlHandle {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(CurlHandle);
     WTF_MAKE_NONCOPYABLE(CurlHandle);
 
 public:
@@ -243,6 +243,11 @@ public:
     enum class VerifyHost {
         LooseNameCheck = 0,
         StrictNameCheck = 2
+    };
+
+    enum class LocalhostAlias : bool {
+        Disable,
+        Enable
     };
 
     CurlHandle();
@@ -266,7 +271,7 @@ public:
     void appendRequestHeader(const String& name);
     void removeRequestHeader(const String& name);
 
-    void enableHttp();
+    void enableHttp(bool post = false);
     void enableHttpGetRequest();
     void enableHttpHeadRequest();
     void enableHttpPostRequest();
@@ -275,29 +280,28 @@ public:
     void enableHttpPutRequest();
     void setInFileSizeLarge(curl_off_t);
     void setHttpCustomRequest(const String&);
-#if PLATFORM(MUI)
     void setResumeOffset(long long);
-    void setSslMaxTLSVersion(long version);
-#endif
+    void setRange(long long start, long long end);
 
     void enableConnectionOnly();
 
     void enableAcceptEncoding();
-#if PLATFORM(MUI)
     void disableAcceptEncoding();
-#endif
     void enableAllowedProtocols();
 
     void setHttpAuthUserPass(const String&, const String&, long authType = CURLAUTH_ANY);
 
     void disableServerTrustEvaluation();
     void setCACertPath(const char*);
+    void setCACertBlob(void*, size_t);
     void setSslVerifyPeer(VerifyPeer);
     void setSslVerifyHost(VerifyHost);
     void setSslCert(const char*);
     void setSslCertType(const char*);
     void setSslKeyPassword(const char*);
     void setSslCipherList(const char*);
+    void setSslCipherListTLS1_3(const char*);
+    void setSslECCurves(const char*);
 
     void enableProxyIfExists();
 
@@ -320,20 +324,18 @@ public:
     std::optional<long> getHttpAuthAvail();
     std::optional<long> getProxyAuthAvail();
     std::optional<long> getHttpVersion();
+    std::optional<long> getSSLVerifyResult() const;
     std::optional<NetworkLoadMetrics> getNetworkLoadMetrics(MonotonicTime startTime);
     void addExtraNetworkLoadMetrics(NetworkLoadMetrics&);
 
-    int sslErrors() const;
     std::optional<CertificateInfo> certificateInfo() const;
 
     static long long maxCurlOffT();
 
-#if PLATFORM(MUI)
     // socket
     Expected<curl_socket_t, CURLcode> getActiveSocket();
     CURLcode send(const uint8_t*, size_t, size_t&);
     CURLcode receive(uint8_t*, size_t, size_t&);
-#endif
 
 #ifndef NDEBUG
     void enableVerboseIfUsed();
@@ -341,18 +343,29 @@ public:
 #endif
 
 private:
+    struct TLSConnectionInfo {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
+        String protocol;
+        String cipher;
+    };
+
     void enableRequestHeaders();
     static int expectedSizeOfCurlOffT();
 
     static CURLcode willSetupSslCtxCallback(CURL*, void* sslCtx, void* userData);
     CURLcode willSetupSslCtx(void* sslCtx);
 
+    std::optional<SSL*> sslConnection() const;
+
     CURL* m_handle { nullptr };
     char m_errorBuffer[CURL_ERROR_SIZE] { };
 
     URL m_url;
     CurlSList m_requestHeaders;
+
     std::unique_ptr<CurlSSLVerifier> m_sslVerifier;
+    std::unique_ptr<TLSConnectionInfo> m_tlsConnectionInfo;
+    mutable std::unique_ptr<CertificateInfo> m_certificateInfo;
 };
 
 } // namespace WebCore

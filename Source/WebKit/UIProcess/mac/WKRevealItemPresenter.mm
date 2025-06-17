@@ -30,6 +30,7 @@
 
 #if PLATFORM(MAC) && ENABLE(REVEAL)
 
+#import "WKWebView.h"
 #import "WebViewImpl.h"
 #import <wtf/RetainPtr.h>
 #import <wtf/WeakPtr.h>
@@ -53,7 +54,7 @@
     if (!(self = [super init]))
         return nil;
 
-    _impl = makeWeakPtr(impl);
+    _impl = impl;
     _presenter = adoptNS([PAL::allocRVPresenterInstance() init]);
     _presentingContext = adoptNS([PAL::allocRVPresentingContextInstance() initWithPointerLocationInView:menuLocationInView inView:impl.view() highlightDelegate:self]);
     _item = item;

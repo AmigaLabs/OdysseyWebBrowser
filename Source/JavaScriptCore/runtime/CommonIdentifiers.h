@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2003-2020 Apple Inc. All rights reserved.
+ *  Copyright (C) 2003-2023 Apple Inc. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Library General Public
@@ -22,6 +22,7 @@
 
 #include "Identifier.h"
 #include <wtf/Noncopyable.h>
+#include <wtf/TZoneMalloc.h>
 
 // MarkedArgumentBuffer of property names, passed to a macro so we can do set them up various
 // ways without repeating the list.
@@ -33,6 +34,7 @@
     macro(BigInt) \
     macro(Boolean) \
     macro(Collator) \
+    macro(DurationFormat) \
     macro(Date) \
     macro(DateTimeFormat) \
     macro(DisplayNames) \
@@ -42,6 +44,7 @@
     macro(Function) \
     macro(Infinity) \
     macro(Intl) \
+    macro(Iterator) \
     macro(ListFormat) \
     macro(Loader) \
     macro(Locale) \
@@ -52,6 +55,7 @@
     macro(Object) \
     macro(PluralRules) \
     macro(Promise) \
+    macro(ShadowRealm) \
     macro(Reflect) \
     macro(RegExp) \
     macro(RelativeTimeFormat) \
@@ -69,6 +73,7 @@
     macro(__lookupSetter__) \
     macro(add) \
     macro(additionalJettisonReason) \
+    macro(alphabet) \
     macro(anonymous) \
     macro(arguments) \
     macro(as) \
@@ -84,6 +89,7 @@
     macro(calendar) \
     macro(callee) \
     macro(caller) \
+    macro(captureStackTrace) \
     macro(caseFirst) \
     macro(cause) \
     macro(clear) \
@@ -100,11 +106,13 @@
     macro(dateStyle) \
     macro(day) \
     macro(days) \
+    macro(daysDisplay) \
     macro(dayPeriod) \
     macro(defineProperty) \
     macro(deref) \
     macro(description) \
     macro(descriptions) \
+    macro(detached) \
     macro(detail) \
     macro(displayName) \
     macro(done) \
@@ -118,20 +126,27 @@
     macro(exec) \
     macro(executionCount) \
     macro(exitKind) \
+    macro(exports) \
     macro(fallback) \
+    macro(fill) \
     macro(flags) \
+    macro(firstDayOfWeek) \
     macro(forEach) \
     macro(formatMatcher) \
     macro(formatToParts) \
     macro(forward) \
+    macro(fractionalDigits) \
     macro(fractionalSecondDigits) \
     macro(from) \
     macro(fromCharCode) \
     macro(get) \
+    macro(getOwnPropertyDescriptor) \
     macro(global) \
     macro(go) \
     macro(granularity) \
     macro(groups) \
+    macro(grow) \
+    macro(growable) \
     macro(has) \
     macro(hasIndices) \
     macro(hasOwn) \
@@ -140,48 +155,71 @@
     macro(header) \
     macro(hour) \
     macro(hours) \
+    macro(hoursDisplay) \
     macro(hourCycle) \
     macro(hour12) \
     macro(id) \
     macro(ignoreCase) \
     macro(ignorePunctuation) \
+    macro(includes) \
     macro(index) \
     macro(indices) \
     macro(inferredName) \
     macro(input) \
+    macro(isoDay) \
+    macro(isoHour) \
+    macro(isoMicrosecond) \
+    macro(isoMillisecond) \
+    macro(isoMinute) \
+    macro(isoMonth) \
+    macro(isoNanosecond) \
+    macro(isoSecond) \
+    macro(isoYear) \
     macro(instructionCount) \
     macro(isArray) \
     macro(isEnabled) \
     macro(isPrototypeOf) \
+    macro(isRawJSON) \
     macro(isView) \
     macro(isWatchpoint) \
+    macro(isWellFormed) \
     macro(isWordLike) \
     macro(jettisonReason) \
     macro(join) \
     macro(language) \
     macro(languageDisplay) \
     macro(largestUnit) \
+    macro(lastChunkHandling) \
     macro(lastIndex) \
     macro(length) \
     macro(line) \
     macro(locale) \
     macro(localeMatcher) \
+    macro(maxByteLength) \
     macro(maximumFractionDigits) \
     macro(maximumSignificantDigits) \
     macro(message) \
+    macro(microsecond) \
     macro(microseconds) \
+    macro(microsecondsDisplay) \
+    macro(millisecond) \
     macro(milliseconds) \
+    macro(millisecondsDisplay) \
     macro(minimumFractionDigits) \
     macro(minimumIntegerDigits) \
     macro(minimumSignificantDigits) \
     macro(minute) \
     macro(minutes) \
+    macro(minutesDisplay) \
     macro(month) \
     macro(monthCode) \
     macro(months) \
+    macro(monthsDisplay) \
     macro(multiline) \
     macro(name) \
+    macro(nanosecond) \
     macro(nanoseconds) \
+    macro(nanosecondsDisplay) \
     macro(next) \
     macro(now) \
     macro(numInlinedCalls) \
@@ -190,31 +228,43 @@
     macro(numberingSystem) \
     macro(numeric) \
     macro(of) \
+    macro(omitPadding) \
     macro(opcode) \
     macro(origin) \
     macro(osrExitSites) \
     macro(osrExits) \
+    macro(overflow) \
+    macro(ownKeys) \
     macro(parse) \
     macro(parseInt) \
     macro(parseFloat) \
+    macro(pluralCategories) \
     macro(profiledBytecodes) \
     macro(propertyIsEnumerable) \
     macro(prototype) \
     macro(raw) \
+    macro(rawJSON) \
+    macro(read) \
     macro(region) \
     macro(replace) \
+    macro(resizable) \
+    macro(resize) \
     macro(resolve) \
     macro(roundingIncrement) \
     macro(roundingMode) \
+    macro(roundingPriority) \
     macro(script) \
     macro(second) \
     macro(seconds) \
+    macro(secondsDisplay) \
     macro(segment) \
+    macro(selectRange) \
     macro(sensitivity) \
     macro(set) \
     macro(size) \
     macro(slice) \
     macro(smallestUnit) \
+    macro(sort) \
     macro(source) \
     macro(sourceCode) \
     macro(sourceURL) \
@@ -231,25 +281,39 @@
     macro(timeStyle) \
     macro(timeZone) \
     macro(timeZoneName) \
+    macro(toArray) \
     macro(toExponential) \
     macro(toFixed) \
     macro(toISOString) \
     macro(toJSON) \
     macro(toLocaleString) \
     macro(toPrecision) \
+    macro(toReversed) \
+    macro(toSorted) \
     macro(toString) \
+    macro(toTemporalInstant) \
+    macro(toWellFormed) \
+    macro(trailingZeroDisplay) \
+    macro(transfer) \
+    macro(transferToFixedLength) \
     macro(type) \
     macro(uid) \
     macro(unicode) \
+    macro(unicodeSets) \
     macro(unit) \
     macro(usage) \
     macro(value) \
     macro(valueOf) \
+    macro(week) \
     macro(weekday) \
     macro(weeks) \
+    macro(weeksDisplay) \
+    macro(with) \
     macro(writable) \
+    macro(written) \
     macro(year) \
-    macro(years)
+    macro(years) \
+    macro(yearsDisplay)
 
 #define JSC_COMMON_IDENTIFIERS_EACH_PRIVATE_FIELD(macro) \
     macro(constructor)
@@ -264,6 +328,7 @@
     macro(continue) \
     macro(debugger) \
     macro(default) \
+    macro(defer) \
     macro(delete) \
     macro(do) \
     macro(else) \
@@ -334,7 +399,8 @@ namespace JSC {
     class BuiltinNames;
     
     class CommonIdentifiers {
-        WTF_MAKE_NONCOPYABLE(CommonIdentifiers); WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_NONCOPYABLE(CommonIdentifiers);
+        WTF_MAKE_TZONE_ALLOCATED(CommonIdentifiers);
     private:
         CommonIdentifiers(VM&);
         ~CommonIdentifiers();
@@ -347,6 +413,7 @@ namespace JSC {
         const Identifier underscoreProto;
         const Identifier useStrictIdentifier;
         const Identifier timesIdentifier;
+        const Identifier negativeOneIdentifier;
     private:
         std::unique_ptr<BuiltinNames> m_builtinNames;
 

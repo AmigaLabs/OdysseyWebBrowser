@@ -30,18 +30,16 @@
 
 
 import logging
-import sys
+import unittest
 
-
-from webkitpy.common import webkitunittest
 from webkitpy.common.watchlist.watchlistparser import WatchListParser
 
 from webkitcorepy import OutputCapture
 
 
-class WatchListParserTest(webkitunittest.TestCase):
+class WatchListParserTest(unittest.TestCase):
     def setUp(self):
-        webkitunittest.TestCase.setUp(self)
+        super(WatchListParserTest, self).setUp()
         self._watch_list_parser = WatchListParser()
 
     def test_bad_section(self):
@@ -92,10 +90,7 @@ class WatchListParserTest(webkitunittest.TestCase):
 
         with OutputCapture(level=logging.INFO) as captured:
             self._watch_list_parser.parse(watch_list)
-        if sys.version_info > (3, 0):
-            expected_log = 'The regex "*" is invalid due to "nothing to repeat at position 0".\n'
-        else:
-            expected_log = 'The regex "*" is invalid due to "nothing to repeat".\n'
+        expected_log = 'The regex "*" is invalid due to "nothing to repeat at position 0".\n'
         self.assertEqual(captured.root.log.getvalue(), expected_log)
 
     def test_bad_more_regex(self):
@@ -114,10 +109,7 @@ class WatchListParserTest(webkitunittest.TestCase):
 
         with OutputCapture(level=logging.INFO) as captured:
             self._watch_list_parser.parse(watch_list)
-        if sys.version_info > (3, 0):
-            expected_log = 'The regex "*" is invalid due to "nothing to repeat at position 0".\n'
-        else:
-            expected_log = 'The regex "*" is invalid due to "nothing to repeat".\n'
+        expected_log = 'The regex "*" is invalid due to "nothing to repeat at position 0".\n'
         self.assertEqual(captured.root.log.getvalue(), expected_log)
 
     def test_bad_match_type(self):

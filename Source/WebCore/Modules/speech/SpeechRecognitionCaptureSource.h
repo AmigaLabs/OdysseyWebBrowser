@@ -27,6 +27,7 @@
 
 #include "SpeechRecognitionCaptureSourceImpl.h"
 #include "SpeechRecognitionConnectionClientIdentifier.h"
+#include <wtf/TZoneMalloc.h>
 
 namespace WTF {
 class MediaTime;
@@ -40,7 +41,7 @@ class SpeechRecognitionCaptureSourceImpl;
 class SpeechRecognitionUpdate;
 
 class SpeechRecognitionCaptureSource {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(SpeechRecognitionCaptureSource, WEBCORE_EXPORT);
 public:
     SpeechRecognitionCaptureSource() = default;
     ~SpeechRecognitionCaptureSource() = default;
@@ -51,7 +52,7 @@ public:
     using StateUpdateCallback = Function<void(const SpeechRecognitionUpdate&)>;
     SpeechRecognitionCaptureSource(SpeechRecognitionConnectionClientIdentifier, DataCallback&&, StateUpdateCallback&&, Ref<RealtimeMediaSource>&&);
     WEBCORE_EXPORT static std::optional<WebCore::CaptureDevice> findCaptureDevice();
-    WEBCORE_EXPORT static CaptureSourceOrError createRealtimeMediaSource(const CaptureDevice&);
+    WEBCORE_EXPORT static CaptureSourceOrError createRealtimeMediaSource(const CaptureDevice&, PageIdentifier);
 #endif
 
 private:

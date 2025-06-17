@@ -26,18 +26,19 @@
 #include "PlatformXR.h"
 
 #include <wtf/Noncopyable.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/UniqueRef.h>
 #include <wtf/Vector.h>
 
 namespace PlatformXR {
 
 class OpenXRLayer {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(OpenXRLayer);
     WTF_MAKE_NONCOPYABLE(OpenXRLayer);
 public:
     virtual ~OpenXRLayer() = default;
 
-    virtual std::optional<Device::FrameData::LayerData> startFrame() = 0;
+    virtual std::optional<FrameData::LayerData> startFrame() = 0;
     virtual XrCompositionLayerBaseHeader* endFrame(const Device::Layer&, XrSpace, const Vector<XrView>&) = 0;
 
 protected:
@@ -45,14 +46,14 @@ protected:
 };
 
 class OpenXRLayerProjection final: public OpenXRLayer  {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(OpenXRLayerProjection);
     WTF_MAKE_NONCOPYABLE(OpenXRLayerProjection);
 public:
     static std::unique_ptr<OpenXRLayerProjection> create(XrInstance, XrSession, uint32_t width, uint32_t height, int64_t format, uint32_t sampleCount);
 private:
     OpenXRLayerProjection(UniqueRef<OpenXRSwapchain>&&);
 
-    std::optional<Device::FrameData::LayerData> startFrame() final;
+    std::optional<FrameData::LayerData> startFrame() final;
     XrCompositionLayerBaseHeader* endFrame(const Device::Layer&, XrSpace, const Vector<XrView>&) final;
 
     UniqueRef<OpenXRSwapchain> m_swapchain;

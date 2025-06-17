@@ -32,6 +32,7 @@
 #include "WebProcessSupplement.h"
 #include <WebCore/MediaEngineConfigurationFactory.h>
 #include <wtf/HashMap.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakPtr.h>
 
 namespace IPC {
@@ -47,15 +48,18 @@ class WebProcess;
 class RemoteMediaEngineConfigurationFactory final
     : public WebProcessSupplement
     , public CanMakeWeakPtr<RemoteMediaEngineConfigurationFactory> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(RemoteMediaEngineConfigurationFactory);
 public:
     explicit RemoteMediaEngineConfigurationFactory(WebProcess&);
     virtual ~RemoteMediaEngineConfigurationFactory();
 
+    // This is a supplement to WebProcess, which is a singleton.
+    void ref() const { }
+    void deref() const { }
+
     void registerFactory();
 
-    static const char* supplementName();
-    WebProcess& process() const { return m_process; }
+    static ASCIILiteral supplementName();
 
     GPUProcessConnection& gpuProcessConnection();
 
@@ -65,7 +69,7 @@ private:
     void createDecodingConfiguration(WebCore::MediaDecodingConfiguration&&, WebCore::MediaEngineConfigurationFactory::DecodingConfigurationCallback&&);
     void createEncodingConfiguration(WebCore::MediaEncodingConfiguration&&, WebCore::MediaEngineConfigurationFactory::EncodingConfigurationCallback&&);
 
-    WebProcess& m_process;
+    WeakRef<WebProcess> m_webProcess;
 };
 
 }

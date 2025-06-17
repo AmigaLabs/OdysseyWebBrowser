@@ -26,12 +26,25 @@
 #pragma once
 
 #include "PredefinedColorSpace.h"
+#include "RenderingMode.h"
+#include <optional>
 
 namespace WebCore {
 
 struct CanvasRenderingContext2DSettings {
     bool desynchronized { false };
+    bool willReadFrequently { false };
     PredefinedColorSpace colorSpace { PredefinedColorSpace::SRGB };
+    enum class PixelFormat : bool {
+        Uint8,
+        Float16,
+    };
+    PixelFormat pixelFormat { PixelFormat::Uint8 };
+    enum class RenderingMode {
+        Unaccelerated,
+        Accelerated
+    };
+    std::optional<RenderingMode> renderingModeForTesting;
 };
 
 } // namespace WebCore

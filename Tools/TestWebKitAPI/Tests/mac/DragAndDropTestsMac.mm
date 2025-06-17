@@ -28,6 +28,7 @@
 #import "DragAndDropSimulator.h"
 #import "InstanceMethodSwizzler.h"
 #import "PlatformUtilities.h"
+#import "TestDraggingInfo.h"
 #import <WebCore/PasteboardCustomData.h>
 #import <WebKit/WKPreferencesPrivate.h>
 #import <WebKit/WKWebViewPrivate.h>
@@ -58,7 +59,18 @@ TEST(DragAndDropTests, NumberOfValidItemsForDrop)
     EXPECT_EQ(1U, numberOfValidItemsForDrop);
 }
 
-#if ENABLE(INPUT_TYPE_COLOR)
+TEST(DragAndDropTests, DropUserSelectAllUserDragElementDiv)
+{
+    auto simulator = adoptNS([[DragAndDropSimulator alloc] initWithWebViewFrame:NSMakeRect(0, 0, 320, 500)]);
+
+    TestWKWebView *webView = [simulator webView];
+    [webView synchronouslyLoadTestPageNamed:@"contenteditable-user-select-user-drag"];
+
+    [simulator runFrom:NSMakePoint(100, 100) to:NSMakePoint(100, 300)];
+
+    EXPECT_WK_STREQ(@"Text", [webView stringByEvaluatingJavaScript:@"document.getElementById(\"editor\").textContent"]);
+}
+
 TEST(DragAndDropTests, DropColor)
 {
     NSPasteboard *pasteboard = [NSPasteboard pasteboardWithUniqueName];
@@ -73,7 +85,6 @@ TEST(DragAndDropTests, DropColor)
     [simulator runFrom:NSMakePoint(0, 0) to:NSMakePoint(50, 50)];
     EXPECT_WK_STREQ(@"#ff0000", [webView stringByEvaluatingJavaScript:@"document.querySelector(\"input\").value"]);
 }
-#endif // ENABLE(INPUT_TYPE_COLOR)
 
 TEST(DragAndDropTests, DragImageElementIntoFileUpload)
 {
@@ -94,7 +105,7 @@ TEST(DragAndDropTests, DragPromisedImageFileIntoFileUpload)
     TestWKWebView *webView = [simulator webView];
     [webView synchronouslyLoadTestPageNamed:@"image-and-file-upload"];
 
-    NSURL *imageURL = [NSBundle.mainBundle URLForResource:@"apple" withExtension:@"gif" subdirectory:@"TestWebKitAPI.resources"];
+    NSURL *imageURL = [NSBundle.test_resourcesBundle URLForResource:@"apple" withExtension:@"gif"];
     [simulator writePromisedFiles:@[ imageURL ]];
     [simulator runFrom:NSMakePoint(100, 100) to:NSMakePoint(100, 300)];
 
@@ -102,6 +113,36 @@ TEST(DragAndDropTests, DragPromisedImageFileIntoFileUpload)
         return [webView stringByEvaluatingJavaScript:@"imageload.textContent"].boolValue;
     }, 2, @"Expected image to finish loading.");
     EXPECT_EQ(1, [webView stringByEvaluatingJavaScript:@"filecount.textContent"].integerValue);
+
+    TestDraggingInfo *draggingInfo = [simulator draggingInfo];
+    NSArray<NSFilePromiseReceiver *> *filePromiseReceivers = [draggingInfo filePromiseReceivers];
+    EXPECT_EQ(1UL, [filePromiseReceivers count]);
+    NSFilePromiseReceiver *filePromiseReceiver = filePromiseReceivers.firstObject;
+    EXPECT_EQ(1UL, [filePromiseReceiver.fileTypes count]);
+    EXPECT_WK_STREQ((__bridge NSString *)kUTTypeGIF, filePromiseReceiver.fileTypes.firstObject);
+}
+
+TEST(DragAndDropTests, ReadURLWhenDroppingPromisedWebLoc)
+{
+    auto simulator = adoptNS([[DragAndDropSimulator alloc] initWithWebViewFrame:NSMakeRect(0, 0, 400, 400)]);
+    auto *webView = [simulator webView];
+    [webView synchronouslyLoadTestPageNamed:@"dump-datatransfer-types"];
+
+    [simulator writePromisedWebLoc:[NSURL URLWithString:@"https://webkit.org/"]];
+    [simulator runFrom:CGPointMake(0, 0) to:CGPointMake(375, 375)];
+
+    NSString *s = [webView stringByEvaluatingJavaScript:@"output.value"];
+    BOOL success = TestWebKitAPI::Util::jsonMatchesExpectedValues(s, @{
+        @"dragover" : @{
+            @"Files": @"",
+            @"text/uri-list": @""
+        },
+        @"drop": @{
+            @"Files": @"",
+            @"text/uri-list": @"https://webkit.org/"
+        }
+    });
+    EXPECT_TRUE(success);
 }
 
 TEST(DragAndDropTests, DragImageFileIntoFileUpload)
@@ -110,7 +151,7 @@ TEST(DragAndDropTests, DragImageFileIntoFileUpload)
     TestWKWebView *webView = [simulator webView];
     [webView synchronouslyLoadTestPageNamed:@"image-and-file-upload"];
 
-    NSURL *imageURL = [NSBundle.mainBundle URLForResource:@"apple" withExtension:@"gif" subdirectory:@"TestWebKitAPI.resources"];
+    NSURL *imageURL = [NSBundle.test_resourcesBundle URLForResource:@"apple" withExtension:@"gif"];
     [simulator writeFiles:@[ imageURL ]];
     [simulator runFrom:NSMakePoint(100, 100) to:NSMakePoint(100, 300)];
 
@@ -169,7 +210,7 @@ ALLOW_DEPRECATED_DECLARATIONS_END
     EXPECT_EQ(imageFromUniquePasteboard.TIFFRepresentation.length, imageFromDragPasteboard.TIFFRepresentation.length);
     EXPECT_TRUE(NSEqualSizes(imageFromDragPasteboard.size, imageFromUniquePasteboard.size));
     EXPECT_FALSE(NSEqualSizes(NSZeroSize, imageFromUniquePasteboard.size));
-    EXPECT_GT([dragPasteboard dataForType:@(WebCore::PasteboardCustomData::cocoaType())].length, 0u);
+    EXPECT_GT([dragPasteboard dataForType:@(WebCore::PasteboardCustomData::cocoaType().characters())].length, 0u);
 }
 
 TEST(DragAndDropTests, ProvideImageDataAsTypeIdentifiers)

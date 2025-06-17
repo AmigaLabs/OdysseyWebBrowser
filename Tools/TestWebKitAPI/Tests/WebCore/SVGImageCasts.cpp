@@ -36,6 +36,14 @@ using namespace WebCore;
 
 class TestImageObserver : public ImageObserver {
 public:
+    static Ref<TestImageObserver> create()
+    {
+        return adoptRef(*new TestImageObserver);
+    }
+
+private:
+    TestImageObserver() = default;
+
     URL sourceUrl() const final
     {
         return URL();
@@ -59,11 +67,6 @@ public:
     {
     }
 
-    bool canDestroyDecodedData(const Image&) final
-    {
-        return true;
-    }
-
     void imageFrameAvailable(const Image&, ImageAnimatingState, const IntRect* changeRect = nullptr, DecodingStatus = DecodingStatus::Invalid) final
     {
     }
@@ -79,8 +82,8 @@ public:
 
 TEST(SVGImageCasts, SVGImageForContainerIsNotSVGImage)
 {
-    TestImageObserver imageObserver;
-    auto svgImage = SVGImage::create(imageObserver);
+    Ref imageObserver = TestImageObserver::create();
+    Ref svgImage = SVGImage::create(imageObserver.ptr());
     Image& svgImageBase = svgImage.get();
     EXPECT_TRUE(is<SVGImage>(svgImageBase));
     EXPECT_FALSE(is<SVGImageForContainer>(svgImageBase));

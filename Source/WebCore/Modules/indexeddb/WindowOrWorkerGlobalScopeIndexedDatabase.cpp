@@ -28,34 +28,35 @@
 #include "config.h"
 #include "WindowOrWorkerGlobalScopeIndexedDatabase.h"
 
-#include "DOMWindow.h"
-#include "DOMWindowProperty.h"
 #include "Document.h"
 #include "IDBConnectionProxy.h"
 #include "IDBFactory.h"
+#include "LocalDOMWindow.h"
+#include "LocalDOMWindowProperty.h"
 #include "Page.h"
 #include "Supplementable.h"
 #include "WorkerGlobalScope.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
-class DOMWindowIndexedDatabase : public DOMWindowProperty, public Supplement<DOMWindow> {
-    WTF_MAKE_FAST_ALLOCATED;
+class DOMWindowIndexedDatabase : public LocalDOMWindowProperty, public Supplement<LocalDOMWindow> {
+    WTF_MAKE_TZONE_ALLOCATED(DOMWindowIndexedDatabase);
 public:
-    explicit DOMWindowIndexedDatabase(DOMWindow&);
+    explicit DOMWindowIndexedDatabase(LocalDOMWindow&);
     virtual ~DOMWindowIndexedDatabase() = default;
 
-    static DOMWindowIndexedDatabase* from(DOMWindow&);
+    static DOMWindowIndexedDatabase* from(LocalDOMWindow&);
     IDBFactory* indexedDB();
 
 private:
-    static const char* supplementName() { return "DOMWindowIndexedDatabase"; }
+    static ASCIILiteral supplementName() { return "DOMWindowIndexedDatabase"_s; }
 
     RefPtr<IDBFactory> m_idbFactory;
 };
 
 class WorkerGlobalScopeIndexedDatabase : public Supplement<WorkerGlobalScope> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(WorkerGlobalScopeIndexedDatabase);
 public:
     explicit WorkerGlobalScopeIndexedDatabase(IDBClient::IDBConnectionProxy&);
     virtual ~WorkerGlobalScopeIndexedDatabase() = default;
@@ -64,7 +65,7 @@ public:
     IDBFactory* indexedDB();
 
 private:
-    static const char* supplementName() { return "WorkerGlobalScopeIndexedDatabase"; }
+    static ASCIILiteral supplementName() { return "WorkerGlobalScopeIndexedDatabase"_s; }
 
     RefPtr<IDBFactory> m_idbFactory;
     Ref<IDBClient::IDBConnectionProxy> m_connectionProxy;
@@ -72,14 +73,16 @@ private:
 
 // DOMWindowIndexedDatabase supplement.
 
-DOMWindowIndexedDatabase::DOMWindowIndexedDatabase(DOMWindow& window)
-    : DOMWindowProperty(&window)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(DOMWindowIndexedDatabase);
+
+DOMWindowIndexedDatabase::DOMWindowIndexedDatabase(LocalDOMWindow& window)
+    : LocalDOMWindowProperty(&window)
 {
 }
 
-DOMWindowIndexedDatabase* DOMWindowIndexedDatabase::from(DOMWindow& window)
+DOMWindowIndexedDatabase* DOMWindowIndexedDatabase::from(LocalDOMWindow& window)
 {
-    auto* supplement = static_cast<DOMWindowIndexedDatabase*>(Supplement<DOMWindow>::from(&window, supplementName()));
+    auto* supplement = static_cast<DOMWindowIndexedDatabase*>(Supplement<LocalDOMWindow>::from(&window, supplementName()));
     if (!supplement) {
         auto newSupplement = makeUnique<DOMWindowIndexedDatabase>(window);
         supplement = newSupplement.get();
@@ -90,11 +93,11 @@ DOMWindowIndexedDatabase* DOMWindowIndexedDatabase::from(DOMWindow& window)
 
 IDBFactory* DOMWindowIndexedDatabase::indexedDB()
 {
-    auto* window = this->window();
+    RefPtr window = this->window();
     if (!window)
         return nullptr;
 
-    auto* document = window->document();
+    RefPtr document = window->document();
     if (!document)
         return nullptr;
 
@@ -117,6 +120,8 @@ IDBFactory* DOMWindowIndexedDatabase::indexedDB()
 }
 
 // WorkerGlobalScope supplement.
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(WorkerGlobalScopeIndexedDatabase);
 
 WorkerGlobalScopeIndexedDatabase::WorkerGlobalScopeIndexedDatabase(IDBClient::IDBConnectionProxy& connectionProxy)
     : m_connectionProxy(connectionProxy)
@@ -154,7 +159,10 @@ IDBFactory* WindowOrWorkerGlobalScopeIndexedDatabase::indexedDB(WorkerGlobalScop
 
 IDBFactory* WindowOrWorkerGlobalScopeIndexedDatabase::indexedDB(DOMWindow& window)
 {
-    return DOMWindowIndexedDatabase::from(window)->indexedDB();
+    RefPtr localWindow = dynamicDowncast<LocalDOMWindow>(window);
+    if (!localWindow)
+        return nullptr;
+    return DOMWindowIndexedDatabase::from(*localWindow)->indexedDB();
 }
 
 } // namespace WebCore

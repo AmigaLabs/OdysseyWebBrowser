@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2021-2023 Apple Inc. All rights reserved.
  * Copyright (C) 2021 Igalia S.A. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,11 +30,14 @@
 #include "CacheableIdentifierInlines.h"
 #include "CodeBlock.h"
 #include "ICStatusUtils.h"
-#include "PolymorphicAccess.h"
+#include "InlineCacheCompiler.h"
 #include "StructureStubInfo.h"
 #include <wtf/ListDump.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace JSC {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(CheckPrivateBrandStatus);
 
 bool CheckPrivateBrandStatus::appendVariant(const CheckPrivateBrandVariant& variant)
 {
@@ -75,6 +78,7 @@ CheckPrivateBrandStatus::CheckPrivateBrandStatus(StubInfoSummary summary, Struct
         m_state = NoInformation;
         return;
     case StubInfoSummary::Simple:
+    case StubInfoSummary::Megamorphic:
     case StubInfoSummary::MakesCalls:
     case StubInfoSummary::TakesSlowPathAndMakesCalls:
         RELEASE_ASSERT_NOT_REACHED();
@@ -86,10 +90,9 @@ CheckPrivateBrandStatus::CheckPrivateBrandStatus(StubInfoSummary summary, Struct
     RELEASE_ASSERT_NOT_REACHED();
 }
 
-CheckPrivateBrandStatus CheckPrivateBrandStatus::computeForStubInfoWithoutExitSiteFeedback(
-    const ConcurrentJSLocker&, CodeBlock* block, StructureStubInfo* stubInfo)
+CheckPrivateBrandStatus CheckPrivateBrandStatus::computeForStubInfoWithoutExitSiteFeedback(const ConcurrentJSLocker& locker, CodeBlock* block, StructureStubInfo* stubInfo)
 {
-    StubInfoSummary summary = StructureStubInfo::summary(block->vm(), stubInfo);
+    StubInfoSummary summary = StructureStubInfo::summary(locker, block->vm(), stubInfo);
     if (!isInlineable(summary))
         return CheckPrivateBrandStatus(summary, *stubInfo);
 
@@ -100,10 +103,9 @@ CheckPrivateBrandStatus CheckPrivateBrandStatus::computeForStubInfoWithoutExitSi
         return CheckPrivateBrandStatus(NoInformation);
 
     case CacheType::Stub: {
-        PolymorphicAccess* list = stubInfo->u.stub;
-
-        for (unsigned listIndex = 0; listIndex < list->size(); ++listIndex) {
-            const AccessCase& access = list->at(listIndex);
+        auto list = stubInfo->listedAccessCases(locker);
+        for (unsigned listIndex = 0; listIndex < list.size(); ++listIndex) {
+            const AccessCase& access = *list.at(listIndex);
 
             Structure* structure = access.structure();
             ASSERT(structure);

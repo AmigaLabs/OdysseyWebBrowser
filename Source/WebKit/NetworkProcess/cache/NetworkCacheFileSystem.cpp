@@ -53,7 +53,7 @@
 namespace WebKit {
 namespace NetworkCache {
 
-void traverseDirectory(const String& path, const Function<void (const String&, DirectoryEntryType)>& function)
+void traverseDirectory(const String& path, NOESCAPE const Function<void (const String&, DirectoryEntryType)>& function)
 {
     auto entries = FileSystem::listDirectory(path);
     for (auto& entry : entries) {
@@ -84,7 +84,7 @@ FileTimes fileTimes(const String& path)
 #elif OS(WINDOWS)
     auto createTime = FileSystem::fileCreationTime(path);
     auto modifyTime = FileSystem::fileModificationTime(path);
-    return { createTime.value_or(WallTime()), modifyTime.value_or(WallTime()) };
+    return { valueOrDefault(createTime), valueOrDefault(modifyTime) };
 #endif
 }
 

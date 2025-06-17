@@ -31,11 +31,6 @@
 #include <MediaAccessibility/MediaAccessibility.h>
 #include <wtf/SoftLinking.h>
 
-#if COMPILER(MSVC)
-// See https://msdn.microsoft.com/en-us/library/35bhkfb6.aspx
-#pragma warning(disable: 4273)
-#endif
-
 SOFT_LINK_FRAMEWORK_FOR_SOURCE(WebCore, MediaAccessibility)
 
 SOFT_LINK_FUNCTION_FOR_SOURCE(WebCore, MediaAccessibility, MACaptionAppearanceGetDisplayType, MACaptionAppearanceDisplayType, (MACaptionAppearanceDomain domain), (domain))
@@ -58,5 +53,6 @@ SOFT_LINK_FUNCTION_MAY_FAIL_FOR_SOURCE(WebCore, MediaAccessibility, MACaptionApp
 SOFT_LINK_CONSTANT_FOR_SOURCE_WITH_EXPORT(WebCore, MediaAccessibility, kMAXCaptionAppearanceSettingsChangedNotification, CFStringRef, WEBCORE_EXPORT)
 SOFT_LINK_CONSTANT_MAY_FAIL_FOR_SOURCE(WebCore, MediaAccessibility, kMAAudibleMediaSettingsChangedNotification, CFStringRef)
 SOFT_LINK_FUNCTION_MAY_FAIL_FOR_SOURCE(WebCore, MediaAccessibility, MAImageCaptioningCopyCaptionWithSource, CFStringRef, (CGImageSourceRef imageSource, CFErrorRef *error), (imageSource, error))
-
+SOFT_LINK_FUNCTION_FOR_SOURCE(WebCore, MediaAccessibility, MAAudibleMediaPrefCopyPreferDescriptiveVideo, CFBooleanRef, (), ())
+SOFT_LINK_FUNCTION_MAY_FAIL_FOR_SOURCE(WebCore, MediaAccessibility, MACaptionAppearanceIsCustomized, bool, (MACaptionAppearanceDomain domain), (domain));
 #endif // HAVE(MEDIA_ACCESSIBILITY_FRAMEWORK)

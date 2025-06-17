@@ -29,16 +29,12 @@
 import fnmatch
 import os
 import os.path
-import sys
 
 from webkitpy.common.system.executive import ScriptError
 from webkitpy.port.base import Port
 from webkitpy.tool.servers.reflectionhandler import ReflectionHandler
 
-if sys.version_info > (3, 0):
-    from http.server import HTTPServer
-else:
-    from BaseHTTPServer import HTTPServer
+from http.server import ThreadingHTTPServer
 
 
 STATE_NEEDS_REBASELINE = 'needs_rebaseline'
@@ -200,10 +196,10 @@ def get_test_baselines(test_file, test_config):
     return all_test_baselines
 
 
-class RebaselineHTTPServer(HTTPServer):
+class RebaselineHTTPServer(ThreadingHTTPServer):
     def __init__(self, httpd_port, config):
         server_name = ""
-        HTTPServer.__init__(self, (server_name, httpd_port), RebaselineHTTPRequestHandler)
+        super().__init__((server_name, httpd_port), RebaselineHTTPRequestHandler)
         self.test_config = config['test_config']
         self.results_json = config['results_json']
         self.platforms_json = config['platforms_json']
@@ -257,7 +253,7 @@ class RebaselineHTTPRequestHandler(ReflectionHandler):
 
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        self.wfile.write('\n'.join(log))
+        self.wfile.write('\n'.join(log).encode())
 
     def test_result(self):
         test_name, _ = os.path.splitext(self.query['test'][0])

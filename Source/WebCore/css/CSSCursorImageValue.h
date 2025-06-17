@@ -21,16 +21,15 @@
 #pragma once
 
 #include "CSSValue.h"
+#include "CSSValuePair.h"
 #include "IntPoint.h"
 #include "ResourceLoaderOptions.h"
-#include <wtf/HashSet.h>
+#include <wtf/WeakHashSet.h>
 
 namespace WebCore {
 
-class Document;
-class SVGCursorElement;
-
-struct ImageWithScale;
+class StyleCursorImage;
+class StyleImage;
 
 namespace Style {
 class BuilderState;
@@ -38,33 +37,27 @@ class BuilderState;
 
 class CSSCursorImageValue final : public CSSValue {
 public:
-    static Ref<CSSCursorImageValue> create(Ref<CSSValue>&& imageValue, const std::optional<IntPoint>& hotSpot, LoadedFromOpaqueSource);
+    static Ref<CSSCursorImageValue> create(Ref<CSSValue>&& imageValue, RefPtr<CSSValue>&& hotSpot, LoadedFromOpaqueSource);
+    static Ref<CSSCursorImageValue> create(Ref<CSSValue>&& imageValue, RefPtr<CSSValue>&& hotSpot, URL, LoadedFromOpaqueSource);
     ~CSSCursorImageValue();
 
-    std::optional<IntPoint> hotSpot() const { return m_hotSpot; }
-
     const URL& imageURL() const { return m_originalURL; }
-
-    String customCSSText() const;
-
-    ImageWithScale selectBestFitImage(const Document&);
-
+    String customCSSText(const CSS::SerializationContext&) const;
     bool equals(const CSSCursorImageValue&) const;
 
-    void cursorElementRemoved(SVGCursorElement&);
-    void cursorElementChanged(SVGCursorElement&);
+    IterationStatus customVisitChildren(NOESCAPE const Function<IterationStatus(CSSValue&)>& func) const
+    {
+        return func(m_imageValue.get());
+    }
 
-    Ref<CSSCursorImageValue> valueWithStylesResolved(Style::BuilderState&);
+    RefPtr<StyleCursorImage> createStyleImage(const Style::BuilderState&) const;
 
 private:
-    CSSCursorImageValue(Ref<CSSValue>&& imageValue, const std::optional<IntPoint>& hotSpot, LoadedFromOpaqueSource);
-
-    SVGCursorElement* updateCursorElement(const Document&);
+    CSSCursorImageValue(Ref<CSSValue>&& imageValue, RefPtr<CSSValue>&& hotSpot, URL, LoadedFromOpaqueSource);
 
     URL m_originalURL;
     Ref<CSSValue> m_imageValue;
-    std::optional<IntPoint> m_hotSpot;
-    HashSet<SVGCursorElement*> m_cursorElements;
+    RefPtr<CSSValue> m_hotSpot;
     LoadedFromOpaqueSource m_loadedFromOpaqueSource { LoadedFromOpaqueSource::No };
 };
 

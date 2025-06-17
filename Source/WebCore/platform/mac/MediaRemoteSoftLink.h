@@ -66,6 +66,10 @@ SOFT_LINK_CONSTANT_FOR_HEADER(WebCore, MediaRemote, kMRMediaRemoteNowPlayingInfo
 #define kMRMediaRemoteNowPlayingInfoAlbum get_MediaRemote_kMRMediaRemoteNowPlayingInfoAlbum()
 SOFT_LINK_CONSTANT_FOR_HEADER(WebCore, MediaRemote, kMRMediaRemoteNowPlayingInfoArtworkData, CFStringRef);
 #define kMRMediaRemoteNowPlayingInfoArtworkData get_MediaRemote_kMRMediaRemoteNowPlayingInfoArtworkData()
+SOFT_LINK_CONSTANT_FOR_HEADER(WebCore, MediaRemote, kMRMediaRemoteNowPlayingInfoArtworkDataHeight, CFStringRef);
+#define kMRMediaRemoteNowPlayingInfoArtworkDataHeight get_MediaRemote_kMRMediaRemoteNowPlayingInfoArtworkDataHeight()
+SOFT_LINK_CONSTANT_FOR_HEADER(WebCore, MediaRemote, kMRMediaRemoteNowPlayingInfoArtworkDataWidth, CFStringRef);
+#define kMRMediaRemoteNowPlayingInfoArtworkDataWidth get_MediaRemote_kMRMediaRemoteNowPlayingInfoArtworkDataWidth()
 SOFT_LINK_CONSTANT_FOR_HEADER(WebCore, MediaRemote, kMRMediaRemoteNowPlayingInfoArtworkMIMEType, CFStringRef);
 #define kMRMediaRemoteNowPlayingInfoArtworkMIMEType get_MediaRemote_kMRMediaRemoteNowPlayingInfoArtworkMIMEType()
 SOFT_LINK_CONSTANT_FOR_HEADER(WebCore, MediaRemote, kMRMediaRemoteNowPlayingInfoDuration, CFStringRef);
@@ -88,4 +92,8 @@ SOFT_LINK_CONSTANT_FOR_HEADER(WebCore, MediaRemote, kMRMediaRemoteCommandInfoPre
 #if PLATFORM(IOS_FAMILY)
 SOFT_LINK_FUNCTION_FOR_HEADER(WebCore, MediaRemote, MRMediaRemoteCopyPickableRoutes, CFArrayRef, (), ())
 #define MRMediaRemoteCopyPickableRoutes softLink_MediaRemote_MRMediaRemoteCopyPickableRoutes
+#endif
+
+#if USE(NOW_PLAYING_ACTIVITY_SUPPRESSION)
+SOFT_LINK_CLASS_FOR_HEADER(WebCore, MRUIControllerProvider);
 #endif

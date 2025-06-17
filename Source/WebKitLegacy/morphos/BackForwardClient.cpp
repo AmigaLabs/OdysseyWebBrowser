@@ -20,6 +20,7 @@ BackForwardClientMorphOS::BackForwardClientMorphOS(WebPage *page)
     : m_page(page)
     , m_current(NoCurrentItemIndex)
     , m_capacity(DefaultCapacity)
+    , m_provisional(NoCurrentItemIndex)
     , m_closed(true)
     , m_enabled(true)
 {
@@ -53,9 +54,27 @@ void BackForwardClientMorphOS::addItem(Ref<HistoryItem>&& newItem)
     m_entryHash.add(newItem.ptr());
     m_entries.insert(m_current + 1, WTFMove(newItem));
     ++m_current;
-	
-	if (m_page->_fHistoryChanged)
-    	m_page->_fHistoryChanged();
+    
+    auto page = m_page.get();
+	if (page && page->_fHistoryChanged)
+    	page->_fHistoryChanged();
+}
+
+void BackForwardClientMorphOS::setChildItem(WebCore::BackForwardFrameItemIdentifier, Ref<WebCore::HistoryItem>&&)
+{
+
+}
+
+void BackForwardClientMorphOS::goToProvisionalItem(const WebCore::HistoryItem& item)
+{
+    m_provisional = m_current;
+    goToItem(const_cast<HistoryItem&>(item));
+}
+
+void BackForwardClientMorphOS::clearProvisionalItem(const WebCore::HistoryItem&)
+{
+    if (m_provisional != NoCurrentItemIndex)
+        m_current = std::exchange(m_provisional, NoCurrentItemIndex);
 }
 
 void BackForwardClientMorphOS::goBack()
@@ -64,8 +83,9 @@ void BackForwardClientMorphOS::goBack()
     if (m_current > 0) {
         m_current--;
 
-		if (m_page->_fHistoryChanged)
-			m_page->_fHistoryChanged();
+        auto page = m_page.get();
+		if (page && page->_fHistoryChanged)
+			page->_fHistoryChanged();
     }
 }
 
@@ -75,8 +95,9 @@ void BackForwardClientMorphOS::goForward()
     if (m_current < m_entries.size() - 1) {
         m_current++;
 
-		if (m_page->_fHistoryChanged)
-			m_page->_fHistoryChanged();
+        auto page = m_page.get();
+		if (page->_fHistoryChanged)
+			page->_fHistoryChanged();
     }
 }
 
@@ -91,8 +112,9 @@ void BackForwardClientMorphOS::goToItem(HistoryItem& item)
             break;
     if (index < m_entries.size()) {
         m_current = index;
-		if (m_page->_fHistoryChanged)
-			m_page->_fHistoryChanged();
+        auto page = m_page.get();
+		if (page && page->_fHistoryChanged)
+			page->_fHistoryChanged();
     }
 }
 
@@ -162,8 +184,9 @@ void BackForwardClientMorphOS::setCapacity(int size)
         m_current = m_entries.size() - 1;
     }
     m_capacity = size;
-	if (m_page->_fHistoryChanged)
-		m_page->_fHistoryChanged();
+    auto page = m_page.get();
+	if (page->_fHistoryChanged)
+		page->_fHistoryChanged();
 }
 
 bool BackForwardClientMorphOS::enabled()
@@ -178,8 +201,9 @@ void BackForwardClientMorphOS::setEnabled(bool enabled)
         int capacity = m_capacity;
         setCapacity(0);
         setCapacity(capacity);
-		if (m_page->_fHistoryChanged)
-			m_page->_fHistoryChanged();
+        auto page = m_page.get();
+		if (page->_fHistoryChanged)
+			page->_fHistoryChanged();
     }
 }
 
@@ -193,7 +217,7 @@ unsigned BackForwardClientMorphOS::forwardListCount() const
     return m_current == NoCurrentItemIndex ? 0 : m_entries.size() - m_current - 1;
 }
 
-RefPtr<HistoryItem> BackForwardClientMorphOS::itemAtIndex(int index)
+RefPtr<HistoryItem> BackForwardClientMorphOS::itemAtIndex(int index, WebCore::FrameIdentifier)
 {
     // Do range checks without doing math on index to avoid overflow.
     if (index < -static_cast<int>(m_current))
@@ -244,15 +268,14 @@ void BackForwardClientMorphOS::removeItem(HistoryItem* item)
         }
     }
 
-	if (m_page->_fHistoryChanged)
-		m_page->_fHistoryChanged();
+    auto page = m_page.get();
+	if (page->_fHistoryChanged)
+		page->_fHistoryChanged();
 }
 
-bool BackForwardClientMorphOS::containsItem(HistoryItem* entry)
+bool BackForwardClientMorphOS::containsItem(const HistoryItem& entry) const
 {
-    return m_entryHash.contains(entry);
+    return m_entryHash.contains(const_cast<HistoryItem*>(&entry));
 }
 
-
 }
-

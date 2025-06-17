@@ -27,7 +27,6 @@
 #include "WebsiteDataStore.h"
 
 #include "NetworkProcessMessages.h"
-#include "WebCoreArgumentCoders.h"
 #include "WebProcessPool.h"
 #include "WebsiteDataStoreParameters.h"
 
@@ -35,6 +34,14 @@ namespace WebKit {
 
 void WebsiteDataStore::platformSetNetworkParameters(WebsiteDataStoreParameters& parameters)
 {
+    auto& directories = resolvedDirectories();
+    auto alternativeServiceStorageDirectory = directories.alternativeServicesDirectory;
+    SandboxExtension::Handle alternativeServiceStorageDirectoryExtensionHandle;
+    createHandleFromResolvedPathIfPossible(alternativeServiceStorageDirectory, alternativeServiceStorageDirectoryExtensionHandle);
+
+    parameters.networkSessionParameters.alternativeServiceDirectory = WTFMove(alternativeServiceStorageDirectory);
+    parameters.networkSessionParameters.alternativeServiceDirectoryExtensionHandle = WTFMove(alternativeServiceStorageDirectoryExtensionHandle);
+    parameters.networkSessionParameters.cookiePersistentStorageFile = directories.cookieStorageFile;
     parameters.networkSessionParameters.proxySettings = m_proxySettings;
 }
 

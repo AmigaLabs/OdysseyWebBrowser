@@ -28,8 +28,11 @@
 
 #include "APISecurityOrigin.h"
 #include "APIUIClient.h"
+#include "DeviceIdHashSaltStorage.h"
 #include "Logging.h"
+#include "MessageSenderInlines.h"
 #include "WebAutomationSession.h"
+#include "WebFrameProxy.h"
 #include "WebPageMessages.h"
 #include "WebPageProxy.h"
 #include "WebProcess.h"
@@ -39,14 +42,15 @@
 #include <WebCore/MediaKeySystemRequest.h>
 #include <WebCore/SecurityOriginData.h>
 #include <wtf/Scope.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebKit {
 using namespace WebCore;
 
 #if !RELEASE_LOG_DISABLED
-static const char* logClassName()
+static ASCIILiteral logClassName()
 {
-    return "MediaKeySystemPermissionRequestManagerProxy";
+    return "MediaKeySystemPermissionRequestManagerProxy"_s;
 }
 
 static WTFLogChannel& logChannel()
@@ -54,9 +58,11 @@ static WTFLogChannel& logChannel()
     return JOIN_LOG_CHANNEL_WITH_PREFIX(LOG_CHANNEL_PREFIX, EME);
 }
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaKeySystemPermissionRequestManagerProxy);
+
 const Logger& MediaKeySystemPermissionRequestManagerProxy::logger() const
 {
-    return m_page.logger();
+    return m_page->logger();
 }
 #endif
 
@@ -83,13 +89,13 @@ void MediaKeySystemPermissionRequestManagerProxy::invalidatePendingRequests()
 
 void MediaKeySystemPermissionRequestManagerProxy::denyRequest(MediaKeySystemPermissionRequestProxy& request, const String& message)
 {
-    if (!m_page.hasRunningProcess())
+    if (!m_page->hasRunningProcess())
         return;
 
     ALWAYS_LOG(LOGIDENTIFIER, request.mediaKeySystemID().toUInt64(), ", reason: ", message);
 
 #if ENABLE(ENCRYPTED_MEDIA)
-    m_page.send(Messages::WebPage::MediaKeySystemWasDenied(request.mediaKeySystemID(), message));
+    m_page->legacyMainFrameProcess().send(Messages::WebPage::MediaKeySystemWasDenied(request.mediaKeySystemID(), message), m_page->webPageIDInMainFrameProcess());
 #else
     UNUSED_PARAM(message);
 #endif
@@ -97,25 +103,40 @@ void MediaKeySystemPermissionRequestManagerProxy::denyRequest(MediaKeySystemPerm
 
 void MediaKeySystemPermissionRequestManagerProxy::grantRequest(MediaKeySystemPermissionRequestProxy& request)
 {
-    if (!m_page.hasRunningProcess())
+    if (!m_page->hasRunningProcess())
         return;
 
 #if ENABLE(ENCRYPTED_MEDIA)
     ALWAYS_LOG(LOGIDENTIFIER, request.mediaKeySystemID().toUInt64(), ", keySystem: ", request.keySystem());
 
-    m_page.sendWithAsyncReply(Messages::WebPage::MediaKeySystemWasGranted { request.mediaKeySystemID() }, [] { });
+    m_page->legacyMainFrameProcess().send(Messages::WebPage::MediaKeySystemWasGranted { request.mediaKeySystemID(), request.mediaKeysHashSalt() }, m_page->webPageIDInMainFrameProcess());
 #else
     UNUSED_PARAM(request);
 #endif
 }
 
-Ref<MediaKeySystemPermissionRequestProxy> MediaKeySystemPermissionRequestManagerProxy::createRequestForFrame(MediaKeySystemRequestIdentifier mediaKeySystemID, FrameIdentifier frameID, Ref<SecurityOrigin>&& topLevelDocumentOrigin, const String& keySystem)
+void MediaKeySystemPermissionRequestManagerProxy::createRequestForFrame(MediaKeySystemRequestIdentifier mediaKeySystemID, FrameIdentifier frameID, Ref<SecurityOrigin>&& mediaKeyRequestOrigin, Ref<SecurityOrigin>&& topLevelDocumentOrigin, const String& keySystem, CompletionHandler<void(Ref<MediaKeySystemPermissionRequestProxy>&&)>&& completionHandler)
 {
     ALWAYS_LOG(LOGIDENTIFIER, mediaKeySystemID.toUInt64());
-
-    auto request = MediaKeySystemPermissionRequestProxy::create(*this, mediaKeySystemID, m_page.mainFrame()->frameID(), frameID, WTFMove(topLevelDocumentOrigin), keySystem);
+    auto request = MediaKeySystemPermissionRequestProxy::create(*this, mediaKeySystemID, m_page->mainFrame()->frameID(), frameID, WTFMove(mediaKeyRequestOrigin), WTFMove(topLevelDocumentOrigin), keySystem);
     m_pendingRequests.add(mediaKeySystemID, request.ptr());
-    return request;
+
+    Ref mediaKeyRequestDocumentSecurityOrigin = request->mediaKeyRequestSecurityOrigin();
+    Ref topLevelDocumentSecurityOrigin = request->topLevelDocumentSecurityOrigin();
+    m_page->websiteDataStore().ensureProtectedDeviceIdHashSaltStorage()->deviceIdHashSaltForOrigin(mediaKeyRequestDocumentSecurityOrigin, topLevelDocumentSecurityOrigin, [request = WTFMove(request), completionHandler = WTFMove(completionHandler)] (String&& mediaKeysHashSalt) mutable {
+        request->setMediaKeysHashSalt(WTFMove(mediaKeysHashSalt));
+        completionHandler(WTFMove(request));
+    });
+}
+
+void MediaKeySystemPermissionRequestManagerProxy::ref() const
+{
+    m_page->ref();
+}
+
+void MediaKeySystemPermissionRequestManagerProxy::deref() const
+{
+    m_page->deref();
 }
 
 } // namespace WebKit

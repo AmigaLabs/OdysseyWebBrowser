@@ -33,6 +33,7 @@
 #include "MediaSessionCoordinatorPrivate.h"
 #include "MediaSessionCoordinatorState.h"
 #include <wtf/Logger.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/UniqueRef.h>
 
 namespace WebCore {
@@ -42,11 +43,14 @@ template<typename> class DOMPromiseDeferred;
 class MediaSessionCoordinator
     : public RefCounted<MediaSessionCoordinator>
     , public MediaSessionCoordinatorClient
-    , public MediaSession::Observer
+    , public MediaSessionObserver
     , public ActiveDOMObject
-    , public EventTargetWithInlineData  {
-    WTF_MAKE_FAST_ALLOCATED;
+    , public EventTarget  {
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(MediaSessionCoordinator, WEBCORE_EXPORT);
 public:
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
+
     WEBCORE_EXPORT static Ref<MediaSessionCoordinator> create(ScriptExecutionContext*);
     WEBCORE_EXPORT ~MediaSessionCoordinator();
     WEBCORE_EXPORT void setMediaSessionCoordinatorPrivate(Ref<MediaSessionCoordinatorPrivate>&&);
@@ -65,10 +69,7 @@ public:
 
     void setMediaSession(MediaSession*);
 
-    using MediaSessionCoordinatorClient::weakPtrFactory;
-    using WeakValueType = MediaSessionCoordinatorClient::WeakValueType;
-    using RefCounted::ref;
-    using RefCounted::deref;
+    USING_CAN_MAKE_WEAKPTR(MediaSessionCoordinatorClient);
 
     struct PlaySessionCommand {
         std::optional<double> atTime;
@@ -82,15 +83,14 @@ private:
     // EventTarget
     void refEventTarget() final { ref(); }
     void derefEventTarget() final { deref(); }
-    EventTargetInterface eventTargetInterface() const final { return MediaSessionCoordinatorEventTargetInterfaceType; }
+    enum EventTargetInterfaceType eventTargetInterface() const final { return EventTargetInterfaceType::MediaSessionCoordinator; }
     ScriptExecutionContext* scriptExecutionContext() const final { return ContextDestructionObserver::scriptExecutionContext(); }
     void eventListenersDidChange() final;
 
-    // ActiveDOMObject
-    const char* activeDOMObjectName() const final { return "MediaSessionCoordinator"; }
+    // ActiveDOMObject.
     bool virtualHasPendingActivity() const final;
 
-    // MediaSession::Observer
+    // MediaSessionObserver
     void metadataChanged(const RefPtr<MediaMetadata>&) final;
     void positionStateChanged(const std::optional<MediaPositionState>&) final;
     void playbackStateChanged(MediaSessionPlaybackState) final;
@@ -106,15 +106,15 @@ private:
     bool currentPositionApproximatelyEqualTo(double) const;
 
     const Logger& logger() const { return m_logger; }
-    const void* logIdentifier() const { return m_logIdentifier; }
+    uint64_t logIdentifier() const { return m_logIdentifier; }
     static WTFLogChannel& logChannel();
-    static const char* logClassName() { return "MediaSessionCoordinator"; }
+    static ASCIILiteral logClassName() { return "MediaSessionCoordinator"_s; }
     bool shouldFireEvents() const;
 
     WeakPtr<MediaSession> m_session;
     RefPtr<MediaSessionCoordinatorPrivate> m_privateCoordinator;
     const Ref<const Logger> m_logger;
-    const void* m_logIdentifier;
+    const uint64_t m_logIdentifier;
     MediaSessionCoordinatorState m_state { MediaSessionCoordinatorState::Closed };
     bool m_hasCoordinatorsStateChangeEventListener { false };
     std::optional<PlaySessionCommand> m_currentPlaySessionCommand;

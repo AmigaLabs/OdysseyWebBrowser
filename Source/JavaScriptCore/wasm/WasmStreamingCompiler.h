@@ -42,7 +42,7 @@ class VM;
 
 namespace Wasm {
 
-class LLIntPlan;
+class EntryPlan;
 class StreamingPlan;
 
 class StreamingCompiler final : public StreamingParserClient, public ThreadSafeRefCounted<StreamingCompiler> {
@@ -51,7 +51,7 @@ public:
 
     JS_EXPORT_PRIVATE ~StreamingCompiler();
 
-    void addBytes(const uint8_t* bytes, size_t length) { m_parser.addBytes(bytes, length); }
+    void addBytes(std::span<const uint8_t> bytes) { m_parser.addBytes(bytes); }
     JS_EXPORT_PRIVATE void finalize(JSGlobalObject*);
     JS_EXPORT_PRIVATE void fail(JSGlobalObject*, JSValue);
     JS_EXPORT_PRIVATE void cancel();
@@ -61,7 +61,7 @@ public:
 private:
     JS_EXPORT_PRIVATE StreamingCompiler(VM&, CompilerMode, JSGlobalObject*, JSPromise*, JSObject*);
 
-    bool didReceiveFunctionData(unsigned, const FunctionData&) final;
+    bool didReceiveFunctionData(FunctionCodeIndex, const FunctionData&) final;
     void didFinishParsing() final;
     void didComplete() WTF_REQUIRES_LOCK(m_lock);
     void completeIfNecessary() WTF_REQUIRES_LOCK(m_lock);
@@ -76,7 +76,7 @@ private:
     DeferredWorkTimer::Ticket m_ticket;
     Ref<Wasm::ModuleInformation> m_info;
     StreamingParser m_parser;
-    RefPtr<LLIntPlan> m_plan;
+    RefPtr<EntryPlan> m_plan;
 };
 
 

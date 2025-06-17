@@ -126,11 +126,8 @@ public:
 
     void join();
 
-    virtual const char* name() const { return "WTF::AutomaticThread"; }
+    virtual ASCIILiteral name() const { return "WTF::AutomaticThread"_s; }
 
-#if PLATFORM(MUI)
-    bool m_stop { false };
-#endif
 protected:
     // This logically creates the thread, but in reality the thread won't be created until someone
     // calls AutomaticThreadCondition::notifyOne() or notifyAll().

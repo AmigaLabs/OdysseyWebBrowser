@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2019-2022 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,13 +28,16 @@
 
 #if HAVE(APP_SSO)
 
+#import "Logging.h"
 #import "SOAuthorizationSession.h"
 #import "WebPageProxy.h"
 #import <wtf/RunLoop.h>
 
 #define WKSOAUTHORIZATIONDELEGATE_RELEASE_LOG(fmt, ...) RELEASE_LOG(AppSSO, "%p - WKSOAuthorizationDelegate::" fmt, &self, ##__VA_ARGS__)
 
-@implementation WKSOAuthorizationDelegate
+@implementation WKSOAuthorizationDelegate {
+    RefPtr<WebKit::SOAuthorizationSession> _session;
+}
 
 - (void)authorization:(SOAuthorization *)authorization presentViewController:(SOAuthorizationViewController)viewController withCompletion:(void (^)(BOOL success, NSError *error))completion
 {
@@ -46,6 +49,13 @@
         completion(NO, nil);
         return;
     }
+
+    if (!viewController) {
+        WKSOAUTHORIZATIONDELEGATE_RELEASE_LOG("authorization: No view controller to present, so completing with NO as success state.");
+        completion(NO, nil);
+        return;
+    }
+
     WKSOAUTHORIZATIONDELEGATE_RELEASE_LOG("authorization: presentingViewController %p", viewController);
     _session->presentViewController(viewController, completion);
 }
@@ -122,7 +132,8 @@
 {
     ASSERT(RunLoop::isMain());
     WKSOAUTHORIZATIONDELEGATE_RELEASE_LOG("authorization:didCompleteWithError: (authorization = %p, _session = %p)", authorization, _session.get());
-    LOG_ERROR("Could not complete AppSSO: %d", error.code);
+    if (error.code)
+        LOG_ERROR("Could not complete AppSSO operation. Error: %d", error.code);
     if (!_session) {
         WKSOAUTHORIZATIONDELEGATE_RELEASE_LOG("authorization:didCompleteWithError: No session, so returning early.");
         ASSERT_NOT_REACHED();
@@ -137,6 +148,7 @@
     RELEASE_ASSERT(RunLoop::isMain());
     WKSOAUTHORIZATIONDELEGATE_RELEASE_LOG("setSession: (existing session = %p, new session = %p)", _session.get(), session.get());
     _session = WTFMove(session);
+
     if (_session)
         _session->shouldStart();
 }

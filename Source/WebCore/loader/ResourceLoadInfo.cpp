@@ -32,10 +32,17 @@
 #include "RegistrableDomain.h"
 #include "SecurityOrigin.h"
 
-namespace WebCore {
-namespace ContentExtensions {
+namespace WebCore::ContentExtensions {
 
-OptionSet<ResourceType> toResourceType(CachedResource::Type type, ResourceRequestBase::Requester requester)
+static_assert(!(ResourceTypeMask & LoadTypeMask), "ResourceTypeMask and LoadTypeMask should be mutually exclusive because they are stored in the same uint32_t");
+static_assert(!(ResourceTypeMask & LoadContextMask), "ResourceTypeMask and LoadContextMask should be mutually exclusive because they are stored in the same uint32_t");
+static_assert(!(ResourceTypeMask & ActionConditionMask), "ResourceTypeMask and ActionConditionMask should be mutually exclusive because they are stored in the same uint32_t");
+static_assert(!(LoadContextMask & LoadTypeMask), "LoadContextMask and LoadTypeMask should be mutually exclusive because they are stored in the same uint32_t");
+static_assert(!(LoadContextMask & ActionConditionMask), "LoadContextMask and ActionConditionMask should be mutually exclusive because they are stored in the same uint32_t");
+static_assert(!(LoadTypeMask & ActionConditionMask), "LoadTypeMask and ActionConditionMask should be mutually exclusive because they are stored in the same uint32_t");
+static_assert(static_cast<uint64_t>(AllResourceFlags) << 32 == ActionFlagMask, "ActionFlagMask should cover all the action flags");
+
+OptionSet<ResourceType> toResourceType(CachedResource::Type type, ResourceRequestRequester requester)
 {
     switch (type) {
     case CachedResource::Type::LinkPrefetch:
@@ -62,24 +69,25 @@ OptionSet<ResourceType> toResourceType(CachedResource::Type type, ResourceReques
         return { ResourceType::Media };
 
     case CachedResource::Type::RawResource:
-        if (requester == ResourceRequestBase::Requester::XHR
-            || requester == ResourceRequestBase::Requester::Fetch)
+        if (requester == ResourceRequestRequester::XHR
+            || requester == ResourceRequestRequester::Fetch)
             return { ResourceType::Fetch };
         FALLTHROUGH;
     case CachedResource::Type::Beacon:
     case CachedResource::Type::Ping:
     case CachedResource::Type::Icon:
 #if ENABLE(MODEL_ELEMENT)
+    case CachedResource::Type::EnvironmentMapResource:
     case CachedResource::Type::ModelResource:
 #endif
 #if ENABLE(APPLICATION_MANIFEST)
     case CachedResource::Type::ApplicationManifest:
 #endif
         return { ResourceType::Other };
-
+#if ENABLE(VIDEO)
     case CachedResource::Type::TextTrackResource:
         return { ResourceType::Media };
-
+#endif
     };
     ASSERT_NOT_REACHED();
     return { };
@@ -87,49 +95,51 @@ OptionSet<ResourceType> toResourceType(CachedResource::Type type, ResourceReques
 
 std::optional<OptionSet<ResourceType>> readResourceType(StringView name)
 {
-    if (name == "document")
+    if (name == "document"_s)
         return { ResourceType::Document };
-    if (name == "image")
+    if (name == "image"_s)
         return { ResourceType::Image };
-    if (name == "style-sheet")
+    if (name == "style-sheet"_s)
         return { ResourceType::StyleSheet };
-    if (name == "script")
+    if (name == "script"_s)
         return { ResourceType::Script };
-    if (name == "font")
+    if (name == "font"_s)
         return { ResourceType::Font };
-    if (name == "raw")
-        return {{ ResourceType::Fetch, ResourceType::WebSocket, ResourceType::Other, ResourceType::Ping }};
-    if (name == "websocket")
+    if (name == "raw"_s)
+        return { { ResourceType::Fetch, ResourceType::WebSocket, ResourceType::Other, ResourceType::Ping } };
+    if (name == "websocket"_s)
         return { ResourceType::WebSocket };
-    if (name == "fetch")
+    if (name == "fetch"_s)
         return { ResourceType::Fetch };
-    if (name == "other")
-        return {{ ResourceType::Other, ResourceType::Ping }};
-    if (name == "svg-document")
+    if (name == "other"_s)
+        return { { ResourceType::Other, ResourceType::Ping, ResourceType::CSPReport } };
+    if (name == "svg-document"_s)
         return { ResourceType::SVGDocument };
-    if (name == "media")
+    if (name == "media"_s)
         return { ResourceType::Media };
-    if (name == "popup")
+    if (name == "popup"_s)
         return { ResourceType::Popup };
-    if (name == "ping")
+    if (name == "ping"_s)
         return { ResourceType::Ping };
+    if (name == "csp-report"_s)
+        return { ResourceType::CSPReport };
     return std::nullopt;
 }
 
 std::optional<OptionSet<LoadType>> readLoadType(StringView name)
 {
-    if (name == "first-party")
+    if (name == "first-party"_s)
         return { LoadType::FirstParty };
-    if (name == "third-party")
+    if (name == "third-party"_s)
         return { LoadType::ThirdParty };
     return std::nullopt;
 }
 
 std::optional<OptionSet<LoadContext>> readLoadContext(StringView name)
 {
-    if (name == "top-frame")
+    if (name == "top-frame"_s)
         return { LoadContext::TopFrame };
-    if (name == "child-frame")
+    if (name == "child-frame"_s)
         return { LoadContext::ChildFrame };
     return std::nullopt;
 }
@@ -149,7 +159,40 @@ ResourceFlags ResourceLoadInfo::getResourceFlags() const
     return flags;
 }
 
-} // namespace ContentExtensions
-} // namespace WebCore
+ASCIILiteral resourceTypeToString(OptionSet<ResourceType> resourceTypes)
+{
+    switch (*resourceTypes.begin()) {
+    case ResourceType::Document:
+        return "document"_s;
+    case ResourceType::Image:
+        return "image"_s;
+    case ResourceType::StyleSheet:
+        return "style-sheet"_s;
+    case ResourceType::Script:
+        return "script"_s;
+    case ResourceType::Font:
+        return "font"_s;
+    case ResourceType::WebSocket:
+        return "websocket"_s;
+    case ResourceType::Fetch:
+        return "fetch"_s;
+    case ResourceType::SVGDocument:
+        return "svg-document"_s;
+    case ResourceType::Media:
+        return "media"_s;
+    case ResourceType::Popup:
+        return "popup"_s;
+    case ResourceType::Ping:
+        return "ping"_s;
+    case ResourceType::CSPReport:
+        return "csp-report"_s;
+    case ResourceType::Other:
+        return "other"_s;
+    default:
+        return "raw"_s;
+    }
+}
+
+} // namespace WebCore::ContentExtensions
 
 #endif // ENABLE(CONTENT_EXTENSIONS)

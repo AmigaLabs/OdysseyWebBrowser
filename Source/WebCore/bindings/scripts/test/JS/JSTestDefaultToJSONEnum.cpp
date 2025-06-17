@@ -24,6 +24,8 @@
 #include <JavaScriptCore/JSCInlines.h>
 #include <JavaScriptCore/JSString.h>
 #include <wtf/NeverDestroyed.h>
+#include <wtf/SortedArrayMap.h>
+
 
 
 namespace WebCore {
@@ -31,34 +33,42 @@ using namespace JSC;
 
 String convertEnumerationToString(TestDefaultToJSONEnum enumerationValue)
 {
-    static const NeverDestroyed<String> values[] = {
+    static const std::array<NeverDestroyed<String>, 2> values {
         MAKE_STATIC_STRING_IMPL("EnumValue1"),
         MAKE_STATIC_STRING_IMPL("EnumValue2"),
     };
     static_assert(static_cast<size_t>(TestDefaultToJSONEnum::EnumValue1) == 0, "TestDefaultToJSONEnum::EnumValue1 is not 0 as expected");
     static_assert(static_cast<size_t>(TestDefaultToJSONEnum::EnumValue2) == 1, "TestDefaultToJSONEnum::EnumValue2 is not 1 as expected");
-    ASSERT(static_cast<size_t>(enumerationValue) < WTF_ARRAY_LENGTH(values));
+    ASSERT(static_cast<size_t>(enumerationValue) < std::size(values));
     return values[static_cast<size_t>(enumerationValue)];
 }
 
-template<> JSString* convertEnumerationToJS(JSGlobalObject& lexicalGlobalObject, TestDefaultToJSONEnum enumerationValue)
+template<> JSString* convertEnumerationToJS(VM& vm, TestDefaultToJSONEnum enumerationValue)
 {
-    return jsStringWithCache(lexicalGlobalObject.vm(), convertEnumerationToString(enumerationValue));
+    return jsStringWithCache(vm, convertEnumerationToString(enumerationValue));
+}
+
+template<> std::optional<TestDefaultToJSONEnum> parseEnumerationFromString<TestDefaultToJSONEnum>(const String& stringValue)
+{
+    static constexpr std::array<std::pair<ComparableASCIILiteral, TestDefaultToJSONEnum>, 2> mappings {
+        std::pair<ComparableASCIILiteral, TestDefaultToJSONEnum> { "EnumValue1"_s, TestDefaultToJSONEnum::EnumValue1 },
+        std::pair<ComparableASCIILiteral, TestDefaultToJSONEnum> { "EnumValue2"_s, TestDefaultToJSONEnum::EnumValue2 },
+    };
+    static constexpr SortedArrayMap enumerationMapping { mappings };
+    if (auto* enumerationValue = enumerationMapping.tryGet(stringValue); LIKELY(enumerationValue))
+        return *enumerationValue;
+    return std::nullopt;
 }
 
 template<> std::optional<TestDefaultToJSONEnum> parseEnumeration<TestDefaultToJSONEnum>(JSGlobalObject& lexicalGlobalObject, JSValue value)
 {
-    auto stringValue = value.toWTFString(&lexicalGlobalObject);
-    if (stringValue == "EnumValue1")
-        return TestDefaultToJSONEnum::EnumValue1;
-    if (stringValue == "EnumValue2")
-        return TestDefaultToJSONEnum::EnumValue2;
-    return std::nullopt;
+    return parseEnumerationFromString<TestDefaultToJSONEnum>(value.toWTFString(&lexicalGlobalObject));
 }
 
-template<> const char* expectedEnumerationValues<TestDefaultToJSONEnum>()
+template<> ASCIILiteral expectedEnumerationValues<TestDefaultToJSONEnum>()
 {
-    return "\"EnumValue1\", \"EnumValue2\"";
+    return "\"EnumValue1\", \"EnumValue2\""_s;
 }
 
 } // namespace WebCore
+

@@ -10,6 +10,7 @@
 #undef PAL_EXPORT
 #undef WEBCORE_EXPORT
 #undef JS_EXPORT_PRIVATE
+#undef WTF_EXPORT_PRIVATE
 
 #include <JavaScriptCore/JSExportMacros.h>
 #include <WebCore/PlatformExportMacros.h>
@@ -17,7 +18,6 @@
 #include <pal/ExportMacros.h>
 //#include <wtf/FeatureDefines.h>
 #include <wtf/Platform.h>
-#include <wtf/DisallowCType.h>
 
 #ifdef __cplusplus
 

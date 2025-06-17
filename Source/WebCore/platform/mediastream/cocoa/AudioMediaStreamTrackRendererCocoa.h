@@ -28,25 +28,29 @@
 #if ENABLE(MEDIA_STREAM)
 
 #include "AudioMediaStreamTrackRenderer.h"
+#include "AudioMediaStreamTrackRendererUnit.h"
+#include "CAAudioStreamDescription.h"
 #include "Logging.h"
-#include <wtf/WeakPtr.h>
-
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudioTypes.h>
+#include <optional>
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 
 class AudioSampleDataSource;
 class AudioSampleBufferList;
-class CAAudioStreamDescription;
+class BaseAudioMediaStreamTrackRendererUnit;
 
-class AudioMediaStreamTrackRendererCocoa : public AudioMediaStreamTrackRenderer, public CanMakeWeakPtr<AudioMediaStreamTrackRendererCocoa, WeakPtrFactoryInitialization::Eager> {
-    WTF_MAKE_FAST_ALLOCATED;
+class AudioMediaStreamTrackRendererCocoa final : public AudioMediaStreamTrackRenderer {
+    WTF_MAKE_TZONE_ALLOCATED(AudioMediaStreamTrackRendererCocoa);
 public:
-    AudioMediaStreamTrackRendererCocoa();
+    static Ref<AudioMediaStreamTrackRenderer> create(Init&& init) { return adoptRef(*new AudioMediaStreamTrackRendererCocoa(WTFMove(init))); }
     ~AudioMediaStreamTrackRendererCocoa();
 
 private:
+    explicit AudioMediaStreamTrackRendererCocoa(Init&&);
+
     // AudioMediaStreamTrackRenderer
     void pushSamples(const WTF::MediaTime&, const PlatformAudioData&, const AudioStreamDescription&, size_t) final;
     void start(CompletionHandler<void()>&&) final;
@@ -55,9 +59,17 @@ private:
     void setVolume(float) final;
     void setAudioOutputDevice(const String&) final;
 
-    std::unique_ptr<CAAudioStreamDescription> m_outputDescription;
-    RefPtr<AudioSampleDataSource> m_dataSource;
-    bool m_shouldReset { false };
+    void reset();
+    void setRegisteredDataSource(RefPtr<AudioSampleDataSource>&&);
+
+    BaseAudioMediaStreamTrackRendererUnit& rendererUnit();
+
+    std::optional<CAAudioStreamDescription> m_outputDescription;
+    RefPtr<AudioSampleDataSource> m_dataSource; // Used in background thread.
+    RefPtr<AudioSampleDataSource> m_registeredDataSource; // Used in main thread.
+    bool m_shouldRecreateDataSource { false };
+    WebCore::AudioMediaStreamTrackRendererUnit::ResetObserver m_resetObserver;
+    String m_deviceID;
 };
 
 }

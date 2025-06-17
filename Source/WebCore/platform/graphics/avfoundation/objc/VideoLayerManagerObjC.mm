@@ -37,6 +37,7 @@
 #import <wtf/BlockPtr.h>
 #import <wtf/Logger.h>
 #import <wtf/MachSendRight.h>
+#import <wtf/TZoneMallocInlines.h>
 
 #import <pal/cocoa/AVFoundationSoftLink.h>
 
@@ -44,8 +45,10 @@ OBJC_CLASS AVPlayerLayer;
 
 namespace WebCore {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(VideoLayerManagerObjC);
+
 #if !RELEASE_LOG_DISABLED
-VideoLayerManagerObjC::VideoLayerManagerObjC(const Logger& logger, const void* logIdentifier)
+VideoLayerManagerObjC::VideoLayerManagerObjC(const Logger& logger, uint64_t logIdentifier)
     : m_logger(logger)
     , m_logIdentifier(logIdentifier)
 {
@@ -61,9 +64,9 @@ PlatformLayer* VideoLayerManagerObjC::videoInlineLayer() const
     return m_videoInlineLayer.get();
 }
 
-void VideoLayerManagerObjC::setVideoLayer(PlatformLayer *videoLayer, IntSize contentSize)
+void VideoLayerManagerObjC::setVideoLayer(PlatformLayer *videoLayer, FloatSize contentSize)
 {
-    ALWAYS_LOG(LOGIDENTIFIER, contentSize.width(), ", ", contentSize.height());
+    ALWAYS_LOG(LOGIDENTIFIER, contentSize);
 
     m_videoLayer = videoLayer;
     [m_videoLayer web_disableAllActions];
@@ -77,7 +80,7 @@ void VideoLayerManagerObjC::setVideoLayer(PlatformLayer *videoLayer, IntSize con
 
 #if ENABLE(VIDEO_PRESENTATION_MODE)
     if (m_videoFullscreenLayer) {
-        [m_videoLayer setFrame:CGRectMake(0, 0, m_videoFullscreenFrame.width(), m_videoFullscreenFrame.height())];
+        [m_videoLayer setFrame:m_videoFullscreenFrame];
         [m_videoFullscreenLayer insertSublayer:m_videoLayer.get() atIndex:0];
     } else
 #endif
@@ -91,6 +94,9 @@ void VideoLayerManagerObjC::didDestroyVideoLayer()
 {
     ALWAYS_LOG(LOGIDENTIFIER);
 
+#if ENABLE(VIDEO_PRESENTATION_MODE)
+    setTextTrackRepresentationLayer(nil);
+#endif
     [m_videoLayer removeFromSuperlayer];
 
     m_videoInlineLayer = nil;
@@ -125,7 +131,7 @@ void VideoLayerManagerObjC::setVideoFullscreenLayer(PlatformLayer *videoFullscre
             [m_videoInlineLayer setContents:(__bridge id)currentImage.get()];
 
         if (m_videoFullscreenLayer) {
-            [m_videoLayer setFrame:CGRectMake(0, 0, m_videoFullscreenFrame.width(), m_videoFullscreenFrame.height())];
+            [m_videoLayer setFrame:m_videoFullscreenFrame];
             [m_videoFullscreenLayer insertSublayer:m_videoLayer.get() atIndex:0];
         } else if (m_videoInlineLayer) {
             [m_videoLayer setFrame:[m_videoInlineLayer bounds]];
@@ -175,15 +181,6 @@ void VideoLayerManagerObjC::updateVideoFullscreenInlineImage(PlatformImagePtr im
 }
 
 #endif
-
-bool VideoLayerManagerObjC::requiresTextTrackRepresentation() const
-{
-#if ENABLE(VIDEO_PRESENTATION_MODE)
-    return m_videoFullscreenLayer;
-#else
-    return false;
-#endif
-}
 
 void VideoLayerManagerObjC::syncTextTrackBounds()
 {

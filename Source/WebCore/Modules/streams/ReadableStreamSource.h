@@ -28,15 +28,17 @@
 
 #pragma once
 
-#include "JSDOMPromiseDeferred.h"
+#include "JSDOMPromiseDeferredForward.h"
 #include "ReadableStreamDefaultController.h"
+#include <wtf/AbstractRefCounted.h>
 #include <wtf/WeakPtr.h>
 
 namespace WebCore {
 
-class ReadableStreamSource : public RefCounted<ReadableStreamSource> {
+class ReadableStreamSource : public AbstractRefCounted {
 public:
-    virtual ~ReadableStreamSource();
+    WEBCORE_EXPORT ReadableStreamSource();
+    WEBCORE_EXPORT virtual ~ReadableStreamSource();
 
     void start(ReadableStreamDefaultController&&, DOMPromiseDeferred<void>&&);
     void pull(DOMPromiseDeferred<void>&&);
@@ -51,7 +53,7 @@ protected:
     void startFinished();
     void pullFinished();
     void cancelFinished();
-    void clean();
+    WEBCORE_EXPORT void clean();
 
     virtual void setActive() = 0;
     virtual void setInactive() = 0;
@@ -65,8 +67,16 @@ private:
     std::optional<ReadableStreamDefaultController> m_controller;
 };
 
-class SimpleReadableStreamSource
+class RefCountedReadableStreamSource
     : public ReadableStreamSource
+    , public RefCounted<RefCountedReadableStreamSource> {
+public:
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
+};
+
+class SimpleReadableStreamSource
+    : public RefCountedReadableStreamSource
     , public CanMakeWeakPtr<SimpleReadableStreamSource> {
 public:
     static Ref<SimpleReadableStreamSource> create() { return adoptRef(*new SimpleReadableStreamSource); }

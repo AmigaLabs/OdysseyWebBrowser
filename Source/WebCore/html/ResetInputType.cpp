@@ -32,13 +32,17 @@
 #include "config.h"
 #include "ResetInputType.h"
 
+#include "Document.h"
 #include "Event.h"
 #include "HTMLFormElement.h"
 #include "HTMLInputElement.h"
 #include "InputTypeNames.h"
 #include "LocalizedStrings.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(ResetInputType);
 
 const AtomString& ResetInputType::formControlType() const
 {

@@ -26,40 +26,37 @@
 namespace WebCore {
 
 class RenderReplaced : public RenderBox {
-    WTF_MAKE_ISO_ALLOCATED(RenderReplaced);
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(RenderReplaced);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(RenderReplaced);
 public:
     virtual ~RenderReplaced();
 
-    LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred = ComputeActual) const override;
+    LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred = ShouldComputePreferred::ComputeActual) const override;
     LayoutUnit computeReplacedLogicalHeight(std::optional<LayoutUnit> estimatedUsedWidth = std::nullopt) const override;
 
     LayoutRect replacedContentRect(const LayoutSize& intrinsicSize) const;
     LayoutRect replacedContentRect() const { return replacedContentRect(intrinsicSize()); }
 
-    bool hasReplacedLogicalWidth() const;
-    bool hasReplacedLogicalHeight() const;
     bool setNeedsLayoutIfNeededAfterIntrinsicSizeChange();
 
-    LayoutSize intrinsicSize() const final
-    {
-        if (shouldApplySizeContainment(*this))
-            return LayoutSize();
-        return m_intrinsicSize;
-    }
-    
-    RoundedRect roundedContentBoxRect() const;
+    LayoutSize intrinsicSize() const final;
+    FloatSize intrinsicRatio() const;
     
     bool isContentLikelyVisibleInViewport();
     bool needsPreferredWidthsRecalculation() const override;
 
+    double computeIntrinsicAspectRatio() const;
+
+    void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, FloatSize& intrinsicRatio) const override;
+
+    virtual bool paintsContent() const { return true; }
+
 protected:
-    RenderReplaced(Element&, RenderStyle&&);
-    RenderReplaced(Element&, RenderStyle&&, const LayoutSize& intrinsicSize);
-    RenderReplaced(Document&, RenderStyle&&, const LayoutSize& intrinsicSize);
+    RenderReplaced(Type, Element&, RenderStyle&&, OptionSet<ReplacedFlag> = { });
+    RenderReplaced(Type, Element&, RenderStyle&&, const LayoutSize& intrinsicSize, OptionSet<ReplacedFlag> = { });
+    RenderReplaced(Type, Document&, RenderStyle&&, const LayoutSize& intrinsicSize, OptionSet<ReplacedFlag> = { });
 
     void layout() override;
-
-    void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override;
 
     void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const final;
 
@@ -79,30 +76,35 @@ protected:
 
     void willBeDestroyed() override;
 
+    virtual void layoutShadowContent(const LayoutSize&);
+
 private:
-    LayoutUnit computeConstrainedLogicalWidth(ShouldComputePreferred) const;
+    LayoutUnit computeConstrainedLogicalWidth() const;
 
     virtual RenderBox* embeddedContentBox() const { return 0; }
-    const char* renderName() const override { return "RenderReplaced"; }
+    ASCIILiteral renderName() const override { return "RenderReplaced"_s; }
 
     bool canHaveChildren() const override { return false; }
 
     void computePreferredLogicalWidths() final;
     virtual void paintReplaced(PaintInfo&, const LayoutPoint&) { }
 
-    LayoutRect clippedOverflowRect(const RenderLayerModelObject* repaintContainer, VisibleRectContext) const override;
+    RepaintRects localRectsForRepaint(RepaintOutlineBounds) const override;
 
-    VisiblePosition positionForPoint(const LayoutPoint&, const RenderFragmentContainer*) final;
+    VisiblePosition positionForPoint(const LayoutPoint&, HitTestSource, const RenderFragmentContainer*) final;
     
     bool canBeSelectionLeaf() const override { return true; }
 
     LayoutRect selectionRectForRepaint(const RenderLayerModelObject* repaintContainer, bool clipToVisibleContent = true) final;
-    void computeAspectRatioInformationForRenderBox(RenderBox*, FloatSize& constrainedSize, double& intrinsicRatio) const;
+    void computeAspectRatioInformationForRenderBox(RenderBox*, FloatSize& constrainedSize, FloatSize& intrinsicRatio) const;
+    void computeIntrinsicSizesConstrainedByTransferredMinMaxSizes(RenderBox* contentRenderer, FloatSize& constrainedSize, FloatSize& intrinsicRatio) const;
 
     virtual bool shouldDrawSelectionTint() const;
     
     Color calculateHighlightColor() const;
-    bool isHighlighted(HighlightState, const HighlightData&) const;
+    bool isHighlighted(HighlightState, const RenderHighlight&) const;
+
+    bool hasReplacedLogicalHeight() const;
 
     mutable LayoutSize m_intrinsicSize;
 };

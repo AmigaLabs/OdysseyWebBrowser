@@ -39,10 +39,12 @@ class TimeControl extends LayoutItem
             layoutDelegate
         });
 
+        this._timeLabelsAttachment = TimeControl.TimeLabelsAttachment.Side;
+
         this._shouldShowDurationTimeLabel = this.layoutTraits.supportsDurationTimeLabel();
 
         this.elapsedTimeLabel = new TimeLabel(TimeLabel.Type.Elapsed);
-        this.scrubber = new Slider("scrubber", this.layoutTraits.knobStyleForScrubber());
+        this.scrubber = new Slider(this.layoutDelegate, "scrubber");
         if (this._shouldShowDurationTimeLabel)
             this.durationTimeLabel = new TimeLabel(TimeLabel.Type.Duration);
         this.remainingTimeLabel = new TimeLabel(TimeLabel.Type.Remaining);
@@ -56,6 +58,7 @@ class TimeControl extends LayoutItem
         this._duration = 0;
         this._currentTime = 0;
         this._loading = false;
+        this._supportsSeeking = true;
 
         if (this._shouldShowDurationTimeLabel) {
             this.durationTimeLabel.element.addEventListener("click", this);
@@ -94,22 +97,57 @@ class TimeControl extends LayoutItem
             return;
 
         this._loading = flag;
-        this.scrubber.disabled = flag;
+        this.scrubber.disabled = this._loading || !this._supportsSeeking;
+        this.needsLayout = true;
+    }
+
+    get supportsSeeking()
+    {
+        return this._supportsSeeking;
+    }
+    
+    set supportsSeeking(flag)
+    {
+        if (this._supportsSeeking === flag)
+            return;
+
+        this._supportsSeeking = flag;
+        this.scrubber.disabled = this._loading || !this._supportsSeeking;
         this.needsLayout = true;
     }
 
     get minimumWidth()
     {
         this._performIdealLayout();
-        const scrubberMargin = this.computedValueForStylePropertyInPx("--scrubber-margin");
-        return MinimumScrubberWidth + scrubberMargin + this._durationOrRemainingTimeLabel().width;
+        if (this._timeLabelsDisplayOnScrubberSide) {
+            const scrubberMargin = this.computedValueForStylePropertyInPx("--scrubber-margin");
+            return MinimumScrubberWidth + scrubberMargin + this._durationOrRemainingTimeLabel().width;
+        }
+        return MinimumScrubberWidth;
     }
 
     get idealMinimumWidth()
     {
         this._performIdealLayout();
-        const scrubberMargin = this.computedValueForStylePropertyInPx("--scrubber-margin");
-        return this.elapsedTimeLabel.width + MinimumScrubberWidth + (2 * scrubberMargin) + this._durationOrRemainingTimeLabel().width;
+        if (this._timeLabelsDisplayOnScrubberSide) {
+            const scrubberMargin = this.computedValueForStylePropertyInPx("--scrubber-margin");
+            return this.elapsedTimeLabel.width + MinimumScrubberWidth + (2 * scrubberMargin) + this._durationOrRemainingTimeLabel().width;
+        }
+        return MinimumScrubberWidth;
+    }
+
+    get timeLabelsAttachment()
+    {
+        return this._timeLabelsAttachment;
+    }
+
+    set timeLabelsAttachment(attachment)
+    {
+        if (this._timeLabelsAttachment == attachment)
+            return;
+
+        this._timeLabelsAttachment = attachment;
+        this.needsLayout = true;
     }
 
     // Protected
@@ -119,7 +157,7 @@ class TimeControl extends LayoutItem
         super.layout();
         this._performIdealLayout();
 
-        if (this._loading)
+        if (this._loading || !this._timeLabelsDisplayOnScrubberSide)
             return;
 
         if (this.scrubber.width >= MinimumScrubberWidth) {
@@ -160,6 +198,11 @@ class TimeControl extends LayoutItem
 
     // Private
 
+    get _timeLabelsDisplayOnScrubberSide()
+    {
+        return this._timeLabelsAttachment == TimeControl.TimeLabelsAttachment.Side;
+    }
+
     get _canShowDurationTimeLabel()
     {
         return this.elapsedTimeLabel.visible;
@@ -175,7 +218,7 @@ class TimeControl extends LayoutItem
         if (this._loading)
             this._durationOrRemainingTimeLabel().setValueWithNumberOfDigits(NaN, 4);
         else {
-            const shouldShowZeroDurations = isNaN(this._duration) || this._duration === Number.POSITIVE_INFINITY;
+            const shouldShowZeroDurations = isNaN(this._duration) || this._duration > maxNonLiveDuration;
 
             let numberOfDigitsForTimeLabels;
             if (this._duration < TenMinutes)
@@ -200,9 +243,32 @@ class TimeControl extends LayoutItem
         let durationOrRemainingTimeLabel = this._durationOrRemainingTimeLabel();
 
         const scrubberMargin = this.computedValueForStylePropertyInPx("--scrubber-margin");
-        this.scrubber.x = (this._loading ? this.activityIndicator.width : this.elapsedTimeLabel.width) + scrubberMargin;
-        this.scrubber.width = this.width - this.scrubber.x - scrubberMargin - durationOrRemainingTimeLabel.width;
-        durationOrRemainingTimeLabel.x = this.scrubber.x + this.scrubber.width + scrubberMargin;
+
+        this.scrubber.x = (() => {
+            if (this._loading)
+                return this.activityIndicator.width + scrubberMargin;
+            if (this._timeLabelsDisplayOnScrubberSide)
+                return this.elapsedTimeLabel.width + scrubberMargin;
+            return 0;
+        })();
+
+        this.scrubber.width = (() => {
+            if (this._timeLabelsDisplayOnScrubberSide)
+                return this.width - this.scrubber.x - scrubberMargin - durationOrRemainingTimeLabel.width;
+            return this.width;
+        })();
+
+        if (this._timeLabelsAttachment == TimeControl.TimeLabelsAttachment.Below)
+            this.elapsedTimeLabel.y = this.scrubber.height;
+
+        durationOrRemainingTimeLabel.x = (() => {
+            if (this._timeLabelsDisplayOnScrubberSide)
+                return this.scrubber.x + this.scrubber.width + scrubberMargin;
+            return this.width - durationOrRemainingTimeLabel.width;
+        })();
+
+        if (this._timeLabelsAttachment == TimeControl.TimeLabelsAttachment.Below)
+            durationOrRemainingTimeLabel.y = this.scrubber.height;
 
         this.children = [this._loading ? this.activityIndicator : this.elapsedTimeLabel, this.scrubber, durationOrRemainingTimeLabel];
     }
@@ -213,3 +279,9 @@ class TimeControl extends LayoutItem
     }
 
 }
+
+TimeControl.TimeLabelsAttachment = {
+    Above: 1 << 0,
+    Side:  1 << 1,
+    Below: 1 << 2
+};

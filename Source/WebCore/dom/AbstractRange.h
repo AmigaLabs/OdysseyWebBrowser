@@ -25,6 +25,8 @@
 
 #pragma once
 
+#include <optional>
+#include <wtf/Ref.h>
 #include <wtf/RefCounted.h>
 
 namespace WebCore {
@@ -38,8 +40,10 @@ public:
     virtual ~AbstractRange() = default;
 
     virtual Node& startContainer() const = 0;
+    Ref<Node> protectedStartContainer() const;
     virtual unsigned startOffset() const = 0;
     virtual Node& endContainer() const = 0;
+    Ref<Node> protectedEndContainer() const;
     virtual unsigned endOffset() const = 0;
     virtual bool collapsed() const = 0;
 

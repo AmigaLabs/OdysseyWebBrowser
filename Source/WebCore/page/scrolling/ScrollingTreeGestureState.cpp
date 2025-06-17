@@ -28,11 +28,12 @@
 
 #if ENABLE(ASYNC_SCROLLING)
 
+#include "Logging.h"
 #include "PlatformWheelEvent.h"
 #include "ScrollingTree.h"
+#include <wtf/text/TextStream.h>
 
 namespace WebCore {
-
 
 ScrollingTreeGestureState::ScrollingTreeGestureState(ScrollingTree& scrollingTree)
     : m_scrollingTree(scrollingTree)
@@ -60,14 +61,15 @@ bool ScrollingTreeGestureState::handleGestureCancel(const PlatformWheelEvent& ev
 
 void ScrollingTreeGestureState::nodeDidHandleEvent(ScrollingNodeID nodeID, const PlatformWheelEvent& event)
 {
+    LOG_WITH_STREAM(OverlayScrollbars, stream << "ScrollingTreeGestureState::nodeDidHandleEvent " << nodeID << " " << event.phase());
     switch (event.phase()) {
     case PlatformWheelEventPhase::MayBegin:
         m_mayBeginNodeID = nodeID;
         m_scrollingTree.handleWheelEventPhase(nodeID, event.phase());
         break;
     case PlatformWheelEventPhase::Cancelled:
-        // handleGestureCancel() should have been called first.
-        ASSERT_NOT_REACHED();
+        // We can get here for via handleWheelEventAfterMainThread(), in which case handleGestureCancel() was not called first.
+        handleGestureCancel(event);
         break;
     case PlatformWheelEventPhase::Began:
         m_activeNodeID = nodeID;
@@ -105,8 +107,8 @@ void ScrollingTreeGestureState::nodeDidHandleEvent(ScrollingNodeID nodeID, const
 
 void ScrollingTreeGestureState::clearAllNodes()
 {
-    m_mayBeginNodeID = 0;
-    m_activeNodeID = 0;
+    m_mayBeginNodeID = std::nullopt;
+    m_activeNodeID = std::nullopt;
 }
 
 };

@@ -31,6 +31,7 @@
 #include "FloatRect.h"
 #include "IntRect.h"
 #include <wtf/Forward.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WTF {
 class TextStream;
@@ -44,7 +45,7 @@ namespace WebCore {
 // mapping a rectangle through transforms. When initialized from a rect, the
 // points are in clockwise order from top left.
 class FloatQuad {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(FloatQuad);
 public:
     FloatQuad()
     {
@@ -150,8 +151,7 @@ public:
     // Note that output is undefined when all points are colinear.
     bool isCounterclockwise() const;
 
-    template<class Encoder> void encode(Encoder&) const;
-    template<class Decoder> static std::optional<FloatQuad> decode(Decoder&);
+    friend bool operator==(const FloatQuad&, const FloatQuad&) = default;
 
 private:
     FloatPoint m_p1;
@@ -159,39 +159,6 @@ private:
     FloatPoint m_p3;
     FloatPoint m_p4;
 };
-
-template<class Encoder> void FloatQuad::encode(Encoder& encoder) const
-{
-    encoder << m_p1;
-    encoder << m_p2;
-    encoder << m_p3;
-    encoder << m_p4;
-}
-
-template<class Decoder> std::optional<FloatQuad> FloatQuad::decode(Decoder& decoder)
-{
-    std::optional<FloatPoint> p1;
-    decoder >> p1;
-    if (!p1)
-        return std::nullopt;
-
-    std::optional<FloatPoint> p2;
-    decoder >> p2;
-    if (!p2)
-        return std::nullopt;
-
-    std::optional<FloatPoint> p3;
-    decoder >> p3;
-    if (!p3)
-        return std::nullopt;
-
-    std::optional<FloatPoint> p4;
-    decoder >> p4;
-    if (!p4)
-        return std::nullopt;
-
-    return {{ *p1, *p2, *p3, *p4 }};
-}
 
 inline FloatQuad& operator+=(FloatQuad& a, const FloatSize& b)
 {
@@ -203,16 +170,6 @@ inline FloatQuad& operator-=(FloatQuad& a, const FloatSize& b)
 {
     a.move(-b.width(), -b.height());
     return a;
-}
-
-inline bool operator==(const FloatQuad& a, const FloatQuad& b)
-{
-    return a.p1() == b.p1() && a.p2() == b.p2() && a.p3() == b.p3() && a.p4() == b.p4();
-}
-
-inline bool operator!=(const FloatQuad& a, const FloatQuad& b)
-{
-    return !(a == b);
 }
 
 WEBCORE_EXPORT WTF::TextStream& operator<<(WTF::TextStream&, const FloatQuad&);

@@ -29,8 +29,11 @@
 #if ENABLE(WEB_AUDIO) && ENABLE(MEDIA_STREAM)
 
 #import "LibWebRTCAudioModule.h"
+#import <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaStreamTrackAudioSourceProviderCocoa);
 
 Ref<MediaStreamTrackAudioSourceProviderCocoa> MediaStreamTrackAudioSourceProviderCocoa::create(MediaStreamTrackPrivate& source)
 {
@@ -38,7 +41,7 @@ Ref<MediaStreamTrackAudioSourceProviderCocoa> MediaStreamTrackAudioSourceProvide
 }
 
 MediaStreamTrackAudioSourceProviderCocoa::MediaStreamTrackAudioSourceProviderCocoa(MediaStreamTrackPrivate& source)
-    : m_captureSource(makeWeakPtr(source))
+    : m_captureSource(source)
     , m_source(source.source())
 {
 #if USE(LIBWEBRTC)
@@ -78,7 +81,7 @@ void MediaStreamTrackAudioSourceProviderCocoa::trackEnabledChanged(MediaStreamTr
 }
 
 // May get called on a background thread.
-void MediaStreamTrackAudioSourceProviderCocoa::audioSamplesAvailable(const MediaTime&, const PlatformAudioData& data, const AudioStreamDescription& description, size_t frameCount)
+void MediaStreamTrackAudioSourceProviderCocoa::audioSamplesAvailable(const WTF::MediaTime&, const PlatformAudioData& data, const AudioStreamDescription& description, size_t frameCount)
 {
     if (!m_enabled)
         return;

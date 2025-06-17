@@ -26,6 +26,8 @@
 #include "config.h"
 #include "TestCommand.h"
 
+#include <wtf/text/StringToIntegerConversion.h>
+
 namespace WTR {
 
 class CommandTokenizer {
@@ -93,15 +95,27 @@ TestCommand parseInputLine(const std::string& inputLine)
         arg = tokenizer.next();
         if (arg == "--timeout") {
             auto timeoutToken = tokenizer.next();
-            result.timeout = Seconds::fromMilliseconds(atoi(timeoutToken.c_str()));
+            result.timeout = Seconds::fromMilliseconds(parseInteger<int>(std::span<const char> { timeoutToken }).value_or(0));
         } else if (arg == "-p" || arg == "--pixel-test") {
             result.shouldDumpPixels = true;
             if (tokenizer.hasNext())
                 result.expectedPixelHash = tokenizer.next();
+        } else if (arg == "--self-compare-with-header") {
+            if (tokenizer.hasNext())
+                result.selfComparisonHeader = tokenizer.next();
+            else
+                die(inputLine);
+        } else if (arg == "--additional-header") {
+            if (tokenizer.hasNext())
+                result.additionalHeader = tokenizer.next();
+            else
+                die(inputLine);
         } else if (arg == std::string("--dump-jsconsolelog-in-stderr"))
             result.dumpJSConsoleLogInStdErr = true;
         else if (arg == std::string("--absolutePath"))
             result.absolutePath = tokenizer.next();
+        else if (arg == "--force-dump-pixels")
+            result.forceDumpPixels = true;
         else
             die(inputLine);
     }

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Eric Seidel <eric@webkit.org>
- * Copyright (C) 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2009-2025 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,30 +32,37 @@
 namespace WebCore {
 
 class Element;
-class FrameView;
 class ImageBuffer;
+class LocalFrameView;
 class Page;
 class RenderBox;
 class SVGSVGElement;
 class SVGImageChromeClient;
 class SVGImageForContainer;
+class Settings;
 
 class SVGImage final : public Image {
 public:
-    static Ref<SVGImage> create(ImageObserver& observer) { return adoptRef(*new SVGImage(observer)); }
+    static Ref<SVGImage> create(ImageObserver* observer) { return adoptRef(*new SVGImage(observer)); }
+    WEBCORE_EXPORT static RefPtr<SVGImage> tryCreateFromData(std::span<const uint8_t>);
+    WEBCORE_EXPORT static bool isDataDecodable(const Settings&, std::span<const uint8_t>);
 
     RenderBox* embeddedContentBox() const;
-    FrameView* frameView() const;
+    LocalFrameView* frameView() const;
+    RefPtr<LocalFrameView> protectedFrameView() const;
 
     bool isSVGImage() const final { return true; }
-    FloatSize size(ImageOrientation = ImageOrientation::FromImage) const final { return m_intrinsicSize; }
+    FloatSize size(ImageOrientation = ImageOrientation::Orientation::FromImage) const final { return m_intrinsicSize; }
 
-    bool hasSingleSecurityOrigin() const final;
+    bool renderingTaintsOrigin() const final;
 
     bool hasRelativeWidth() const final;
     bool hasRelativeHeight() const final;
 
+    // Start the animation from the beginning.
     void startAnimation() final;
+    // Resume the animation from where it was last stopped.
+    void resumeAnimation();
     void stopAnimation() final;
     void resetAnimation() final;
     bool isAnimating() const final;
@@ -63,6 +70,9 @@ public:
     void scheduleStartAnimation();
 
     Page* internalPage() { return m_page.get(); }
+    WEBCORE_EXPORT RefPtr<SVGSVGElement> rootElement() const;
+
+    RefPtr<NativeImage> nativeImage(const FloatSize&, const DestinationColorSpace& = DestinationColorSpace::SRGB());
 
 private:
     friend class SVGImageChromeClient;
@@ -80,28 +90,21 @@ private:
     void reportApproximateMemoryCost() const;
     EncodedDataStatus dataChanged(bool allDataReceived) final;
 
-    // FIXME: SVGImages will be unable to prune because this function is not implemented yet.
-    void destroyDecodedData(bool) final { }
+    // FIXME: SVGImages will be unable to prune because destroyDecodedData() is not implemented yet.
 
     // FIXME: Implement this to be less conservative.
     bool currentFrameKnownToBeOpaque() const final { return false; }
 
-    RefPtr<NativeImage> nativeImageForCurrentFrame(const GraphicsContext* = nullptr) final;
-    RefPtr<NativeImage> nativeImage(const GraphicsContext* = nullptr) final;
-    RefPtr<NativeImage> nativeImage(const FloatSize& imageSize, const FloatRect& sourceRect);
+    RefPtr<NativeImage> nativeImage(const DestinationColorSpace& = DestinationColorSpace::SRGB()) final;
 
     void startAnimationTimerFired();
 
-    WEBCORE_EXPORT explicit SVGImage(ImageObserver&);
-    ImageDrawResult draw(GraphicsContext&, const FloatRect& destination, const FloatRect& source, const ImagePaintingOptions& = { }) final;
-    ImageDrawResult drawAsNativeImage(GraphicsContext&, const FloatRect& destination, const FloatRect& source, const ImagePaintingOptions& = { });
-    ImageDrawResult drawForContainer(GraphicsContext&, const FloatSize containerSize, float containerZoom, const URL& initialFragmentURL, const FloatRect& dstRect, const FloatRect& srcRect, const ImagePaintingOptions& = { });
-    void drawPatternForContainer(GraphicsContext&, const FloatSize& containerSize, float containerZoom, const URL& initialFragmentURL, const FloatRect& srcRect, const AffineTransform&, const FloatPoint& phase, const FloatSize& spacing, const FloatRect&, const ImagePaintingOptions& = { });
+    WEBCORE_EXPORT explicit SVGImage(ImageObserver*);
+    ImageDrawResult draw(GraphicsContext&, const FloatRect& destination, const FloatRect& source, ImagePaintingOptions = { }) final;
+    ImageDrawResult drawForContainer(GraphicsContext&, const FloatSize containerSize, float containerZoom, const URL& initialFragmentURL, const FloatRect& dstRect, const FloatRect& srcRect, ImagePaintingOptions = { });
+    void drawPatternForContainer(GraphicsContext&, const FloatSize& containerSize, float containerZoom, const URL& initialFragmentURL, const FloatRect& srcRect, const AffineTransform&, const FloatPoint& phase, const FloatSize& spacing, const FloatRect&, ImagePaintingOptions = { });
 
-    RefPtr<SVGSVGElement> rootElement() const;
-
-    std::unique_ptr<SVGImageChromeClient> m_chromeClient;
-    std::unique_ptr<Page> m_page;
+    RefPtr<Page> m_page;
     FloatSize m_intrinsicSize;
 
     Timer m_startAnimationTimer;

@@ -41,7 +41,7 @@ int testFunctionOverrides()
 
     const char* oldFunctionOverrides = Options::functionOverrides();
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
     Options::functionOverrides() = "PROGDIR:testapiScripts/testapi-function-overrides.js";
 #else
     Options::functionOverrides() = "./testapiScripts/testapi-function-overrides.js";
@@ -68,9 +68,9 @@ int testFunctionOverrides()
         "\n"
         "var expectedStr =" "\n"
         "'function f1() { /* Overridden f1 */ }\\n"
-        "function () { /* Overridden f2 */ }\\n"
-        "function () { /* Overridden f3 */ }\\n"
-        "function anonymous() { /* Overridden f4 */ }\\n';"
+        "function() { /* Overridden f2 */ }\\n"
+        "function() { /* Overridden f3 */ }\\n"
+        "function anonymous(\\n) { /* Overridden f4 */ }\\n';"
         "var result = (str == expectedStr);" "\n"
         "result";
 
@@ -87,7 +87,7 @@ int testFunctionOverrides()
     JSC::Options::functionOverrides() = oldFunctionOverrides;
     JSC::FunctionOverrides::reinstallOverrides();
 
-    printf("%s: function override tests.\n", failed ? "FAIL" : "PASS");
+    SAFE_PRINTF("%s: function override tests.\n", failed ? "FAIL"_s : "PASS"_s);
 
     return failed;
 }

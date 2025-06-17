@@ -28,30 +28,22 @@
 #include "PageIdentifier.h"
 #include "UserContentTypes.h"
 #include "UserStyleSheetTypes.h"
+#include <wtf/TZoneMalloc.h>
 #include <wtf/URL.h>
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
 class UserStyleSheet {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(UserStyleSheet, WEBCORE_EXPORT);
 public:
     UserStyleSheet()
         : m_injectedFrames(UserContentInjectedFrames::InjectInAllFrames)
-        , m_level(UserStyleUserLevel)
+        , m_level(UserStyleLevel::User)
     {
     }
 
-    UserStyleSheet(const String& source, const URL& url, Vector<String>&& allowlist, Vector<String>&& blocklist, UserContentInjectedFrames injectedFrames, UserStyleLevel level, std::optional<PageIdentifier> pageID = std::nullopt)
-        : m_source(source)
-        , m_url(url)
-        , m_allowlist(WTFMove(allowlist))
-        , m_blocklist(WTFMove(blocklist))
-        , m_injectedFrames(injectedFrames)
-        , m_level(level)
-        , m_pageID(pageID)
-    {
-    }
+    WEBCORE_EXPORT UserStyleSheet(const String&, const URL&, Vector<String>&&, Vector<String>&&, UserContentInjectedFrames, UserStyleLevel, std::optional<PageIdentifier> = std::nullopt);
 
     const String& source() const { return m_source; }
     const URL& url() const { return m_url; }

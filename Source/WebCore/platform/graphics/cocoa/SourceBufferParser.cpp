@@ -29,10 +29,14 @@
 #if ENABLE(MEDIA_SOURCE)
 
 #include "ContentType.h"
+#include "MediaSourceConfiguration.h"
+#include "SharedBuffer.h"
 #include "SourceBufferParserAVFObjC.h"
 #include "SourceBufferParserWebM.h"
-#include <pal/cocoa/MediaToolboxSoftLink.h>
+#include <pal/spi/cocoa/MediaToolboxSPI.h>
 #include <wtf/text/WTFString.h>
+
+#include <pal/cocoa/MediaToolboxSoftLink.h>
 
 namespace WebCore {
 
@@ -44,13 +48,13 @@ MediaPlayerEnums::SupportsType SourceBufferParser::isContentTypeSupported(const 
     return supports;
 }
 
-RefPtr<SourceBufferParser> SourceBufferParser::create(const ContentType& type, bool webMParserEnabled)
+RefPtr<SourceBufferParser> SourceBufferParser::create(const ContentType& type, const MediaSourceConfiguration& configuration)
 {
-    if (SourceBufferParserWebM::isContentTypeSupported(type) != MediaPlayerEnums::SupportsType::IsNotSupported && webMParserEnabled)
-        return adoptRef(new SourceBufferParserWebM());
+    if (SourceBufferParserWebM::isContentTypeSupported(type) != MediaPlayerEnums::SupportsType::IsNotSupported)
+        return SourceBufferParserWebM::create();
 
     if (SourceBufferParserAVFObjC::isContentTypeSupported(type) != MediaPlayerEnums::SupportsType::IsNotSupported)
-        return adoptRef(new SourceBufferParserAVFObjC());
+        return adoptRef(new SourceBufferParserAVFObjC(configuration));
 
     return nullptr;
 }
@@ -77,72 +81,32 @@ void SourceBufferParser::setMinimumAudioSampleDuration(float)
 {
 }
 
-SourceBufferParser::Segment::Segment(Vector<uint8_t>&& segment)
-    : m_segment(WTFMove(segment))
+SourceBufferParser::Segment::Segment(Ref<SharedBuffer>&& buffer)
+    : m_segment(WTFMove(buffer))
 {
 }
-
-#if HAVE(MT_PLUGIN_FORMAT_READER)
-SourceBufferParser::Segment::Segment(RetainPtr<MTPluginByteSourceRef>&& segment)
-    : m_segment(WTFMove(segment))
-{
-}
-#endif
 
 size_t SourceBufferParser::Segment::size() const
 {
-    return WTF::switchOn(m_segment,
-#if HAVE(MT_PLUGIN_FORMAT_READER)
-        [](const RetainPtr<MTPluginByteSourceRef>& byteSource)
-        {
-            return clampTo<size_t>(MTPluginByteSourceGetLength(byteSource.get()));
-        },
-#endif
-        [](const Vector<uint8_t>& vector)
-        {
-            return vector.size();
-        }
-    );
+    return m_segment->size();
 }
 
-size_t SourceBufferParser::Segment::read(size_t position, size_t sizeToRead, uint8_t* destination) const
+auto SourceBufferParser::Segment::read(std::span<uint8_t> destination, size_t position) const -> ReadResult
 {
     size_t segmentSize = size();
-    sizeToRead = std::min(sizeToRead, segmentSize - std::min(position, segmentSize));
-    return WTF::switchOn(m_segment,
-#if HAVE(MT_PLUGIN_FORMAT_READER)
-        [&](const RetainPtr<MTPluginByteSourceRef>& byteSource) -> size_t
-        {
-            size_t sizeRead = 0;
-            if (MTPluginByteSourceRead(byteSource.get(), sizeToRead, CheckedInt64(position), destination, &sizeRead) != noErr)
-                return 0;
-            return sizeRead;
-        },
-#endif
-        [&](const Vector<uint8_t>& vector)
-        {
-            memcpy(destination, vector.data() + position, sizeToRead);
-            return sizeToRead;
-        }
-    );
+    destination = destination.first(std::min(destination.size(), segmentSize - std::min(position, segmentSize)));
+    m_segment->copyTo(destination, position);
+    return destination.size();
 }
 
-Vector<uint8_t> SourceBufferParser::Segment::takeVector()
+Ref<SharedBuffer> SourceBufferParser::Segment::takeSharedBuffer()
 {
-    return WTF::switchOn(m_segment,
-#if HAVE(MT_PLUGIN_FORMAT_READER)
-        [&](RetainPtr<MTPluginByteSourceRef>&)
-        {
-            Vector<uint8_t> vector(size());
-            vector.shrink(read(0, vector.size(), vector.data()));
-            return vector;
-        },
-#endif
-        [](Vector<uint8_t>& vector)
-        {
-            return std::exchange(vector, { });
-        }
-    );
+    return std::exchange(m_segment, SharedBuffer::create());
+}
+
+Ref<SharedBuffer> SourceBufferParser::Segment::getData(size_t offet, size_t length) const
+{
+    return m_segment->getContiguousData(offet, length);
 }
 
 } // namespace WebCore

@@ -35,7 +35,7 @@
 #import "ObjCEventListener.h"
 #import <WebCore/AddEventListenerOptions.h>
 #import <WebCore/DOMImplementation.h>
-#import <WebCore/Element.h>
+#import <WebCore/ElementInlines.h>
 #import <WebCore/JSExecState.h>
 #import <WebCore/NodeList.h>
 #import <WebCore/SVGTests.h>
@@ -98,7 +98,7 @@ DOMNode *kit(Node* value)
 - (void)setNodeValue:(NSString *)newNodeValue
 {
     JSMainThreadNullState state;
-    raiseOnDOMError(unwrap(*self).setNodeValue(newNodeValue));
+    unwrap(*self).setNodeValue(newNodeValue);
 }
 
 - (unsigned short)nodeType
@@ -176,7 +176,7 @@ DOMNode *kit(Node* value)
 - (DOMNamedNodeMap *)attributes
 {
     JSMainThreadNullState state;
-    return kit(unwrap(*self).attributes());
+    return kit(unwrap(*self).attributesMap());
 }
 
 - (NSString *)baseURI
@@ -194,7 +194,7 @@ DOMNode *kit(Node* value)
 - (void)setTextContent:(NSString *)newTextContent
 {
     JSMainThreadNullState state;
-    raiseOnDOMError(unwrap(*self).setTextContent(newTextContent));
+    unwrap(*self).setTextContent(newTextContent);
 }
 
 - (BOOL)isConnected
@@ -273,7 +273,7 @@ DOMNode *kit(Node* value)
 
 - (BOOL)isSupported:(NSString *)feature version:(NSString *)version
 {
-    return SVGTests::hasFeatureForLegacyBindings(feature, version);
+    return YES;
 }
 
 - (BOOL)hasAttributes

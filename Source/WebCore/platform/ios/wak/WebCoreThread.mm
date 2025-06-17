@@ -28,11 +28,11 @@
 
 #if PLATFORM(IOS_FAMILY)
 
+#import "CommonAtomStrings.h"
 #import "CommonVM.h"
 #import "FloatingPointEnvironment.h"
-#import "GraphicsContextGLOpenGL.h"
+#import "GraphicsContextGLANGLE.h"
 #import "Logging.h"
-#import "RuntimeApplicationChecks.h"
 #import "ThreadGlobalData.h"
 #import "WAKWindow.h"
 #import "WKUtilities.h"
@@ -43,7 +43,6 @@
 #import <Foundation/NSInvocation.h>
 #import <JavaScriptCore/InitializeThreading.h>
 #import <JavaScriptCore/JSLock.h>
-#import <libkern/OSAtomic.h>
 #import <objc/runtime.h>
 #import <wtf/Assertions.h>
 #import <wtf/BlockPtr.h>
@@ -54,6 +53,7 @@
 #import <wtf/ThreadSpecific.h>
 #import <wtf/Threading.h>
 #import <wtf/WorkQueue.h>
+#import <wtf/cocoa/RuntimeApplicationChecksCocoa.h>
 #import <wtf/spi/cf/CFRunLoopSPI.h>
 #import <wtf/spi/cocoa/objcSPI.h>
 #import <wtf/text/AtomString.h>
@@ -70,17 +70,20 @@ namespace {
 // as any client thread that calls into WebKit.
 void ReleaseWebThreadGlobalState()
 {
-    // GraphicsContextGLOpenGL current context is owned by the web thread lock. Release the context
+    // ANGLE maintains thread global state for its current context.
+    // This is conceptually owned by the web thread lock. Release the context
     // before the lock is released.
 
     // In single-threaded environments we do not need to unset the context, as there should not be access from
     // multiple threads.
     ASSERT(WebThreadIsEnabled());
-    using ReleaseBehavior = WebCore::GraphicsContextGLOpenGL::ReleaseBehavior;
-    // For non-web threads, we don't know if we ever see another call from the thread.
-    ReleaseBehavior releaseBehavior =
-        WebThreadIsCurrent() ? ReleaseBehavior::PreserveThreadResources : ReleaseBehavior::ReleaseThreadResources;
-    WebCore::GraphicsContextGLOpenGL::releaseCurrentContext(releaseBehavior);
+    using ReleaseThreadResourceBehavior = WebCore::GraphicsContextGLANGLE::ReleaseThreadResourceBehavior;
+    // For web thread, just release the context as we know we will see calls to it again.
+    // For non-web threads, e.g. third-party client threads, we don't know if we ever see another call from the
+    // thread, so we also release the thread resources.
+    ReleaseThreadResourceBehavior releaseBehavior =
+        WebThreadIsCurrent() ? ReleaseThreadResourceBehavior::ReleaseCurrentContext : ReleaseThreadResourceBehavior::ReleaseThreadResources;
+    WebCore::GraphicsContextGLANGLE::releaseThreadResources(releaseBehavior);
 }
 
 }
@@ -203,7 +206,7 @@ static inline void SendMessage(RetainPtr<NSInvocation>&& invocation)
     if (!WebThreadIsEnabled() || CFRunLoopGetMain() == CFRunLoopGetCurrent())
         return;
 
-    RunLoop::main().dispatch([invocation = WTFMove(invocation)] { });
+    RunLoop::protectedMain()->dispatch([invocation = WTFMove(invocation)] { });
 }
 
 static void HandleDelegateSource(void*)
@@ -241,12 +244,14 @@ static void HandleDelegateSource(void*)
 
 class WebThreadDelegateMessageScope {
 public:
+    IGNORE_CLANG_WARNINGS_BEGIN("deprecated-volatile")
     WebThreadDelegateMessageScope() { ++webThreadDelegateMessageScopeCount; }
     ~WebThreadDelegateMessageScope()
     {
         ASSERT(webThreadDelegateMessageScopeCount);
         --webThreadDelegateMessageScopeCount;
     }
+    IGNORE_CLANG_WARNINGS_END
 };
 
 static void SendDelegateMessage(RetainPtr<NSInvocation>&& invocation)
@@ -308,7 +313,7 @@ void WebThreadRunOnMainThread(void(^delegateBlock)())
     JSC::JSLock::DropAllLocks dropAllLocks(WebCore::commonVM());
     _WebThreadUnlock();
 
-    WorkQueue::main().dispatchSync(makeBlockPtr(delegateBlock).get());
+    WorkQueue::protectedMain()->dispatchSync(makeBlockPtr(delegateBlock).get());
 
     _WebThreadLock();
 }
@@ -324,7 +329,7 @@ void WebThreadAdoptAndRelease(id obj)
 
     Locker locker { webThreadReleaseLock };
 
-    if (webThreadReleaseObjArray() == nil)
+    if (!webThreadReleaseObjArray())
         webThreadReleaseObjArray() = adoptCF(CFArrayCreateMutable(kCFAllocatorSystemDefault, 0, nullptr));
     CFArrayAppendValue(webThreadReleaseObjArray().get(), obj);
     CFRunLoopSourceSignal(webThreadReleaseSource().get());
@@ -452,7 +457,7 @@ void WebThreadPostNotification(NSString* name, id object, id userInfo)
     if (pthread_main_np())
         [[NSNotificationCenter defaultCenter] postNotificationName:name object:object userInfo:userInfo];
     else {
-        RunLoop::main().dispatch([name = retainPtr(name), object = retainPtr(object), userInfo = retainPtr(userInfo)] {
+        RunLoop::protectedMain()->dispatch([name = retainPtr(name), object = retainPtr(object), userInfo = retainPtr(userInfo)] {
             [[NSNotificationCenter defaultCenter] postNotificationName:name.get() object:object.get() userInfo:userInfo.get()];
         });
     }
@@ -686,7 +691,7 @@ static void StartWebThread()
     WTF::initializeMainThread();
 
     // Initialize AtomString on the main thread.
-    WTF::AtomString::init();
+    WebCore::initializeCommonAtomStrings();
 
     // Initialize ThreadGlobalData on the main UI thread so that the WebCore thread
     // can later set it's thread-specific data to point to the same objects.
@@ -881,6 +886,20 @@ bool WebThreadIsLockedOrDisabled(void)
     return !WebThreadIsEnabled() || WebThreadIsLocked();
 }
 
+bool WebThreadIsLockedOrDisabledInMainOrWebThread(void)
+{
+    if (!WebThreadIsEnabled())
+        return true;
+
+    if (WebThreadIsCurrent())
+        return webThreadLockCount;
+
+    if (pthread_main_np())
+        return mainThreadLockCount;
+
+    return true;
+}
+
 void WebThreadLockPushModal(void)
 {
     if (WebThreadIsCurrent())
@@ -927,10 +946,10 @@ WebThreadContext* WebThreadCurrentContext(void)
 
 void WebThreadEnable(void)
 {
-    RELEASE_ASSERT_WITH_MESSAGE(!WebCore::IOSApplication::isWebProcess(), "The WebProcess should never run a Web Thread");
-    if (WebCore::IOSApplication::isSpringBoard()) {
+    RELEASE_ASSERT_WITH_MESSAGE(!WTF::IOSApplication::isWebProcess(), "The WebProcess should never run a Web Thread");
+    if (WTF::IOSApplication::isAppleApplication()) {
         using WebCore::LogThreading;
-        RELEASE_LOG_FAULT(Threading, "SpringBoard enabled WebThread.");
+        RELEASE_LOG_FAULT(Threading, "WebThread enabled");
     }
 
     static std::once_flag flag;

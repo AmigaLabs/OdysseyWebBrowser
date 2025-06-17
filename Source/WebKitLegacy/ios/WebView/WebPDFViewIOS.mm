@@ -36,10 +36,10 @@
 #import <JavaScriptCore/JSContextRef.h>
 #import <JavaScriptCore/OpaqueJSString.h>
 #import <WebCore/Color.h>
-#import <WebCore/Frame.h>
 #import <WebCore/FrameLoader.h>
-#import <WebCore/FrameLoaderClient.h>
 #import <WebCore/GraphicsContext.h>
+#import <WebCore/LocalFrame.h>
+#import <WebCore/LocalFrameLoaderClient.h>
 #import <WebCore/StringWithDirection.h>
 #import <WebCore/WKGraphics.h>
 #import <WebKitLegacy/WebFrame.h>
@@ -53,7 +53,6 @@
 #import <wtf/StdLibExtras.h>
 
 using namespace WebCore;
-using namespace std;
 
 static int comparePageRects(const void *key, const void *array);
 
@@ -122,7 +121,7 @@ static RetainPtr<CGColorRef> createCGColorWithDeviceWhite(CGFloat white, CGFloat
     // Draw page.
     CGContextSaveGState(context);
     CGContextSetShadowWithColor(context, CGSizeMake(0.0f, 2.0f), 3.0f, [[self class] shadowColor]);
-    CGContextSetFillColorWithColor(context, cachedCGColor(Color::white));
+    CGContextSetFillColorWithColor(context, cachedCGColor(Color::white).get());
     CGContextFillRect(context, pageRect);
     CGContextRestoreGState(context);    
     
@@ -273,7 +272,7 @@ static RetainPtr<CGColorRef> createCGColorWithDeviceWhite(CGFloat white, CGFloat
         _pageRects[i-1].origin.y = size.height;
 
         size.height += boxRect.size.height + PAGE_HEIGHT_INSET;
-        size.width = max(size.width, boxRect.size.width);
+        size.width = std::max(size.width, boxRect.size.width);
     }
     
     size.width += PAGE_WIDTH_INSET * 2.0;

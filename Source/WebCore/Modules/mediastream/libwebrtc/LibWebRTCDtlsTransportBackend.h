@@ -24,10 +24,11 @@
 
 #pragma once
 
-#if ENABLE(WEB_RTC)
+#if ENABLE(WEB_RTC) && USE(LIBWEBRTC)
 
 #include "LibWebRTCMacros.h"
 #include "RTCDtlsTransportBackend.h"
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakPtr.h>
 
 ALLOW_UNUSED_PARAMETERS_BEGIN
@@ -43,7 +44,7 @@ class DtlsTransportInterface;
 namespace WebCore {
 class LibWebRTCDtlsTransportBackendObserver;
 class LibWebRTCDtlsTransportBackend final : public RTCDtlsTransportBackend, public CanMakeWeakPtr<LibWebRTCDtlsTransportBackend> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(LibWebRTCDtlsTransportBackend);
 public:
     explicit LibWebRTCDtlsTransportBackend(rtc::scoped_refptr<webrtc::DtlsTransportInterface>&&);
     ~LibWebRTCDtlsTransportBackend();
@@ -52,7 +53,7 @@ private:
     // RTCDtlsTransportBackend
     const void* backend() const final { return m_backend.get(); }
     UniqueRef<RTCIceTransportBackend> iceTransportBackend() final;
-    void registerClient(Client&) final;
+    void registerClient(RTCDtlsTransportBackendClient&) final;
     void unregisterClient() final;
 
     rtc::scoped_refptr<webrtc::DtlsTransportInterface> m_backend;
@@ -61,4 +62,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(WEB_RTC)
+#endif // ENABLE(WEB_RTC) && USE(LIBWEBRTC)

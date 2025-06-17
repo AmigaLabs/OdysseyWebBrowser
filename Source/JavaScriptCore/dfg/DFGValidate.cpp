@@ -29,6 +29,7 @@
 #if ENABLE(DFG_JIT)
 
 #include "ButterflyInlines.h"
+#include "CacheableIdentifierInlines.h"
 #include "DFGClobberize.h"
 #include "DFGClobbersExitState.h"
 #include "DFGDominators.h"
@@ -46,7 +47,9 @@ public:
         : m_graph(graph)
         , m_graphDumpMode(graphDumpMode)
         , m_graphDumpBeforePhase(graphDumpBeforePhase)
+        , m_myTupleRefCounts(m_graph.m_tupleData.size())
     {
+        m_myTupleRefCounts.fill(0);
     }
     
     #define VALIDATE(context, assertion) do { \
@@ -137,8 +140,16 @@ public:
                     
                     m_myRefCounts.find(edge.node())->value++;
 
+                    if (node->op() == ExtractFromTuple) {
+                        VALIDATE((node, edge), edge->isTuple());
+                        VALIDATE((node, edge), node->child1() == edge);
+                        m_myTupleRefCounts.at(node->tupleIndex())++;
+                        // Tuples edges don't obey the normal hasResult() rules for nodes so skip that logic below.
+                        continue;
+                    }
+
                     validateEdgeWithDoubleResultIfNecessary(node, edge);
-                    VALIDATE((node, edge), edge->hasInt52Result() == (edge.useKind() == Int52RepUse));
+                    validateEdgeWithInt52ResultIfNecessary(node, edge);
                     
                     if (m_graph.m_form == SSA) {
                         // In SSA, all edges must hasResult().
@@ -178,8 +189,13 @@ public:
                 continue;
             for (size_t i = 0; i < block->numNodes(); ++i) {
                 Node* node = block->node(i);
-                if (m_graph.m_refCountState == ExactRefCount)
+                if (m_graph.m_refCountState == ExactRefCount) {
                     V_EQUAL((node), m_myRefCounts.get(node), node->adjustedRefCount());
+                    if (node->isTuple()) {
+                        for (unsigned j = 0; j < node->tupleSize(); ++j)
+                            V_EQUAL((node), m_myTupleRefCounts.at(node->tupleOffset() + j), m_graph.m_tupleData.at(node->tupleOffset() + j).refCount);
+                    }
+                }
             }
             
             bool foundTerminal = false;
@@ -234,6 +250,11 @@ public:
                     if (!node->child1())
                         VALIDATE((node), !node->child2());
                 }
+
+                if (node->hasCacheableIdentifier()) {
+                    auto* uid = node->cacheableIdentifier().uid();
+                    VALIDATE((node), uid->isSymbol() || !parseIndex(*uid));
+                }
                  
                 switch (node->op()) {
                 case Identity:
@@ -261,6 +282,7 @@ public:
                     }
                     break;
                 case MakeRope:
+                case MakeAtomString:
                 case ValueAdd:
                 case ValueSub:
                 case ValueMul:
@@ -273,8 +295,6 @@ public:
                 case ArithIMul:
                 case ArithDiv:
                 case ArithMod:
-                case ArithMin:
-                case ArithMax:
                 case ArithPow:
                 case CompareLess:
                 case CompareLessEq:
@@ -286,8 +306,16 @@ public:
                 case CompareStrictEq:
                 case SameValue:
                 case StrCat:
-                    VALIDATE((node), !!node->child1());
-                    VALIDATE((node), !!node->child2());
+                    m_graph.doToChildren(node, [&](Edge& edge) {
+                        VALIDATE((node), !!edge);
+                    });
+                    break;
+                case ArithMin:
+                case ArithMax:
+                    m_graph.doToChildren(node, [&](Edge& edge) {
+                        VALIDATE((node), !!edge);
+                    });
+                    VALIDATE((node), node->numChildren());
                     break;
                 case CompareEqPtr:
                     VALIDATE((node), !!node->child1());
@@ -329,12 +357,15 @@ public:
                         // This only supports structures that are JSFinalObject or JSArray.
                         VALIDATE(
                             (node),
-                            structure->classInfo() == JSFinalObject::info()
-                            || structure->classInfo() == JSArray::info());
+                            structure->classInfoForCells() == JSFinalObject::info()
+                            || structure->classInfoForCells() == JSArray::info());
 
                         // We only support certain indexing shapes.
                         VALIDATE((node), !hasAnyArrayStorage(structure->indexingType()));
                     }
+                    break;
+                case MaterializeNewArrayWithConstantSize:
+                    VALIDATE((node), isNewArrayWithConstantSizeIndexingType(node->indexingType()));
                     break;
                 case DoubleConstant:
                 case Int52Constant:
@@ -376,6 +407,9 @@ public:
                         VALIDATE((node), inlineCallFrame->isVarargs());
                     break;
                 }
+                case GetIndexedPropertyStorage:
+                    VALIDATE((node), node->arrayMode().type() != Array::String);
+                    break;
                 case NewArray:
                     VALIDATE((node), node->vectorLengthHint() >= node->numChildren());
                     break;
@@ -395,6 +429,15 @@ public:
                     default:
                         break;
                     }
+                    break;
+                case WeakMapGet:
+                    VALIDATE((node), node->child2().useKind() == CellUse || node->child2().useKind() == ObjectUse || node->child2().useKind() == SymbolUse);
+                    break;
+                case WeakSetAdd:
+                    VALIDATE((node), node->child2().useKind() == CellUse || node->child2().useKind() == ObjectUse);
+                    break;
+                case WeakMapSet:
+                    VALIDATE((node), m_graph.varArgChild(node, 1).useKind() == CellUse || m_graph.varArgChild(node, 1).useKind() == ObjectUse);
                     break;
                 default:
                     break;
@@ -456,7 +499,7 @@ public:
 
         for (BasicBlock* block : m_graph.blocksInNaturalOrder()) {
             // We expect the predecessor list to be de-duplicated.
-            HashSet<BasicBlock*> predecessors;
+            UncheckedKeyHashSet<BasicBlock*> predecessors;
             for (BasicBlock* predecessor : block->predecessors)
                 predecessors.add(predecessor);
             VALIDATE((block), predecessors.size() == block->predecessors.size());
@@ -464,13 +507,6 @@ public:
     }
     
 private:
-    Graph& m_graph;
-    GraphDumpMode m_graphDumpMode;
-    CString m_graphDumpBeforePhase;
-    
-    HashMap<Node*, unsigned> m_myRefCounts;
-    HashSet<Node*> m_acceptableNodes;
-    
     void validateCPS()
     {
         VALIDATE((), !m_graph.m_rootToArguments.isEmpty()); // We should have at least one root.
@@ -483,8 +519,8 @@ private:
             if (!block)
                 continue;
             
-            HashSet<Node*> phisInThisBlock;
-            HashSet<Node*> nodesInThisBlock;
+            UncheckedKeyHashSet<Node*> phisInThisBlock;
+            UncheckedKeyHashSet<Node*> nodesInThisBlock;
             
             for (size_t i = 0; i < block->numNodes(); ++i) {
                 Node* node = block->node(i);
@@ -500,7 +536,7 @@ private:
             }
 
             {
-                HashSet<Node*> seenNodes;
+                UncheckedKeyHashSet<Node*> seenNodes;
                 for (size_t i = 0; i < block->size(); ++i) {
                     Node* node = block->at(i);
                     m_graph.doToChildren(node, [&] (const Edge& edge) {
@@ -640,7 +676,9 @@ private:
                 case Upsilon:
                 case AssertInBounds:
                 case CheckInBounds:
+                case CheckInBoundsInt52:
                 case PhantomNewObject:
+                case PhantomNewArrayWithConstantSize:
                 case PhantomNewFunction:
                 case PhantomNewGeneratorFunction:
                 case PhantomNewAsyncFunction:
@@ -763,7 +801,7 @@ private:
 
         if (m_graph.m_form == ThreadedCPS) {
             Vector<Node*> worklist;
-            HashSet<Node*> seen;
+            UncheckedKeyHashSet<Node*> seen;
             for (BasicBlock* block : m_graph.blocksInNaturalOrder()) {
                 for (Node* node : *block) {
                     if (node->op() == GetLocal || node->op() == PhantomLocal) {
@@ -833,7 +871,7 @@ private:
 
             bool isOSRExited = false;
             
-            HashSet<Node*> nodesInThisBlock;
+            UncheckedKeyHashSet<Node*> nodesInThisBlock;
 
             for (auto* node : *block) {
                 switch (node->op()) {
@@ -861,6 +899,7 @@ private:
                     continue;
                 switch (node->op()) {
                 case PhantomNewObject:
+                case PhantomNewArrayWithConstantSize:
                 case PhantomNewFunction:
                 case PhantomNewGeneratorFunction:
                 case PhantomNewAsyncFunction:
@@ -970,6 +1009,14 @@ private:
         VALIDATE((node, edge), edge.useKind() == DoubleRepUse || edge.useKind() == DoubleRepRealUse || edge.useKind() == DoubleRepAnyIntUse);
     }
 
+    void validateEdgeWithInt52ResultIfNecessary(Node* node, Edge edge)
+    {
+        if (m_graph.m_planStage < PlanStage::AfterFixup)
+            return;
+
+        VALIDATE((node, edge), edge->hasInt52Result() == (edge.useKind() == Int52RepUse));
+    }
+
     void checkOperand(
         BasicBlock* block, Operands<size_t>& getLocalPositions,
         Operands<size_t>& setLocalPositions, Operand operand)
@@ -1045,14 +1092,24 @@ private:
     {
         if (m_graphDumpMode == DontDumpGraph)
             return;
-        dataLog("\n");
-        if (!m_graphDumpBeforePhase.isNull()) {
-            dataLog("Before phase:\n");
-            dataLog(m_graphDumpBeforePhase);
-        }
-        dataLog("At time of failure:\n");
-        m_graph.dump();
+        WTF::dataFile().atomically([&](auto&) {
+            dataLog("\n");
+            if (!m_graphDumpBeforePhase.isNull()) {
+                dataLog("Before phase:\n");
+                dataLog(m_graphDumpBeforePhase);
+            }
+            dataLog("At time of failure:\n");
+            dataLog(m_graph);
+        });
     }
+
+    Graph& m_graph;
+    GraphDumpMode m_graphDumpMode;
+    CString m_graphDumpBeforePhase;
+
+    UncheckedKeyHashMap<Node*, unsigned> m_myRefCounts;
+    Vector<uint32_t> m_myTupleRefCounts;
+    UncheckedKeyHashSet<Node*> m_acceptableNodes;
 };
 
 } // End anonymous namespace.

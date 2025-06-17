@@ -29,19 +29,29 @@
 #include "RTCDataChannelHandler.h"
 #include "RTCDataChannelIdentifier.h"
 #include "RTCDataChannelState.h"
-#include <wtf/FastMalloc.h>
 #include <wtf/Function.h>
 #include <wtf/Lock.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakPtr.h>
+
+namespace WebCore {
+class RTCDataChannelRemoteHandler;
+}
+
+namespace WTF {
+template<typename T> struct IsDeprecatedWeakRefSmartPointerException;
+template<> struct IsDeprecatedWeakRefSmartPointerException<WebCore::RTCDataChannelRemoteHandler> : std::true_type { };
+}
 
 namespace WebCore {
 
 class RTCDataChannelHandlerClient;
 class RTCDataChannelRemoteHandlerConnection;
-class SharedBuffer;
+class RTCError;
+class FragmentedSharedBuffer;
 
 class RTCDataChannelRemoteHandler final : public RTCDataChannelHandler, public CanMakeWeakPtr<RTCDataChannelRemoteHandler> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(RTCDataChannelRemoteHandler);
 public:
     static std::unique_ptr<RTCDataChannelRemoteHandler> create(RTCDataChannelIdentifier, RefPtr<RTCDataChannelRemoteHandlerConnection>&&);
     RTCDataChannelRemoteHandler(RTCDataChannelIdentifier, Ref<RTCDataChannelRemoteHandlerConnection>&&);
@@ -49,8 +59,8 @@ public:
 
     WEBCORE_EXPORT void didChangeReadyState(RTCDataChannelState);
     WEBCORE_EXPORT void didReceiveStringData(String&&);
-    WEBCORE_EXPORT void didReceiveRawData(const uint8_t*, size_t);
-    WEBCORE_EXPORT void didDetectError();
+    WEBCORE_EXPORT void didReceiveRawData(std::span<const uint8_t>);
+    WEBCORE_EXPORT void didDetectError(Ref<RTCError>&&);
     WEBCORE_EXPORT void bufferedAmountIsDecreasing(size_t);
 
     WEBCORE_EXPORT void readyToSend();
@@ -59,20 +69,20 @@ public:
 
 private:
     // RTCDataChannelHandler
-    void setClient(RTCDataChannelHandlerClient&, ScriptExecutionContextIdentifier) final;
+    void setClient(RTCDataChannelHandlerClient&, std::optional<ScriptExecutionContextIdentifier>) final;
     bool sendStringData(const CString&) final;
-    bool sendRawData(const uint8_t*, size_t) final;
+    bool sendRawData(std::span<const uint8_t>) final;
     void close() final;
 
     RTCDataChannelIdentifier m_remoteIdentifier;
-    RTCDataChannelIdentifier m_localIdentifier;
+    Markable<RTCDataChannelIdentifier> m_localIdentifier;
 
     RTCDataChannelHandlerClient* m_client { nullptr };
     Ref<RTCDataChannelRemoteHandlerConnection> m_connection;
 
     struct Message {
         bool isRaw { false };
-        Ref<SharedBuffer> buffer;
+        Ref<FragmentedSharedBuffer> buffer;
     };
     Vector<Message> m_pendingMessages;
     bool m_isPendingClose { false };

@@ -28,8 +28,11 @@
 
 #include "Logging.h"
 #include <wtf/NeverDestroyed.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(LayerPool);
 
 static constexpr Seconds capacityDecayTime { 5_s };
 
@@ -47,10 +50,10 @@ LayerPool::~LayerPool()
     allLayerPools().remove(this);
 }
 
-HashSet<LayerPool*>& LayerPool::allLayerPools()
+UncheckedKeyHashSet<CheckedPtr<LayerPool>>& LayerPool::allLayerPools()
 {
     RELEASE_ASSERT(isMainThread());
-    static NeverDestroyed<HashSet<LayerPool*>> allLayerPools;
+    static NeverDestroyed<UncheckedKeyHashSet<CheckedPtr<LayerPool>>> allLayerPools;
     return allLayerPools.get();
 }
 
@@ -61,7 +64,7 @@ unsigned LayerPool::backingStoreBytesForSize(const IntSize& size)
 
 LayerPool::LayerList& LayerPool::listOfLayersWithSize(const IntSize& size, AccessType accessType)
 {
-    HashMap<IntSize, LayerList>::iterator it = m_reuseLists.find(size);
+    UncheckedKeyHashMap<IntSize, LayerList>::iterator it = m_reuseLists.find(size);
     if (it == m_reuseLists.end()) {
         it = m_reuseLists.add(size, LayerList()).iterator;
         m_sizesInPruneOrder.append(size);

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <wtf/CheckedPtr.h>
 #include "CachedResourceClient.h"
 #include "ImageTypes.h"
 
@@ -33,7 +34,9 @@ class IntRect;
 
 enum class VisibleInViewportState { Unknown, Yes, No };
 
-class CachedImageClient : public CachedResourceClient {
+class CachedImageClient : public CachedResourceClient, public CanMakeCheckedPtr<CachedImageClient> {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(CachedImageClient);
 public:
     virtual ~CachedImageClient() = default;
     static CachedResourceClientType expectedType() { return ImageType; }
@@ -43,7 +46,7 @@ public:
     // If not null, the IntRect is the changed rect of the image.
     virtual void imageChanged(CachedImage*, const IntRect* = nullptr) { }
 
-    virtual bool canDestroyDecodedData() { return true; }
+    virtual bool canDestroyDecodedData() const { return true; }
 
     // Called when a new decoded frame for a large image is available or when an animated image is ready to advance to the next frame.
     virtual VisibleInViewportState imageFrameAvailable(CachedImage& image, ImageAnimatingState, const IntRect* changeRect) { imageChanged(&image, changeRect); return VisibleInViewportState::No; }
@@ -52,6 +55,10 @@ public:
     virtual void didRemoveCachedImageClient(CachedImage&) { }
 
     virtual void scheduleRenderingUpdateForImage(CachedImage&) { }
+
+    virtual bool allowsAnimation() const { return true; }
 };
 
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_CACHED_RESOURCE_CLIENT(CachedImageClient, ImageType);

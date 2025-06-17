@@ -53,7 +53,7 @@ public:
     const WallTime &expireDate() const { return m_expireDate; }
     HTTPHeaderMap& requestHeaders() { return m_requestHeaders; }
 
-    bool saveCachedData(const uint8_t* data, uint64_t);
+    bool saveCachedData(std::span<const uint8_t> data);
     bool readCachedData(ResourceHandle*);
 
     bool saveResponseHeaders(const ResourceResponse&);
@@ -92,15 +92,10 @@ private:
     ResourceHandle* m_job;
 
     void generateBaseFilename(const CString& url);
-    bool loadFileToBuffer(const String& filepath, Vector<uint8_t>& buffer);
     bool loadResponseHeaders();
 
     bool openContentFile();
     bool closeContentFile();
-
-#if PLATFORM(MUI)
-    bool getFileSize(const String& path, long long& result) const;
-#endif
 };
 
 } // namespace WebCore

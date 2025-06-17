@@ -26,6 +26,7 @@
 #include "config.h"
 #include "JSHTMLAllCollection.h"
 
+#include "CachedHTMLCollectionInlines.h"
 #include "Element.h"
 #include "HTMLCollection.h"
 #include "JSDOMConvertInterface.h"
@@ -61,6 +62,8 @@ CallData JSHTMLAllCollection::getCallData(JSCell*)
     CallData callData;
     callData.type = CallData::Type::Native;
     callData.native.function = callJSHTMLAllCollection;
+    callData.native.isBoundFunction = false;
+    callData.native.isWasm = false;
     return callData;
 }
 

@@ -29,32 +29,56 @@
 #if ENABLE(GPU_PROCESS) && ENABLE(MEDIA_SOURCE)
 
 #include "GPUConnectionToWebProcess.h"
-#include "MediaSourcePrivateRemoteMessages.h"
+#include "MediaSourcePrivateRemoteMessageReceiverMessages.h"
+#include "RemoteMediaPlayerManagerProxy.h"
 #include "RemoteMediaPlayerProxy.h"
 #include "RemoteMediaSourceProxyMessages.h"
 #include "RemoteSourceBufferProxy.h"
 #include <WebCore/ContentType.h>
 #include <WebCore/NotImplemented.h>
 #include <WebCore/SourceBufferPrivate.h>
+#include <wtf/RefPtr.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebKit {
 
 using namespace WebCore;
 
-RemoteMediaSourceProxy::RemoteMediaSourceProxy(GPUConnectionToWebProcess& connectionToWebProcess, RemoteMediaSourceIdentifier identifier, bool webMParserEnabled, RemoteMediaPlayerProxy& remoteMediaPlayerProxy)
-    : m_connectionToWebProcess(makeWeakPtr(connectionToWebProcess))
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RemoteMediaSourceProxy);
+
+RemoteMediaSourceProxy::RemoteMediaSourceProxy(RemoteMediaPlayerManagerProxy& manager, RemoteMediaSourceIdentifier identifier, RemoteMediaPlayerProxy& remoteMediaPlayerProxy)
+    : m_manager(manager)
     , m_identifier(identifier)
-    , m_webMParserEnabled(webMParserEnabled)
-    , m_remoteMediaPlayerProxy(makeWeakPtr(remoteMediaPlayerProxy))
+    , m_remoteMediaPlayerProxy(remoteMediaPlayerProxy)
 {
-    m_connectionToWebProcess->messageReceiverMap().addMessageReceiver(Messages::RemoteMediaSourceProxy::messageReceiverName(), m_identifier.toUInt64(), *this);
+    ASSERT(RunLoop::isMain());
+
+    connectionToWebProcess()->messageReceiverMap().addMessageReceiver(Messages::RemoteMediaSourceProxy::messageReceiverName(), m_identifier.toUInt64(), *this);
+    manager.registerMediaSource(m_identifier, *this);
 }
 
 RemoteMediaSourceProxy::~RemoteMediaSourceProxy()
 {
-    ASSERT(m_connectionToWebProcess);
+    disconnect();
+}
 
-    m_connectionToWebProcess->messageReceiverMap().removeMessageReceiver(Messages::RemoteMediaSourceProxy::messageReceiverName(), m_identifier.toUInt64());
+void RemoteMediaSourceProxy::setMediaPlayers(RemoteMediaPlayerProxy& remoteMediaPlayerProxy, WebCore::MediaPlayerPrivateInterface* mediaPlayerPrivate)
+{
+    m_remoteMediaPlayerProxy = remoteMediaPlayerProxy;
+    for (auto& sourceBuffer : m_sourceBuffers)
+        sourceBuffer->setMediaPlayer(remoteMediaPlayerProxy);
+    if (RefPtr protectedPrivate = m_private)
+        protectedPrivate->setPlayer(mediaPlayerPrivate);
+}
+
+void RemoteMediaSourceProxy::disconnect()
+{
+    RefPtr connection = connectionToWebProcess();
+    if (!connection)
+        return;
+
+    connection->messageReceiverMap().removeMessageReceiver(Messages::RemoteMediaSourceProxy::messageReceiverName(), m_identifier.toUInt64());
+    m_manager = nullptr;
 }
 
 void RemoteMediaSourceProxy::setPrivateAndOpen(Ref<MediaSourcePrivate>&& mediaSourcePrivate)
@@ -63,33 +87,29 @@ void RemoteMediaSourceProxy::setPrivateAndOpen(Ref<MediaSourcePrivate>&& mediaSo
     m_private = WTFMove(mediaSourcePrivate);
 }
 
-MediaTime RemoteMediaSourceProxy::duration() const
+void RemoteMediaSourceProxy::reOpen()
 {
-    return m_duration;
+    ASSERT(m_private);
 }
 
-std::unique_ptr<PlatformTimeRanges> RemoteMediaSourceProxy::buffered() const
+Ref<MediaTimePromise> RemoteMediaSourceProxy::waitForTarget(const SeekTarget& target)
 {
-    return makeUnique<PlatformTimeRanges>(m_buffered);
+    if (RefPtr connection = connectionToWebProcess())
+        return connection->protectedConnection()->sendWithPromisedReply<MediaPromiseConverter>(Messages::MediaSourcePrivateRemoteMessageReceiver::ProxyWaitForTarget(target), m_identifier);
+
+    return MediaTimePromise::createAndReject(PlatformMediaError::IPCError);
 }
 
-void RemoteMediaSourceProxy::seekToTime(const MediaTime& time)
+Ref<MediaPromise> RemoteMediaSourceProxy::seekToTime(const MediaTime& time)
 {
-    if (!m_connectionToWebProcess)
-        return;
+    if (RefPtr connection = connectionToWebProcess())
+        return connection->protectedConnection()->sendWithPromisedReply<MediaPromiseConverter>(Messages::MediaSourcePrivateRemoteMessageReceiver::ProxySeekToTime(time), m_identifier);
 
-    m_connectionToWebProcess->connection().send(Messages::MediaSourcePrivateRemote::SeekToTime(time), m_identifier);
+    return MediaPromise::createAndReject(PlatformMediaError::IPCError);
 }
-
-#if USE(GSTREAMER)
-void RemoteMediaSourceProxy::monitorSourceBuffers()
-{
-    notImplemented();
-}
-#endif
 
 #if !RELEASE_LOG_DISABLED
-void RemoteMediaSourceProxy::setLogIdentifier(const void*)
+void RemoteMediaSourceProxy::setLogIdentifier(uint64_t)
 {
     notImplemented();
 }
@@ -100,18 +120,20 @@ void RemoteMediaSourceProxy::failedToCreateRenderer(RendererType)
     notImplemented();
 }
 
-void RemoteMediaSourceProxy::addSourceBuffer(const WebCore::ContentType& contentType, AddSourceBufferCallback&& callback)
+void RemoteMediaSourceProxy::addSourceBuffer(const WebCore::ContentType& contentType, const WebCore::MediaSourceConfiguration& configuration, AddSourceBufferCallback&& callback)
 {
-    if (!m_remoteMediaPlayerProxy || !m_connectionToWebProcess)
+    RefPtr connection = connectionToWebProcess();
+    if (!m_remoteMediaPlayerProxy || !connection)
         return;
 
     RefPtr<SourceBufferPrivate> sourceBufferPrivate;
-    MediaSourcePrivate::AddStatus status = m_private->addSourceBuffer(contentType, m_webMParserEnabled, sourceBufferPrivate);
+    MediaSourcePrivate::AddStatus status = mediaSourcePrivate()->addSourceBuffer(contentType, configuration, sourceBufferPrivate);
 
     std::optional<RemoteSourceBufferIdentifier> remoteSourceIdentifier;
     if (status == MediaSourcePrivate::AddStatus::Ok) {
         auto identifier = RemoteSourceBufferIdentifier::generate();
-        auto remoteSourceBufferProxy = RemoteSourceBufferProxy::create(*m_connectionToWebProcess, identifier, sourceBufferPrivate.releaseNonNull(), *m_remoteMediaPlayerProxy);
+        Ref remoteMediaPlayerProxy { *m_remoteMediaPlayerProxy };
+        auto remoteSourceBufferProxy = RemoteSourceBufferProxy::create(*connection, identifier, sourceBufferPrivate.releaseNonNull(), remoteMediaPlayerProxy);
         m_sourceBuffers.append(WTFMove(remoteSourceBufferProxy));
         remoteSourceIdentifier = identifier;
     }
@@ -121,47 +143,69 @@ void RemoteMediaSourceProxy::addSourceBuffer(const WebCore::ContentType& content
 
 void RemoteMediaSourceProxy::durationChanged(const MediaTime& duration)
 {
-    if (m_duration == duration)
-        return;
-
-    m_duration = duration;
-    if (m_private)
-        m_private->durationChanged(duration);
+    if (RefPtr protectedPrivate = m_private)
+        protectedPrivate->durationChanged(duration);
 }
 
-void RemoteMediaSourceProxy::bufferedChanged(const WebCore::PlatformTimeRanges& buffered)
+void RemoteMediaSourceProxy::bufferedChanged(WebCore::PlatformTimeRanges&& buffered)
 {
-    m_buffered = buffered;
+    if (RefPtr protectedPrivate = m_private)
+        protectedPrivate->bufferedChanged(WTFMove(buffered));
 }
 
-void RemoteMediaSourceProxy::setReadyState(WebCore::MediaPlayerEnums::ReadyState readyState)
+void RemoteMediaSourceProxy::markEndOfStream(WebCore::MediaSourcePrivate::EndOfStreamStatus status )
 {
-    if (m_private)
-        m_private->setReadyState(readyState);
+    if (RefPtr protectedPrivate = m_private)
+        protectedPrivate->markEndOfStream(status);
 }
 
-void RemoteMediaSourceProxy::setIsSeeking(bool isSeeking)
+void RemoteMediaSourceProxy::unmarkEndOfStream()
 {
-    if (m_private)
-        m_private->setIsSeeking(isSeeking);
+    if (RefPtr protectedPrivate = m_private)
+        protectedPrivate->unmarkEndOfStream();
 }
 
-void RemoteMediaSourceProxy::waitForSeekCompleted()
-{
-    if (m_private)
-        m_private->waitForSeekCompleted();
-}
 
-void RemoteMediaSourceProxy::seekCompleted()
+void RemoteMediaSourceProxy::setMediaPlayerReadyState(WebCore::MediaPlayerEnums::ReadyState readyState)
 {
-    if (m_private)
-        m_private->seekCompleted();
+    if (RefPtr protectedPrivate = m_private)
+        protectedPrivate->setMediaPlayerReadyState(readyState);
 }
 
 void RemoteMediaSourceProxy::setTimeFudgeFactor(const MediaTime& fudgeFactor)
 {
-    if (m_private)
-        m_private->setTimeFudgeFactor(fudgeFactor);
+    if (RefPtr protectedPrivate = m_private)
+        protectedPrivate->setTimeFudgeFactor(fudgeFactor);
+}
+
+void RemoteMediaSourceProxy::attached()
+{
+}
+
+void RemoteMediaSourceProxy::shutdown()
+{
+    ASSERT(RunLoop::isMain());
+
+    disconnect();
+
+    if (RefPtr manager = m_manager.get())
+        manager->invalidateMediaSource(m_identifier);
+}
+
+RefPtr<GPUConnectionToWebProcess> RemoteMediaSourceProxy::connectionToWebProcess() const
+{
+    ASSERT(RunLoop::isMain());
+
+    RefPtr manager = m_manager.get();
+    return manager ? manager->gpuConnectionToWebProcess() : nullptr;
+}
+
+std::optional<SharedPreferencesForWebProcess> RemoteMediaSourceProxy::sharedPreferencesForWebProcess() const
+{
+    if (RefPtr connection = connectionToWebProcess())
+        return connection->sharedPreferencesForWebProcess();
+
+    return std::nullopt;
 }
 
 } // namespace WebKit

@@ -1,3 +1,4 @@
+#include "config.h"
 #include "MediaPlayerPrivateMorphOS.h"
 
 #if ENABLE(VIDEO)
@@ -9,6 +10,7 @@
 #include "AcinerellaContainer.h"
 #include "AudioTrackPrivateMorphOS.h"
 #include "VideoTrackPrivateMorphOS.h"
+#include "PlatformMediaResourceLoader.h"
 
 #include "HTMLMediaElement.h"
 #include "Frame.h"
@@ -17,15 +19,11 @@
 #include <proto/exec.h>
 #include <exec/exec.h>
 
-#if OS(AROS)
-#include <aros/debug.h>
-#undef D
-#define dprintf bug
-#endif
-
-#define D(x)
+#define D(x) 
 #define DM(x)
 #define DMHOST(x) 
+#define DSEEK(x)
+#define DFRAMES(x) 
 
 namespace WebCore {
 
@@ -39,7 +37,9 @@ class MediaPlayerFactoryMediaSourceMorphOS final : public MediaPlayerFactory {
 public:
     MediaPlayerEnums::MediaEngineIdentifier identifier() const final { return MediaPlayerEnums::MediaEngineIdentifier::MorphOS; };
 
-    std::unique_ptr<MediaPlayerPrivateInterface> createMediaEnginePlayer(MediaPlayer* player) const final { return makeUnique<MediaPlayerPrivateMorphOS>(player); }
+    Ref<MediaPlayerPrivateInterface> createMediaEnginePlayer(MediaPlayer* player) const final {
+        return adoptRef(*new MediaPlayerPrivateMorphOS(player));
+    }
 
     static bool isCGXVideoValid()
     {
@@ -64,54 +64,54 @@ public:
         return valid;
     }
 
-    static void s_getSupportedTypes(HashSet<String, ASCIICaseInsensitiveHash>& types, bool withHLS)
+    static void s_getSupportedTypes(HashSet<String>& types, bool withHLS)
     {
 		// Audio
-		types.add(String("audio/aac"));
-		types.add(String("audio/basic"));
-		types.add(String("audio/mp3"));
-		types.add(String("audio/mp4"));
-		types.add(String("audio/flac"));
-		types.add(String("audio/mpeg"));
-		types.add(String("audio/vnd.wave"));
-		types.add(String("audio/wav"));
-		types.add(String("audio/wave"));
+		types.add("audio/aac"_s);
+		types.add("audio/basic"_s);
+		types.add("audio/mp3"_s);
+		types.add("audio/mp4"_s);
+		types.add("audio/flac"_s);
+		types.add("audio/mpeg"_s);
+		types.add("audio/vnd.wave"_s);
+		types.add("audio/wav"_s);
+		types.add("audio/wave"_s);
 
-		types.add(String("audio/x-aiff"));
-		types.add(String("audio/x-flac"));
-		types.add(String("audio/x-m4a"));
-		types.add(String("audio/x-pn-wav"));
-		types.add(String("audio/x-wav"));
+		types.add("audio/x-aiff"_s);
+		types.add("audio/x-flac"_s);
+		types.add("audio/x-m4a"_s);
+		types.add("audio/x-pn-wav"_s);
+		types.add("audio/x-wav"_s);
 
-		types.add(String("audio/ogg"));
-		types.add(String("audio/webm"));
+		types.add("audio/ogg"_s);
+		types.add("audio/webm"_s);
 
-		types.add(String("audio/x-scpls"));
-		types.add(String("audio/mpa"));
-		types.add(String("audio/mpa-robust"));
+		types.add("audio/x-scpls"_s);
+		types.add("audio/mpa"_s);
+		types.add("audio/mpa-robust"_s);
 
 		// Video
-		types.add(String("video/avi"));
-		types.add(String("video/flv"));
-		types.add(String("video/mp4"));
-		types.add(String("video/3gpp")); // this is mp4
-		types.add(String("video/vnd.objectvideo"));
-		types.add(String("video/x-flv"));
+		types.add("video/avi"_s);
+		types.add("video/flv"_s);
+		types.add("video/mp4"_s);
+		types.add("video/3gpp"_s); // this is mp4
+		types.add("video/vnd.objectvideo"_s);
+		types.add("video/x-flv"_s);
 
-		types.add(String("video/ogg"));
-		types.add(String("video/x-theora+ogg"));
-		types.add(String("video/webm"));
+		types.add("video/ogg"_s);
+		types.add("video/x-theora+ogg"_s);
+		types.add("video/webm"_s);
 
 		// HLS
 		if (withHLS)
 		{
-			types.add(String("audio/x-mpegurl"));
-			types.add(String("application/x-mpegurl"));
-			types.add(String("application/vnd.apple.mpegurl"));
+			types.add("audio/x-mpegurl"_s);
+			types.add("application/x-mpegurl"_s);
+			types.add("application/vnd.apple.mpegurl"_s);
 		}
     }
 
-	void getSupportedTypes(HashSet<String, ASCIICaseInsensitiveHash>& types) const final
+	void getSupportedTypes(HashSet<String>& types) const final
 	{
 		s_getSupportedTypes(types, true);
 	}
@@ -129,7 +129,12 @@ public:
 			DMHOST(dprintf("%s: vmframe %p\n", __func__, frame));
 			if (frame)
 			{
-				Document *doc = frame->mainFrame().document();
+//				Document *doc = frame->mainFrame().document();
+
+                Document *doc = nullptr;
+                if (auto* localFrame = dynamicDowncast<LocalFrame>(frame->mainFrame()))
+                    doc = localFrame->document();
+
 				DMHOST(dprintf("%s: doc %p\n", __func__, doc));
 				if (doc)
 				{
@@ -144,7 +149,7 @@ public:
 		}
 		else
 		{
-			Document *doc = page->mainFrame().document();
+			Document *doc = dynamicDowncast<LocalFrame>(page->mainFrame())->document();
 			DMHOST(dprintf("%s: doc %p urlvalid %d (%s)\n", __func__, doc, parameters.url.isValid(), parameters.url.string().utf8().data()));
 			if (doc)
 			{
@@ -156,24 +161,22 @@ public:
 			}
 		}
     
-    	if (startsWithLettersIgnoringASCIICase(parameters.type.raw(), "image/"))
+    	if (startsWithLettersIgnoringASCIICase(parameters.type.raw(), "image/"_s))
     	{
     		return MediaPlayer::SupportsType::IsNotSupported;
 		}
 		
-    	if (startsWithLettersIgnoringASCIICase(parameters.url.string(), "data:"))
+    	if (startsWithLettersIgnoringASCIICase(parameters.url.string(), "data:"_s))
     	{
     		return MediaPlayer::SupportsType::IsNotSupported;
 		}
 
-#if !OS(AROS) && !OS(AMIGAOS)
         if (!isCGXVideoValid())
         {
     		return MediaPlayer::SupportsType::IsNotSupported;
 		}
-#endif
 
-		bool withHLS = true;
+		bool withHLS = MediaPlayerMorphOSSettings::settings().m_supportHLSForHost ? MediaPlayerMorphOSSettings::settings().m_supportHLSForHost(page, host) : true;
 
 		DM(dprintf("%s: url '%s' content '%s' ctype '%s' isource %d istream %d profiles %d hlsOK %d host '%s' page %p\n", __func__,
 			parameters.url.string().utf8().data(), parameters.type.raw().utf8().data(), parameters.type.containerType().utf8().data(),
@@ -194,7 +197,7 @@ public:
 			return MediaPlayer::SupportsType::IsNotSupported;
 		}
 
-    	if (startsWithLettersIgnoringASCIICase(parameters.url.string(), "blob:"))
+    	if (startsWithLettersIgnoringASCIICase(parameters.url.string(), "blob:"_s))
     	{
 #if ENABLE(MEDIA_SOURCE)
 			if (!parameters.isMediaSource)
@@ -208,7 +211,7 @@ public:
 			DM(dprintf("%s: container empty, assume 'maybe'\n", __func__));
 			return MediaPlayer::SupportsType::MayBeSupported;
 		}
-		HashSet<String, ASCIICaseInsensitiveHash> types;
+		HashSet<String> types;
 		s_getSupportedTypes(types, withHLS);
 		DM(dprintf("%s: '%s' contained in list? %d\n", __func__, parameters.type.containerType().utf8().data(), types.contains(containerType)));
 		if (types.contains(containerType))
@@ -224,20 +227,20 @@ public:
 			for (size_t i = 0; i < codecs.size(); i++)
 			{
 				auto &codec = codecs.at(i);
-				if (startsWithLettersIgnoringASCIICase(codec, "av01") || startsWithLettersIgnoringASCIICase(codec, "av1")) // requires ffmpeg 4.0 + additional libs
+				if (startsWithLettersIgnoringASCIICase(codec, "av01"_s) || startsWithLettersIgnoringASCIICase(codec, "av1"_s)) // requires ffmpeg 4.0 + additional libs
 				{
 					DM(dprintf("%s: rejecting unsupported codec %s\n", __func__, codec.utf8().data()));
 					return MediaPlayer::SupportsType::IsNotSupported;
 				}
 #if 0
 				// higher profile h264 seem to fail decoding (on vimeo, but work on yt!)
-				else if (startsWithLettersIgnoringASCIICase(codec, "avc1.5") || startsWithLettersIgnoringASCIICase(codec, "avc1.6") || startsWithLettersIgnoringASCIICase(codec, "avc1.7") || startsWithLettersIgnoringASCIICase(codec, "avc1.8") || startsWithLettersIgnoringASCIICase(codec, "avc1.f"))
+				else if (startsWithLettersIgnoringASCIICase(codec, "avc1.5"_s) || startsWithLettersIgnoringASCIICase(codec, "avc1.6"_s) || startsWithLettersIgnoringASCIICase(codec, "avc1.7"_s) || startsWithLettersIgnoringASCIICase(codec, "avc1.8"_s) || startsWithLettersIgnoringASCIICase(codec, "avc1.f"_s))
 				{
 					DM(dprintf("%s: rejecting unsupported codec %s\n", __func__, codec.utf8().data()));
 					return MediaPlayer::SupportsType::IsNotSupported;
 				}
 #endif
-				else if (startsWithLettersIgnoringASCIICase(codec, "hvc1")) // not enabled in ffmpeg (h265 variant)
+				else if (startsWithLettersIgnoringASCIICase(codec, "hvc1"_s)) // not enabled in ffmpeg (h265 variant)
 				{
 					if (MediaPlayerMorphOSSettings::settings().m_supportHVCForHost && !MediaPlayerMorphOSSettings::settings().m_supportHVCForHost(page, host))
 					{
@@ -245,7 +248,7 @@ public:
 						return MediaPlayer::SupportsType::IsNotSupported;
 					}
 				}
-                else if (startsWithLettersIgnoringASCIICase(codec, "vp9"))
+                else if (startsWithLettersIgnoringASCIICase(codec, "vp9"_s))
                 {
 					if (MediaPlayerMorphOSSettings::settings().m_supportVP9ForHost && !MediaPlayerMorphOSSettings::settings().m_supportVP9ForHost(page, host))
 					{
@@ -279,12 +282,18 @@ MediaPlayerPrivateMorphOS::MediaPlayerPrivateMorphOS(MediaPlayer* player)
 
 MediaPlayerPrivateMorphOS::~MediaPlayerPrivateMorphOS()
 {
+#if ENABLE(MEDIA_SOURCE)
+	if (m_mediaSourcePrivate)
+		m_mediaSourcePrivate->orphan();
+#endif
+
 	if (m_acinerella)
 		m_acinerella->terminate();
 
 	// remove all pending requests that could be referencing 'this'
+    RefPtr player = m_player.get();
 	if (MediaPlayerMorphOSSettings::settings().m_loadCancelled)
-		MediaPlayerMorphOSSettings::settings().m_loadCancelled(m_player);
+		MediaPlayerMorphOSSettings::settings().m_loadCancelled(player.get());
 }
 
 void MediaPlayerPrivateMorphOS::registerMediaEngine(MediaEngineRegistrar registrar)
@@ -300,7 +309,7 @@ MediaPlayer::SupportsType MediaPlayerPrivateMorphOS::extendedSupportsType(const 
 
 bool MediaPlayerPrivateMorphOS::supportsKeySystem(const String& keySystem, const String& mimeType)
 {
-	if (equalIgnoringASCIICase(keySystem, "org.w3c.clearkey") && !mimeType.isEmpty() && equalIgnoringASCIICase(mimeType, "application/x-mpegurl"))
+	if (equalIgnoringASCIICase(keySystem, "org.w3c.clearkey"_s) && !mimeType.isEmpty() && equalIgnoringASCIICase(mimeType, "application/x-mpegurl"_s))
 		return true;
 	return false;
 }
@@ -311,62 +320,79 @@ void MediaPlayerPrivateMorphOS::load(const String& url)
 
 	cancelLoad();
 
-	if (startsWithLettersIgnoringASCIICase(url, "about:"))
+    RefPtr player = m_player.get();
+    if (!player)
+        return;
+
+    // note dailymotion first starts off with a blob, then sends a data: url...
+	if (startsWithLettersIgnoringASCIICase(url, "about:"_s) || startsWithLettersIgnoringASCIICase(url, "blob:"_s) || startsWithLettersIgnoringASCIICase(url, "data:"_s))
+    {
+        m_networkState = MediaPlayer::NetworkState::FormatError;
+        player->networkStateChanged();
 		return;
+    }
 
 	if (!canLoad(false))
+    {
+        m_networkState = MediaPlayer::NetworkState::FormatError;
+        player->networkStateChanged();
 		return;
+    }
 
 	m_networkState = MediaPlayer::NetworkState::Loading;
-	m_player->networkStateChanged();
+	player->networkStateChanged();
 	m_readyState = MediaPlayer::ReadyState::HaveNothing;
-	m_player->readyStateChanged();
-
-#if 1
-MediaPlayerMorphOSSettings::settings().m_networkingContextForRequests =
-m_player->client().mediaPlayerPage()->mainFrame().loader().networkingContext();
-
-MediaPlayerMorphOSSettings::settings().m_load = [](WebCore::MediaPlayer *player, const String &url, WebCore::MediaPlayerMorphOSInfo& info,
-		MediaPlayerMorphOSStreamSettings &settings, Function<void()> &&yieldFunc) {
-	};
-
-#endif
+	player->readyStateChanged();
 
 	m_acinerella = Acinerella::Acinerella::create(this, url);
 }
 
 #if ENABLE(MEDIA_SOURCE)
-void MediaPlayerPrivateMorphOS::load(const URL& url, const ContentType&, MediaSourcePrivateClient* client)
+void MediaPlayerPrivateMorphOS::load(const URL& url, const LoadOptions&, MediaSourcePrivateClient& client)
 {
 	D(dprintf("%s: %s\n", __PRETTY_FUNCTION__, url.string().utf8().data()));
 	cancelLoad();
 
-	if (startsWithLettersIgnoringASCIICase(url.string(), "about:"))
+    RefPtr player = m_player.get();
+    if (!player)
+        return;
+
+	if (startsWithLettersIgnoringASCIICase(url.string(), "about:"_s))
+    {
+        m_networkState = MediaPlayer::NetworkState::FormatError;
+        player->networkStateChanged();
 		return;
+    }
 		
 	if (!canLoad(true))
+    {
+        m_networkState = MediaPlayer::NetworkState::FormatError;
+        player->networkStateChanged();
 		return;
+    }
+
 
 	m_networkState = MediaPlayer::NetworkState::Loading;
-	m_player->networkStateChanged();
+	player->networkStateChanged();
 	m_readyState = MediaPlayer::ReadyState::HaveNothing;
-	m_player->readyStateChanged();
+	player->readyStateChanged();
 
-	m_mediaSourcePrivate = MediaSourcePrivateMorphOS::create(*this, *client, url.string());
+	m_mediaSourcePrivate = MediaSourcePrivateMorphOS::create(*this, client, url.string());
 }
 #endif
 
 bool MediaPlayerPrivateMorphOS::canLoad(bool isMediaSource)
 {
-	Page *page = m_player->client().mediaPlayerPage();
+    RefPtr player = m_player.get();
+	Page *page = player ? player->client().mediaPlayerPage() : nullptr;
 	String host;
-	Document *doc = page ? page->mainFrame().document() : nullptr;
+	Document *doc = page ? dynamicDowncast<LocalFrame>(page->mainFrame())->document() : nullptr;
 	if (doc)
 	{
 		host = doc->url().host().toString();
 	}
 
-	D(dprintf("%s: page %p doc %p host %s\n", __PRETTY_FUNCTION__, page, doc, host.utf8().data()));
+	D(dprintf("%s: page %p doc %p host %s mse %d\n", __PRETTY_FUNCTION__, page, doc, host.utf8().data(), isMediaSource));
 
 	bool ok = false;
 
@@ -386,10 +412,15 @@ bool MediaPlayerPrivateMorphOS::canLoad(bool isMediaSource)
 
 	if (!ok)
 	{
+        D(dprintf("%s: not OK to load :(\n", __PRETTY_FUNCTION__));
 		m_networkState = WebCore::MediaPlayerEnums::NetworkState::FormatError;
 		m_readyState = WebCore::MediaPlayerEnums::ReadyState::HaveNothing;
-		m_player->networkStateChanged();
-		m_player->readyStateChanged();
+        RefPtr player = m_player.get();
+        if (player)
+        {
+            player->networkStateChanged();
+            player->readyStateChanged();
+        }
 	}
 
 	return ok;
@@ -399,8 +430,9 @@ void MediaPlayerPrivateMorphOS::cancelLoad()
 {
 	D(dprintf("%s:\n", __PRETTY_FUNCTION__));
 
+    RefPtr player = m_player.get();
 	if (MediaPlayerMorphOSSettings::settings().m_loadCancelled)
-		MediaPlayerMorphOSSettings::settings().m_loadCancelled(m_player);
+		MediaPlayerMorphOSSettings::settings().m_loadCancelled(player.get());
 
 #if ENABLE(MEDIA_SOURCE)
 	if (m_mediaSourcePrivate)
@@ -429,6 +461,12 @@ void MediaPlayerPrivateMorphOS::prepareToPlay()
 		m_acinerella->warmUp();
 }
 
+void MediaPlayerPrivateMorphOS::mediaPlayerWillBeDestroyed()
+{
+	D(dprintf("%s:\n", __PRETTY_FUNCTION__));
+    cancelLoad();
+}
+
 bool MediaPlayerPrivateMorphOS::canSaveMediaData() const
 {
 	D(dprintf("%s:\n", __PRETTY_FUNCTION__));
@@ -439,8 +477,12 @@ bool MediaPlayerPrivateMorphOS::canSaveMediaData() const
 
 void MediaPlayerPrivateMorphOS::play()
 {
+    RefPtr player = m_player.get();
+    if (!player)
+        return;
+
 	if (MediaPlayerMorphOSSettings::settings().m_willPlay)
-		MediaPlayerMorphOSSettings::settings().m_willPlay(m_player);
+		MediaPlayerMorphOSSettings::settings().m_willPlay(player.get());
 
 	if (m_acinerella)
 		m_acinerella->play();
@@ -451,17 +493,14 @@ void MediaPlayerPrivateMorphOS::play()
 
 	D(dprintf("%s:\n", __PRETTY_FUNCTION__));
 	
-	if (m_player)
-	{
-		if (m_acinerella)
-		{
-			m_player->muteChanged(m_acinerella->muted());
-			m_player->volumeChanged(m_acinerella->volume());
-		}
-		
-		m_player->rateChanged();
-		m_player->playbackStateChanged();
-	}
+    if (m_acinerella)
+    {
+        player->muteChanged(m_acinerella->muted());
+        player->volumeChanged(m_acinerella->volume());
+    }
+    
+    player->rateChanged();
+    player->playbackStateChanged();
 }
 
 void MediaPlayerPrivateMorphOS::pause()
@@ -477,8 +516,9 @@ void MediaPlayerPrivateMorphOS::pause()
 // NO, this will break the internal PLAYING state of HTMLMediaElement
 //	m_player->playbackStateChanged();
 
+    RefPtr player = m_player.get();
 	if (MediaPlayerMorphOSSettings::settings().m_pausedOrFinished)
-		MediaPlayerMorphOSSettings::settings().m_pausedOrFinished(m_player);
+		MediaPlayerMorphOSSettings::settings().m_pausedOrFinished(player.get());
 }
 
 void MediaPlayerPrivateMorphOS::setVolume(float volume)
@@ -508,21 +548,7 @@ FloatSize MediaPlayerPrivateMorphOS::naturalSize() const
 	return { float(m_width), float(m_height) };
 }
 
-float MediaPlayerPrivateMorphOS::duration() const
-{
-	return durationDouble();
-}
-
-double MediaPlayerPrivateMorphOS::durationDouble() const
-{
-#if ENABLE(MEDIA_SOURCE)
-	if (m_mediaSourcePrivate)
-		return m_mediaSourcePrivate->duration().toDouble();
-#endif
-	return m_duration;
-}
-
-MediaTime MediaPlayerPrivateMorphOS::durationMediaTime() const
+MediaTime MediaPlayerPrivateMorphOS::duration() const
 {
 	if (m_acinerella && m_acinerella->isLive())
 		return MediaTime::invalidTime();
@@ -530,7 +556,12 @@ MediaTime MediaPlayerPrivateMorphOS::durationMediaTime() const
 	if (m_mediaSourcePrivate)
 		return m_mediaSourcePrivate->duration();
 #endif
-	return MediaTime::createWithDouble(durationDouble());
+	return m_duration;
+}
+
+MediaTime MediaPlayerPrivateMorphOS::currentTime() const
+{
+    return m_currentTime;
 }
 
 bool MediaPlayerPrivateMorphOS::hasVideo() const
@@ -573,14 +604,17 @@ bool MediaPlayerPrivateMorphOS::seeking() const
 	return false;
 }
 
-void MediaPlayerPrivateMorphOS::seek(float time)
+void MediaPlayerPrivateMorphOS::seekToTarget(const SeekTarget& target)
 {
-	D(dprintf("%s: %f\n", __PRETTY_FUNCTION__, time));
+    float time = target.time.toFloat();
+
+	DSEEK(dprintf("%s: %f\n", __PRETTY_FUNCTION__, time));
+
 	if (m_acinerella)
 		return m_acinerella->seek(time);
 #if ENABLE(MEDIA_SOURCE)
 	else if (m_mediaSourcePrivate)
-		return m_mediaSourcePrivate->seek(time);
+		return m_mediaSourcePrivate->seekToTarget(target);
 #endif
 }
 
@@ -624,14 +658,14 @@ MediaPlayer::ReadyState MediaPlayerPrivateMorphOS::readyState() const
 	return m_readyState;
 }
 
-std::unique_ptr<PlatformTimeRanges> MediaPlayerPrivateMorphOS::buffered() const
+const PlatformTimeRanges& MediaPlayerPrivateMorphOS::buffered() const
 {
 #if ENABLE(MEDIA_SOURCE)
 	if (m_mediaSourcePrivate)
-		return m_mediaSourcePrivate->buffered();
+        m_mediaSourcePrivate->buffered();
 #endif
-	return makeUnique<PlatformTimeRanges>(MediaTime::createWithDouble(std::max(0.0, m_currentTime - 1.0 )),
-		MediaTime::createWithDouble(m_currentTime + 10.0));
+
+    return m_buffered;
 }
 
 void MediaPlayerPrivateMorphOS::paint(GraphicsContext& gc, const FloatRect& rect)
@@ -649,26 +683,28 @@ void MediaPlayerPrivateMorphOS::paint(GraphicsContext& gc, const FloatRect& rect
 
 void MediaPlayerPrivateMorphOS::accNextFrameReady()
 {
+    DFRAMES(dprintf("[MS]%s diddraw %d\n", __func__, m_didDrawFrame));
 	if (!m_didDrawFrame)
 	{
-		if (m_player)
+        RefPtr player = m_player.get();
+        if (player)
 		{
-			m_player->firstVideoFrameAvailable();
-			m_player->repaint();
+			player->firstVideoFrameAvailable();
+			player->repaint();
 		}
 
 		m_didDrawFrame = true;
 
-		if (MediaPlayerMorphOSSettings::settings().m_overlayRequest)
+		if (MediaPlayerMorphOSSettings::settings().m_overlayRequest && player)
 		{
-			MediaPlayerMorphOSSettings::settings().m_overlayRequest(m_player,
-				[weak = makeWeakPtr(this)](void *ptr, int sx, int sy, int ml, int mt, int mr, int mb, int w, int h) {
-				if (weak) {
-					if (weak->m_acinerella)
-						weak->m_acinerella->setOverlayWindowCoords((struct ::Window *)ptr, sx, sy, ml, mt, mr, mb, w, h);
+			MediaPlayerMorphOSSettings::settings().m_overlayRequest(player.get(),
+				[protectedThis = RefPtr<MediaPlayerPrivateMorphOS>(this)](void *ptr, int sx, int sy, int ml, int mt, int mr, int mb, int w, int h) {
+				if (protectedThis) {
+					if (protectedThis->m_acinerella)
+						protectedThis->m_acinerella->setOverlayWindowCoords((struct ::Window *)ptr, sx, sy, ml, mt, mr, mb, w, h);
 #if ENABLE(MEDIA_SOURCE)
-					else if (weak->m_mediaSourcePrivate)
-						weak->m_mediaSourcePrivate->setOverlayWindowCoords((struct ::Window *)ptr, sx, sy, ml, mt, mr, mb, w, h);
+					else if (protectedThis->m_mediaSourcePrivate)
+						protectedThis->m_mediaSourcePrivate->setOverlayWindowCoords((struct ::Window *)ptr, sx, sy, ml, mt, mr, mb, w, h);
 #endif
 				}
 			});
@@ -676,39 +712,46 @@ void MediaPlayerPrivateMorphOS::accNextFrameReady()
 	}
     else
     {
-        m_player->repaint();
+        RefPtr player = m_player.get();
+        if (player)
+            player->repaint();
     }
 }
 
 void MediaPlayerPrivateMorphOS::accNoFramesReady()
 {
+    DFRAMES(dprintf("[MS]%s\n", __func__));
 	// TODO: overlay shutdown?
 	m_didDrawFrame = false;
-	m_player->repaint();
+    RefPtr player = m_player.get();
+    if (player)
+        player->repaint();
 }
 
 void MediaPlayerPrivateMorphOS::accSetVideoSize(int width, int height)
 {
+    DFRAMES(dprintf("[MS]%s\n", __func__));
 	m_width = width;
 	m_height = height;
-	if (m_player)
-		m_player->sizeChanged();
+    RefPtr player = m_player.get();
+	if (player)
+		player->sizeChanged();
 }
 
 void MediaPlayerPrivateMorphOS::accFrameUpdateNeeded() 
 {
-	if (MediaPlayerMorphOSSettings::settings().m_overlayUpdate)
-		MediaPlayerMorphOSSettings::settings().m_overlayUpdate(m_player);
+    DFRAMES(dprintf("[MS]%s\n", __func__));
+    RefPtr player = m_player.get();
+	if (MediaPlayerMorphOSSettings::settings().m_overlayUpdate && player)
+		MediaPlayerMorphOSSettings::settings().m_overlayUpdate(player.get());
 }
 
 bool MediaPlayerPrivateMorphOS::accCodecSupported(const String &codec)
 {
+    RefPtr player = m_player.get();
 	MediaEngineSupportParameters parameters;
-	parameters.page = m_player->client().mediaPlayerPage();
-	String ct; // audio/mp4; codecs="mp4a.40.2"
-	ct = "video/mp4; codecs=\"";
-	ct.append(codec);
-	ct.append("\"");
+	parameters.page = player ? player->client().mediaPlayerPage() : nullptr;
+    auto ct = makeString("video/mp4; codecs=\""_s, codec, "\""_s);
 	parameters.type = ContentType(ct);
 	return MediaPlayerFactoryMediaSourceMorphOS::s_supportsTypeAndCodecs(parameters) == MediaPlayer::SupportsType::IsSupported;
 }
@@ -724,6 +767,13 @@ void MediaPlayerPrivateMorphOS::accSetFrameCounts(unsigned decoded, unsigned dro
 {
 	m_decodedFrameCount = decoded;
 	m_droppedFrameCount = dropped;
+}
+
+void MediaPlayerPrivateMorphOS::onActiveSourceBuffersChanged()
+{
+    RefPtr player = m_player.get();
+    if (player)
+        player->activeSourceBuffersChanged();
 }
 
 bool MediaPlayerPrivateMorphOS::didLoadingProgress() const
@@ -744,21 +794,26 @@ MediaPlayer::MovieLoadType MediaPlayerPrivateMorphOS::movieLoadType() const
 	return MediaPlayer::MovieLoadType::Download;
 }
 
-float MediaPlayerPrivateMorphOS::maxTimeSeekable() const
+MediaTime MediaPlayerPrivateMorphOS::maxTimeSeekable() const
 {
 	if (m_acinerella && m_acinerella->canSeek())
 		return m_duration;
 #if ENABLE(MEDIA_SOURCE)
 	return m_duration;
 #endif
-	return 0.f;
+	return MediaTime::createWithDouble(0.0);
 }
 
 void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 {
 	if (MediaPlayerMorphOSSettings::settings().m_load)
 	{
+        RefPtr player = m_player.get();
 		String url;
+
+        // player's gone already!
+        if (!player)
+            return;
 
 		if (info.m_width)
 		{
@@ -776,8 +831,8 @@ void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 #endif
 			url = m_acinerella->url();
 
-		MediaPlayerMorphOSSettings::settings().m_load(m_player, url, info, m_streamSettings,
-			[this]() {
+		MediaPlayerMorphOSSettings::settings().m_load(player.get(), url, info, m_streamSettings,
+			[this, player]() {
 				if (m_acinerella) {
 					m_acinerella->pause();
 					m_acinerella->coolDown();
@@ -789,25 +844,26 @@ void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 				}
 #endif
 				m_didDrawFrame = false;
-				m_player->playbackStateChanged();
+                player->playbackStateChanged();
 			});
 
 		m_acInitialized = true;
-		m_player->characteristicChanged();
+        player->characteristicChanged();
 
 		// MediaSource has its own track handling!
 		if (m_acinerella)
 		{
+
 			if (info.m_width)
 			{
-				m_videoTrack = VideoTrackPrivateMorphOS::create(makeWeakPtr(this), 0);
-				m_player->addVideoTrack(*m_videoTrack.get());
+				m_videoTrack = VideoTrackPrivateMorphOS::create(ThreadSafeWeakPtr { *this }, 0);
+                player->addVideoTrack(*m_videoTrack.get());
 			}
 			
 			if (info.m_channels)
 			{
-				m_audioTrack = AudioTrackPrivateMorphOS::create(makeWeakPtr(this), 0);
-				m_player->addAudioTrack(*m_audioTrack.get());
+				m_audioTrack = AudioTrackPrivateMorphOS::create(ThreadSafeWeakPtr { *this }, 0);
+                player->addAudioTrack(*m_audioTrack.get());
 			}
 		}
 
@@ -822,74 +878,97 @@ void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 
 void MediaPlayerPrivateMorphOS::accUpdated(MediaPlayerMorphOSInfo info)
 {
-#if 1
-	if (info.m_width)
+    RefPtr player = m_player.get();
+	if (MediaPlayerMorphOSSettings::settings().m_update && player)
 	{
-		m_width = info.m_width;
-		m_height = info.m_height;
+		MediaPlayerMorphOSSettings::settings().m_update(player.get(), info);
 	}
-
-	accSetVideoSize(m_width, m_height);
-#else
-	if (MediaPlayerMorphOSSettings::settings().m_update)
-	{
-		MediaPlayerMorphOSSettings::settings().m_update(m_player, info);
-	}
-#endif
 }
 
-void MediaPlayerPrivateMorphOS::accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState state)
+void MediaPlayerPrivateMorphOS::accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState state, const WTF::String &error)
 {
+    RefPtr player = m_player.get();
 	m_networkState = state;
-	m_player->networkStateChanged();
+    m_errorMessage = error;
+    if (player)
+        player->networkStateChanged();
 }
 
 void MediaPlayerPrivateMorphOS::accSetReadyState(WebCore::MediaPlayerEnums::ReadyState state)
 {
 	m_readyState = state;
-	m_player->readyStateChanged();
+    RefPtr player = m_player.get();
+    if (player)
+        player->readyStateChanged();
 }
 
 void MediaPlayerPrivateMorphOS::accSetBufferLength(double buffer)
 {
 	(void)buffer;
-	m_player->bufferedTimeRangesChanged();
-	m_player->seekableTimeRangesChanged();
+    RefPtr player = m_player.get();
+    if (player)
+    {
+        player->bufferedTimeRangesChanged();
+        player->seekableTimeRangesChanged();
+    }
 }
 
 void MediaPlayerPrivateMorphOS::accSetPosition(double pos)
 {
-	D(dprintf("%s: timechanged to %f\n", __func__, this, float(pos)));
-	m_currentTime = pos;
-	m_player->timeChanged();
+	D(dprintf("%s: timechanged to %f\n", __func__, float(pos)));
+	m_currentTime = MediaTime::createWithDouble(pos);
+    m_buffered = PlatformTimeRanges(MediaTime::createWithDouble(std::max(0.0, m_currentTime.toDouble() - 1.0 )),
+		MediaTime::createWithDouble(m_currentTime.toDouble() + 10.0));
+    RefPtr player = m_player.get();
+    if (player)
+        player->timeChanged();
+}
+
+void MediaPlayerPrivateMorphOS::accSeeked(double position)
+{
+    RefPtr player = m_player.get();
+    if (player)
+        player->seeked(MediaTime::createWithDouble(position));
+    accSetPosition(position);
 }
 
 void MediaPlayerPrivateMorphOS::accSetDuration(double dur)
 {
+	D(dprintf("%s: duration to %f\n", __func__, float(dur)));
+    RefPtr player = m_player.get();
+    if (!player)
+        return;
 #if ENABLE(MEDIA_SOURCE)
 	if (m_mediaSourcePrivate)
 	{
-		m_player->durationChanged();
+		player->durationChanged();
 		return;
 	}
 #endif
-	if (abs(dur - m_duration) >= 1.0)
+	if (m_duration.isInvalid() || (abs(dur - m_duration.toDouble()) >= 1.0))
 	{
-		D(dprintf("%s: changed to %f\n", __func__, this, float(dur)));
-		m_duration = ceil(dur);
-		m_player->durationChanged();
+		D(dprintf("%s: changed to %f\n", __func__, float(dur)));
+		m_duration = MediaTime::createWithDouble(ceil(dur));
+		player->durationChanged();
 	}
 }
 
 void MediaPlayerPrivateMorphOS::accEnded()
 {
+    D(dprintf("%s: ended\n", __func__));
 	m_currentTime = m_duration;
-	m_player->timeChanged();
-	m_player->characteristicChanged();
-	m_player->playbackStateChanged();
+    m_buffered = PlatformTimeRanges(MediaTime::createWithDouble(std::max(0.0, m_currentTime.toDouble() - 1.0 )),
+		MediaTime::createWithDouble(m_currentTime.toDouble()));
+    RefPtr player = m_player.get();
+    if (player)
+    {
+        player->timeChanged();
+        player->characteristicChanged();
+        player->playbackStateChanged();
 
-	if (MediaPlayerMorphOSSettings::settings().m_pausedOrFinished)
-		MediaPlayerMorphOSSettings::settings().m_pausedOrFinished(m_player);
+        if (MediaPlayerMorphOSSettings::settings().m_pausedOrFinished)
+            MediaPlayerMorphOSSettings::settings().m_pausedOrFinished(player.get());
+    }
 }
 
 void MediaPlayerPrivateMorphOS::accFailed()
@@ -912,20 +991,30 @@ void MediaPlayerPrivateMorphOS::accFailed()
 
 	m_networkState = WebCore::MediaPlayerEnums::NetworkState::FormatError;
 	m_readyState = WebCore::MediaPlayerEnums::ReadyState::HaveNothing;
-	m_player->networkStateChanged();
-	m_player->readyStateChanged();
-	if (MediaPlayerMorphOSSettings::settings().m_pausedOrFinished)
-		MediaPlayerMorphOSSettings::settings().m_pausedOrFinished(m_player);
+    RefPtr player = m_player.get();
+    if (player)
+    {
+        player->networkStateChanged();
+        player->readyStateChanged();
+        if (MediaPlayerMorphOSSettings::settings().m_pausedOrFinished)
+            MediaPlayerMorphOSSettings::settings().m_pausedOrFinished(player.get());
+    }
 }
 
 RefPtr<PlatformMediaResourceLoader> MediaPlayerPrivateMorphOS::accCreateResourceLoader()
 {
-	return m_player->createResourceLoader();
+    RefPtr player = m_player.get();
+    if (player)
+        return player->mediaResourceLoader();
+    return nullptr;
 }
 
 String MediaPlayerPrivateMorphOS::accReferrer()
 {
-	return m_player->referrer();
+    RefPtr player = m_player.get();
+    if (player)
+        return player->referrer();
+    return WTF::emptyString();
 }
 
 void MediaPlayerPrivateMorphOS::onTrackEnabled(int index, bool enabled)
@@ -938,7 +1027,13 @@ void MediaPlayerPrivateMorphOS::onTrackEnabled(int index, bool enabled)
 void MediaPlayerPrivateMorphOS::selectHLSStream(const String& url)
 {
 	if (m_acinerella)
-		m_acinerella->selectStream(url, m_currentTime);
+		m_acinerella->selectStream(url, m_currentTime.toDouble());
+}
+
+String MediaPlayerPrivateMorphOS::errorMessage() const
+{
+    D(dprintf("%s: %s\n", __func__, m_errorMessage.utf8().data()));
+    return m_errorMessage;
 }
 
 }

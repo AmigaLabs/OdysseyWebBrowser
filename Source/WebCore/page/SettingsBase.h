@@ -32,22 +32,23 @@
 #include "EditingBehaviorType.h"
 #include "FontGenericFamilies.h"
 #include "FontLoadTimingOverride.h"
-#include "FontRenderingMode.h"
 #include "ForcedAccessibilityValue.h"
-#include "FrameFlattening.h"
+#include "FourCC.h"
 #include "HTMLParserScriptingFlagPolicy.h"
 #include "MediaPlayerEnums.h"
-#include "PDFImageCachingPolicy.h"
 #include "StorageBlockingPolicy.h"
 #include "StorageMap.h"
-#include "TextDirection.h"
 #include "TextDirectionSubmenuInclusionBehavior.h"
 #include "Timer.h"
+#include "TrustedFonts.h"
 #include "UserInterfaceDirectionPolicy.h"
+#include "WritingMode.h"
 #include <JavaScriptCore/RuntimeFlags.h>
 #include <unicode/uscript.h>
+#include <wtf/AbstractRefCounted.h>
 #include <wtf/RefCounted.h>
 #include <wtf/Seconds.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/URL.h>
 #include <wtf/Vector.h>
 
@@ -59,13 +60,14 @@ namespace WebCore {
 
 class Page;
 
-class SettingsBase {
-    WTF_MAKE_NONCOPYABLE(SettingsBase); WTF_MAKE_FAST_ALLOCATED;
+class SettingsBase : public AbstractRefCounted {
+    WTF_MAKE_TZONE_ALLOCATED(SettingsBase);
+    WTF_MAKE_NONCOPYABLE(SettingsBase);
 public:
-    void pageDestroyed() { m_page = nullptr; }
 
 #if ENABLE(MEDIA_SOURCE)
     WEBCORE_EXPORT static bool platformDefaultMediaSourceEnabled();
+    WEBCORE_EXPORT static uint64_t defaultMaximumSourceBufferSize();
 #endif
 
     static const unsigned defaultMaximumHTMLParserDOMTreeDepth = 512;
@@ -108,6 +110,28 @@ public:
     WEBCORE_EXPORT void setMediaContentTypesRequiringHardwareSupport(const String&);
     const Vector<ContentType>& mediaContentTypesRequiringHardwareSupport() const { return m_mediaContentTypesRequiringHardwareSupport; }
 
+    void setAllowedMediaContainerTypes(std::optional<Vector<String>>&& types) { m_allowedMediaContainerTypes = WTFMove(types); }
+    WEBCORE_EXPORT void setAllowedMediaContainerTypes(const String&);
+    const std::optional<Vector<String>>& allowedMediaContainerTypes() const { return m_allowedMediaContainerTypes; }
+
+    void setAllowedMediaCodecTypes(std::optional<Vector<String>>&& types) { m_allowedMediaCodecTypes = WTFMove(types); }
+    WEBCORE_EXPORT void setAllowedMediaCodecTypes(const String&);
+    const std::optional<Vector<String>>& allowedMediaCodecTypes() const { return m_allowedMediaCodecTypes; }
+
+    void setAllowedMediaVideoCodecIDs(std::optional<Vector<FourCC>>&& types) { m_allowedMediaVideoCodecIDs = WTFMove(types); }
+    WEBCORE_EXPORT void setAllowedMediaVideoCodecIDs(const String&);
+    const std::optional<Vector<FourCC>>& allowedMediaVideoCodecIDs() const { return m_allowedMediaVideoCodecIDs; }
+
+    void setAllowedMediaAudioCodecIDs(std::optional<Vector<FourCC>>&& types) { m_allowedMediaAudioCodecIDs = WTFMove(types); }
+    WEBCORE_EXPORT void setAllowedMediaAudioCodecIDs(const String&);
+    const std::optional<Vector<FourCC>>& allowedMediaAudioCodecIDs() const { return m_allowedMediaAudioCodecIDs; }
+
+    void setAllowedMediaCaptionFormatTypes(std::optional<Vector<FourCC>>&& types) { m_allowedMediaCaptionFormatTypes = WTFMove(types); }
+    WEBCORE_EXPORT void setAllowedMediaCaptionFormatTypes(const String&);
+    const std::optional<Vector<FourCC>>& allowedMediaCaptionFormatTypes() const { return m_allowedMediaCaptionFormatTypes; }
+
+    WEBCORE_EXPORT void resetToConsistentState();
+
 protected:
     explicit SettingsBase(Page*);
     virtual ~SettingsBase();
@@ -121,10 +145,8 @@ protected:
     void setNeedsRelayoutAllFrames();
     void mediaTypeOverrideChanged();
     void imagesEnabledChanged();
-    void pluginsEnabledChanged();
     void userStyleSheetLocationChanged();
     void usesBackForwardCacheChanged();
-    void dnsPrefetchingEnabledChanged();
     void storageBlockingPolicyChanged();
     void backgroundShouldExtendBeyondPageChanged();
     void scrollingPerformanceTestingEnabledChanged();
@@ -139,14 +161,24 @@ protected:
 #if ENABLE(MEDIA_STREAM)
     void mockCaptureDevicesEnabledChanged();
 #endif
+    void layerBasedSVGEngineEnabledChanged();
+#if USE(MODERN_AVCONTENTKEYSESSION)
+    void shouldUseModernAVContentKeySessionChanged();
+#endif
+    void useSystemAppearanceChanged();
 
-    Page* m_page;
+    WeakPtr<Page> m_page;
 
     Seconds m_minimumDOMTimerInterval;
 
     Timer m_setImageLoadingSettingsTimer;
 
     Vector<ContentType> m_mediaContentTypesRequiringHardwareSupport;
+    std::optional<Vector<String>> m_allowedMediaContainerTypes;
+    std::optional<Vector<String>> m_allowedMediaCodecTypes;
+    std::optional<Vector<FourCC>> m_allowedMediaVideoCodecIDs;
+    std::optional<Vector<FourCC>> m_allowedMediaAudioCodecIDs;
+    std::optional<Vector<FourCC>> m_allowedMediaCaptionFormatTypes;
 
 #if ENABLE(TEXT_AUTOSIZING)
     static constexpr const float boostedOneLineTextMultiplierCoefficient = 2.23125f;

@@ -32,8 +32,10 @@
 #include "AudioBus.h"
 #include "AudioIOCallback.h"
 #include <memory>
+#include <wtf/AbstractRefCounted.h>
 #include <wtf/CompletionHandler.h>
 #include <wtf/Lock.h>
+#include <wtf/MediaTime.h>
 #include <wtf/ThreadSafeRefCounted.h>
 #include <wtf/text/WTFString.h>
 
@@ -43,8 +45,7 @@ namespace WebCore {
 // The audio hardware periodically calls the AudioIOCallback render() method asking it to render/output the next render quantum of audio.
 // It optionally will pass in local/live audio input when it calls render().
 
-class AudioDestination : public ThreadSafeRefCounted<AudioDestination, WTF::DestructionThread::Main> {
-    WTF_MAKE_FAST_ALLOCATED;
+class AudioDestination : public AbstractRefCounted {
 public:
     // Pass in (numberOfInputChannels > 0) if live/local audio input is desired.
     // Port-specific device identification information for live/local input streams can be passed in the inputDeviceId.
@@ -59,10 +60,11 @@ public:
     virtual bool isPlaying() = 0;
 
     // Sample-rate conversion may happen in AudioDestination to the hardware sample-rate
-    virtual float sampleRate() const = 0;
+    virtual float sampleRate() const { return m_sampleRate; }
     WEBCORE_EXPORT static float hardwareSampleRate();
 
     virtual unsigned framesPerBuffer() const = 0;
+    virtual WTF::MediaTime outputLatency() const { return MediaTime::zeroTime(); }
 
     // maxChannelCount() returns the total number of output channels of the audio hardware.
     // A value of 0 indicates that the number of channels cannot be configured and
@@ -75,13 +77,17 @@ public:
     void callRenderCallback(AudioBus* sourceBus, AudioBus* destinationBus, size_t framesToProcess, const AudioIOPosition& outputPosition);
 
 protected:
-    explicit AudioDestination(AudioIOCallback&);
+    explicit AudioDestination(AudioIOCallback&, float sampleRate);
 
     Lock m_callbackLock;
     AudioIOCallback* m_callback WTF_GUARDED_BY_LOCK(m_callbackLock) { nullptr };
+
+private:
+    const float m_sampleRate;
 };
 
-inline AudioDestination::AudioDestination(AudioIOCallback& callback)
+inline AudioDestination::AudioDestination(AudioIOCallback& callback, float sampleRate)
+    : m_sampleRate(sampleRate)
 {
     Locker locker { m_callbackLock };
     m_callback = &callback;

@@ -25,12 +25,19 @@
  
 #if ENABLE(WEBXR)
 
-messages -> PlatformXRSystem NotRefCounted {
-    EnumerateImmersiveXRDevices() -> (Vector<WebKit::XRDeviceInfo> devicesInfos) Async
+[
+    DispatchedFrom=WebContent,
+    DispatchedTo=UI,
+    EnabledBy=WebXREnabled
+]
+messages -> PlatformXRSystem {
+    EnumerateImmersiveXRDevices() -> (Vector<WebKit::XRDeviceInfo> devicesInfos)
+    RequestPermissionOnSessionFeatures(WebCore::SecurityOriginData origin, PlatformXR::SessionMode mode, Vector<PlatformXR::SessionFeature> granted, Vector<PlatformXR::SessionFeature> consentRequired, Vector<PlatformXR::SessionFeature> consentOptional, Vector<PlatformXR::SessionFeature> requiredFeaturesRequested, Vector<PlatformXR::SessionFeature> optionalFeaturesRequested) -> (std::optional<Vector<PlatformXR::SessionFeature>> userGranted)
     InitializeTrackingAndRendering()
     ShutDownTrackingAndRendering()
-    RequestFrame() -> (struct PlatformXR::Device::FrameData frameData) Async
+    RequestFrame(std::optional<PlatformXR::RequestData> requestData) -> (struct PlatformXR::FrameData frameData)
     SubmitFrame()
+    DidCompleteShutdownTriggeredBySystem()
 }
 
 #endif

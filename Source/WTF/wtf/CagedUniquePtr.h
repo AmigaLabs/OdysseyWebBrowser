@@ -29,15 +29,15 @@
 
 namespace WTF {
 
-template<Gigacage::Kind kind, typename T, bool shouldTag = false>
-class CagedUniquePtr : public CagedPtr<kind, T, shouldTag> {
+template<Gigacage::Kind kind, typename T>
+class CagedUniquePtr : public CagedPtr<kind, T> {
     static_assert(std::is_trivially_destructible<T>::value, "We expect the contents of a caged pointer to be trivially destructable.");
 public:
-    using Base = CagedPtr<kind, T, shouldTag>;
+    using Base = CagedPtr<kind, T>;
     CagedUniquePtr() = default;
 
-    CagedUniquePtr(T* ptr, size_t size)
-        : Base(ptr, size)
+    CagedUniquePtr(T* ptr)
+        : Base(ptr)
     { }
 
     CagedUniquePtr(CagedUniquePtr&& ptr)
@@ -52,18 +52,20 @@ public:
         T* result = static_cast<T*>(Gigacage::malloc(kind, sizeof(T) * length));
         while (length--)
             new (result + length) T(arguments...);
-        return CagedUniquePtr(result, length);
+        return CagedUniquePtr(result);
     }
 
     template<typename... Arguments>
     static CagedUniquePtr tryCreate(size_t length, Arguments&&... arguments)
     {
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
         T* result = static_cast<T*>(Gigacage::tryMalloc(kind, sizeof(T) * length));
         if (!result)
             return { };
         while (length--)
             new (result + length) T(arguments...);
-        return CagedUniquePtr(result, length);
+        return CagedUniquePtr(result);
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     }
 
     CagedUniquePtr& operator=(CagedUniquePtr&& ptr)

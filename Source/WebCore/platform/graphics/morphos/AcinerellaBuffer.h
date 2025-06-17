@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #if ENABLE(VIDEO)
 
 #include <wtf/MainThread.h>
@@ -13,7 +11,6 @@
 #include "SharedBuffer.h"
 #include "acinerella.h"
 #include "AcinerellaPointer.h"
-#include <queue>
 
 namespace WebCore {
 
@@ -27,8 +24,8 @@ class AcinerellaDecoder;
 class AcinerellaNetworkBufferResourceLoaderProvider
 {
 public:
-    virtual void ref() = 0;
-    virtual void deref() = 0;
+    virtual void ref() const = 0;
+    virtual void deref() const = 0;
 	virtual RefPtr<PlatformMediaResourceLoader> createResourceLoader() = 0;
 	virtual String referrer() = 0;
 	virtual void selectStream() = 0;
@@ -67,6 +64,8 @@ public:
 	virtual bool markLastFrameRead() { return true; };
 	
 	virtual bool isEncrypted() const { return false; }
+ 
+    virtual void getErrorMessage(WTF::String& error) { (void)error; };
 
 	// Acinerella Thread Methods
 	static const int eRead_EOFWhileInitializing = -3;

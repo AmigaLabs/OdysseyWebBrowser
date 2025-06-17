@@ -26,8 +26,6 @@
 #include "config.h"
 #include "OpenSSLUtilities.h"
 
-#if ENABLE(WEB_CRYPTO)
-
 #include "OpenSSLCryptoUniquePtr.h"
 
 namespace WebCore {
@@ -37,8 +35,9 @@ const EVP_MD* digestAlgorithm(CryptoAlgorithmIdentifier hashFunction)
     switch (hashFunction) {
     case CryptoAlgorithmIdentifier::SHA_1:
         return EVP_sha1();
-    case CryptoAlgorithmIdentifier::SHA_224:
-        return EVP_sha224();
+    case CryptoAlgorithmIdentifier::DEPRECATED_SHA_224:
+        RELEASE_ASSERT_NOT_REACHED_WITH_MESSAGE(sha224DeprecationMessage);
+        return EVP_sha256();
     case CryptoAlgorithmIdentifier::SHA_256:
         return EVP_sha256();
     case CryptoAlgorithmIdentifier::SHA_384:
@@ -100,12 +99,36 @@ Vector<uint8_t> convertToBytesExpand(const BIGNUM* bignum, size_t minimumBufferS
     return bytes;
 }
 
-BIGNUM* convertToBigNumber(BIGNUM* bignum, const Vector<uint8_t>& bytes)
+BIGNUMPtr convertToBigNumber(const Vector<uint8_t>& bytes)
 {
-    return BN_bin2bn(bytes.data(), bytes.size(), bignum);
+    return BIGNUMPtr(BN_bin2bn(bytes.data(), bytes.size(), nullptr));
+}
+
+bool AESKey::setKey(const Vector<uint8_t>& key, int enc)
+{
+    size_t keySize = key.size() * 8;
+    if (keySize != 128 && keySize != 192 && keySize != 256)
+        return false;
+
+    if (enc == AES_ENCRYPT) {
+        if (AES_set_encrypt_key(key.data(), keySize, &m_key) < 0)
+            return false;
+        return true;
+    }
+
+    if (enc == AES_DECRYPT) {
+        if (AES_set_decrypt_key(key.data(), keySize, &m_key) < 0)
+            return false;
+        return true;
+    }
+
+    ASSERT_NOT_REACHED();
+    return false;
+}
+
+AESKey::~AESKey()
+{
+    memset(&m_key, 0, sizeof m_key);
 }
 
 } // namespace WebCore
-
-
-#endif // ENABLE(WEB_CRYPTO)

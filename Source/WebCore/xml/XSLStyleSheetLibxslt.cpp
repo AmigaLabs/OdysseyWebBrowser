@@ -24,8 +24,9 @@
 #if ENABLE(XSLT)
 
 #include "CachedResourceLoader.h"
-#include "Document.h"
-#include "Frame.h"
+#include "DocumentInlines.h"
+#include "FrameDestructionObserverInlines.h"
+#include "LocalFrame.h"
 #include "Page.h"
 #include "PageConsoleClient.h"
 #include "TransformSource.h"
@@ -33,27 +34,28 @@
 #include "XMLDocumentParserScope.h"
 #include "XSLImportRule.h"
 #include "XSLTProcessor.h"
+// FIXME (286277): Stop ignoring -Wundef and -Wdeprecated-declarations in code that imports libxml and libxslt headers
+IGNORE_WARNINGS_BEGIN("deprecated-declarations")
+IGNORE_WARNINGS_BEGIN("undef")
 #include <libxml/uri.h>
 #include <libxslt/xsltutils.h>
+IGNORE_WARNINGS_END
+IGNORE_WARNINGS_END
 #include <wtf/CheckedArithmetic.h>
 #include <wtf/HexNumber.h>
+#include <wtf/text/MakeString.h>
 #include <wtf/unicode/CharacterNames.h>
-
-#if OS(DARWIN) && !PLATFORM(GTK)
-#include "SoftLinkLibxslt.h"
-#endif
 
 namespace WebCore {
 
-XSLStyleSheet::XSLStyleSheet(XSLImportRule* parentRule, const String& originalURL, const URL& finalURL)
+XSLStyleSheet::XSLStyleSheet(XSLStyleSheet* parentSheet, const String& originalURL, const URL& finalURL)
     : m_ownerNode(nullptr)
     , m_originalURL(originalURL)
     , m_finalURL(finalURL)
     , m_embedded(false)
     , m_processed(false) // Child sheets get marked as processed when the libxslt engine has finally seen them.
+    , m_parentStyleSheet(parentSheet)
 {
-    if (parentRule)
-        m_parentStyleSheet = parentRule->parentStyleSheet();
 }
 
 XSLStyleSheet::XSLStyleSheet(Node* parentNode, const String& originalURL, const URL& finalURL,  bool embedded)
@@ -88,7 +90,7 @@ void XSLStyleSheet::checkLoaded()
 {
     if (isLoading())
         return;
-    if (XSLStyleSheet* styleSheet = parentStyleSheet())
+    if (RefPtr styleSheet = parentStyleSheet())
         styleSheet->checkLoaded();
     if (ownerNode())
         ownerNode()->sheetLoaded();
@@ -136,7 +138,7 @@ bool XSLStyleSheet::parseString(const String& string)
     clearXSLStylesheetDocument();
 
     PageConsoleClient* console = nullptr;
-    Frame* frame = ownerDocument()->frame();
+    auto* frame = ownerDocument()->frame();
     if (frame && frame->page())
         console = &frame->page()->console();
 
@@ -212,7 +214,10 @@ void XSLStyleSheet::loadChildSheets()
             if (IS_XSLT_ELEM(curr) && IS_XSLT_NAME(curr, "import")) {
                 xmlChar* uriRef = xsltGetNsProp(curr, (const xmlChar*)"href", XSLT_NAMESPACE);
                 loadChildSheet(String::fromUTF8((const char*)uriRef));
+// FIXME (286277): Stop ignoring -Wundef and -Wdeprecated-declarations in code that imports libxml and libxslt headers
+IGNORE_WARNINGS_BEGIN("deprecated-declarations")
                 xmlFree(uriRef);
+IGNORE_WARNINGS_END
             } else
                 break;
             curr = curr->next;
@@ -223,7 +228,10 @@ void XSLStyleSheet::loadChildSheets()
             if (curr->type == XML_ELEMENT_NODE && IS_XSLT_ELEM(curr) && IS_XSLT_NAME(curr, "include")) {
                 xmlChar* uriRef = xsltGetNsProp(curr, (const xmlChar*)"href", XSLT_NAMESPACE);
                 loadChildSheet(String::fromUTF8((const char*)uriRef));
+// FIXME (286277): Stop ignoring -Wundef and -Wdeprecated-declarations in code that imports libxml and libxslt headers
+IGNORE_WARNINGS_BEGIN("deprecated-declarations")
                 xmlFree(uriRef);
+IGNORE_WARNINGS_END
             }
             curr = curr->next;
         }
@@ -232,7 +240,7 @@ void XSLStyleSheet::loadChildSheets()
 
 void XSLStyleSheet::loadChildSheet(const String& href)
 {
-    auto childRule = makeUnique<XSLImportRule>(this, href);
+    auto childRule = makeUnique<XSLImportRule>(*this, href);
     m_children.append(childRule.release());
     m_children.last()->loadSheet();
 }
@@ -267,19 +275,18 @@ void XSLStyleSheet::setParentStyleSheet(XSLStyleSheet* parent)
 
 Document* XSLStyleSheet::ownerDocument()
 {
-    for (XSLStyleSheet* styleSheet = this; styleSheet; styleSheet = styleSheet->parentStyleSheet()) {
-        Node* node = styleSheet->ownerNode();
-        if (node)
+    for (RefPtr styleSheet = this; styleSheet; styleSheet = styleSheet->parentStyleSheet()) {
+        if (auto* node = styleSheet->ownerNode())
             return &node->document();
     }
-    return 0;
+    return nullptr;
 }
 
 xmlDocPtr XSLStyleSheet::locateStylesheetSubResource(xmlDocPtr parentDoc, const xmlChar* uri)
 {
     bool matchedParent = (parentDoc == document());
     for (auto& import : m_children) {
-        XSLStyleSheet* child = import->styleSheet();
+        RefPtr child = import->styleSheet();
         if (!child)
             continue;
         if (matchedParent) {
@@ -294,15 +301,18 @@ xmlDocPtr XSLStyleSheet::locateStylesheetSubResource(xmlDocPtr parentDoc, const 
             xmlChar* base = xmlNodeGetBase(parentDoc, (xmlNodePtr)parentDoc);
             xmlChar* childURI = xmlBuildURI((const xmlChar*)importHref.data(), base);
             bool equalURIs = xmlStrEqual(uri, childURI);
+// FIXME (286277): Stop ignoring -Wundef and -Wdeprecated-declarations in code that imports libxml and libxslt headers
+IGNORE_WARNINGS_BEGIN("deprecated-declarations")
             xmlFree(base);
             xmlFree(childURI);
+IGNORE_WARNINGS_END
             if (equalURIs) {
                 child->markAsProcessed();
                 return child->document();
             }
             continue;
         }
-        xmlDocPtr result = import->styleSheet()->locateStylesheetSubResource(parentDoc, uri);
+        xmlDocPtr result = child->locateStylesheetSubResource(parentDoc, uri);
         if (result)
             return result;
     }

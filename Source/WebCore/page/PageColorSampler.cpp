@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2021-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,12 +26,12 @@
 #include "config.h"
 #include "PageColorSampler.h"
 
+#include "ColorHash.h"
+#include "ColorSerialization.h"
 #include "ContentfulPaintChecker.h"
 #include "Document.h"
 #include "Element.h"
-#include "Frame.h"
 #include "FrameSnapshotting.h"
-#include "FrameView.h"
 #include "HTMLCanvasElement.h"
 #include "HTMLIFrameElement.h"
 #include "HitTestRequest.h"
@@ -40,6 +40,8 @@
 #include "IntPoint.h"
 #include "IntRect.h"
 #include "IntSize.h"
+#include "LocalFrame.h"
+#include "LocalFrameView.h"
 #include "Logging.h"
 #include "Node.h"
 #include "Page.h"
@@ -47,10 +49,11 @@
 #include "RegistrableDomain.h"
 #include "RenderImage.h"
 #include "RenderObject.h"
-#include "RenderStyle.h"
+#include "RenderStyleInlines.h"
 #include "Settings.h"
 #include "Styleable.h"
 #include "WebAnimation.h"
+#include <wtf/HashCountedSet.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/OptionSet.h>
 #include <wtf/Ref.h>
@@ -78,19 +81,17 @@ static bool isValidSampleLocation(Document& document, const IntPoint& location)
         if (is<RenderImage>(renderer) || renderer->style().hasBackgroundImage())
             return false;
 
-        if (!is<Element>(node))
+        RefPtr element = dynamicDowncast<Element>(node);
+        if (!element)
             continue;
 
-        auto& element = downcast<Element>(node);
-        auto styleable = Styleable::fromElement(element);
+        auto styleable = Styleable::fromElement(*element);
 
         // Skip nodes with animations as the sample may get an odd color if the animation is in-progress.
         if (styleable.hasRunningTransitions())
             return false;
         if (auto* animations = styleable.animations()) {
             for (auto& animation : *animations) {
-                if (!animation)
-                    continue;
                 if (animation->playState() == WebAnimation::PlayState::Running)
                     return false;
             }
@@ -98,11 +99,11 @@ static bool isValidSampleLocation(Document& document, const IntPoint& location)
 
         // Skip `<canvas>` but only if they've been drawn into. Guess this by seeing if there's already
         // a `CanvasRenderingContext`, which is only created by JavaScript.
-        if (is<HTMLCanvasElement>(element) && downcast<HTMLCanvasElement>(element).renderingContext())
+        if (RefPtr canvas = dynamicDowncast<HTMLCanvasElement>(*element); canvas && canvas->renderingContext())
             return false;
 
         // Skip 3rd-party `<iframe>` as the content likely won't match the rest of the page.
-        if (is<HTMLIFrameElement>(element) && !areRegistrableDomainsEqual(downcast<HTMLIFrameElement>(element).location(), document.url()))
+        if (is<HTMLIFrameElement>(*element))
             return false;
     }
 
@@ -120,42 +121,40 @@ static std::optional<Lab<float>> sampleColor(Document& document, IntPoint&& loca
     auto colorSpace = DestinationColorSpace::SRGB();
 
     ASSERT(document.view());
-    auto snapshot = snapshotFrameRect(document.view()->frame(), IntRect(location, IntSize(1, 1)), { { SnapshotFlags::ExcludeSelectionHighlighting, SnapshotFlags::PaintEverythingExcludingSelection }, PixelFormat::BGRA8, colorSpace });
+    auto snapshot = snapshotFrameRect(document.view()->protectedFrame(), IntRect(location, IntSize(1, 1)), { { SnapshotFlags::ExcludeSelectionHighlighting, SnapshotFlags::PaintEverythingExcludingSelection }, ImageBufferPixelFormat::BGRA8, colorSpace });
     if (!snapshot)
         return std::nullopt;
 
-    auto pixelBuffer = snapshot->getPixelBuffer({ AlphaPremultiplication::Unpremultiplied, PixelFormat::BGRA8, colorSpace }, { { }, snapshot->logicalSize() });
+    auto pixelBuffer = snapshot->getPixelBuffer({ AlphaPremultiplication::Unpremultiplied, PixelFormat::BGRA8, colorSpace }, { { }, snapshot->truncatedLogicalSize() });
     if (!pixelBuffer)
         return std::nullopt;
 
-    if (pixelBuffer->data().length() < 4)
+    if (pixelBuffer->bytes().size() < 4)
         return std::nullopt;
 
-    auto snapshotData = pixelBuffer->data().data();
+    auto snapshotData = pixelBuffer->bytes();
     return convertColor<Lab<float>>(SRGBA<uint8_t> { snapshotData[2], snapshotData[1], snapshotData[0], snapshotData[3] });
 }
 
-static double colorDifference(Lab<float>& lhs, Lab<float>& rhs)
+static double colorDifference(const Lab<float>& lhs, const Lab<float>& rhs)
 {
-    return sqrt(pow(rhs.lightness - lhs.lightness, 2) + pow(rhs.a - lhs.a, 2) + pow(rhs.b - lhs.b, 2));
+    // FIXME: This should use a formal color difference metric (deltaE2000, deltaEOK) as this current one is not perceptually uniform (see https://en.wikipedia.org/wiki/Color_difference).
+
+    auto resolvedLeftHandSide = lhs.resolved();
+    auto resolvedRightHandSide = rhs.resolved();
+
+    return sqrt(pow(resolvedRightHandSide.lightness - resolvedLeftHandSide.lightness, 2) + pow(resolvedRightHandSide.a - resolvedLeftHandSide.a, 2) + pow(resolvedRightHandSide.b - resolvedLeftHandSide.b, 2));
 }
 
-static Lab<float> averageColor(Lab<float> colors[], size_t count)
+static Lab<float> averageColor(std::span<Lab<float>> colors)
 {
-    float totalLightness = 0;
-    float totalA = 0;
-    float totalB = 0;
-    for (size_t i = 0; i < count; ++i) {
-        totalLightness += colors[i].lightness;
-        totalA += colors[i].a;
-        totalB += colors[i].b;
-    }
-    return {
-        totalLightness / count,
-        totalA / count,
-        totalB / count,
-        1,
-    };
+    ColorComponents<float, 3> totals { };
+    for (auto color : colors)
+        totals += asColorComponents(color.resolved()).subset<0, 3>();
+
+    totals /= colors.size();
+
+    return { totals[0], totals[1], totals[2] };
 }
 
 std::optional<Color> PageColorSampler::sampleTop(Page& page)
@@ -169,11 +168,15 @@ std::optional<Color> PageColorSampler::sampleTop(Page& page)
         return Color();
     }
 
-    auto mainDocument = makeRefPtr(page.mainFrame().document());
+    RefPtr localMainFrame = page.localMainFrame();
+    if (!localMainFrame)
+        return std::nullopt;
+
+    RefPtr mainDocument = localMainFrame->document();
     if (!mainDocument)
         return std::nullopt;
 
-    auto frameView = makeRefPtr(page.mainFrame().view());
+    RefPtr frameView = localMainFrame->view();
     if (!frameView)
         return std::nullopt;
 
@@ -188,11 +191,11 @@ std::optional<Color> PageColorSampler::sampleTop(Page& page)
     // Decrease the width by one pixel so that the last sample is within bounds and not off-by-one.
     auto frameWidth = frameView->contentsWidth() - 1;
 
-    constexpr auto numSamples = 5;
+    static constexpr auto numSamples = 5;
     size_t nonMatchingColorIndex = numSamples;
 
-    Lab<float> samples[numSamples];
-    double differences[numSamples - 1];
+    std::array<Lab<float>, numSamples> samples;
+    std::array<double, numSamples - 1> differences;
 
     auto shouldStopAfterFindingNonMatchingColor = [&] (size_t i) -> bool {
         // Bail if the non-matching color is not the first or last sample, or there already is an non-matching color.
@@ -266,18 +269,102 @@ std::optional<Color> PageColorSampler::sampleTop(Page& page)
         }
     }
 
-    auto samplesToAverage = samples;
-    auto validSampleCount = numSamples;
-    if (!nonMatchingColorIndex) {
-        // Skip the first sample by moving the pointer that indicates where the sample array
-        // starts and decreasing the count of samples to average.
-        ++samplesToAverage;
-        --validSampleCount;
-    } else if (nonMatchingColorIndex == numSamples - 1) {
-        // Skip the last sample by decreasing the count of samples to average.
-        --validSampleCount;
+    if (!nonMatchingColorIndex)
+        return averageColor(std::span(samples).subspan<1, numSamples - 1>());
+    else if (nonMatchingColorIndex == numSamples - 1)
+        return averageColor(std::span(samples).subspan<0, numSamples - 1>());
+    else
+        return averageColor(std::span(samples));
+}
+
+Color PageColorSampler::predominantColor(Page& page, const LayoutRect& absoluteRect)
+{
+    RefPtr frame = page.localMainFrame();
+    if (!frame)
+        return { };
+
+    RefPtr view = frame->view();
+    if (!view)
+        return { };
+
+    RefPtr document = frame->document();
+    if (!document)
+        return { };
+
+    auto colorSpace = DestinationColorSpace::SRGB();
+    auto snapshot = snapshotFrameRect(*frame, snappedIntRect(absoluteRect), {
+        { SnapshotFlags::ExcludeSelectionHighlighting, SnapshotFlags::PaintEverythingExcludingSelection },
+        ImageBufferPixelFormat::BGRA8,
+        colorSpace
+    });
+
+    if (!snapshot)
+        return { };
+
+    auto pixelBuffer = snapshot->getPixelBuffer({ AlphaPremultiplication::Unpremultiplied, PixelFormat::BGRA8, colorSpace }, { { }, snapshot->truncatedLogicalSize() });
+    if (!pixelBuffer)
+        return { };
+
+    static constexpr auto sampleCount = 17;
+    static constexpr auto minimumSampleCountForPredominantColor = 0.5 * sampleCount;
+    static constexpr auto bytesPerPixel = 4;
+
+    auto numberOfBytes = pixelBuffer->bytes().size();
+    auto numberOfPixels = numberOfBytes / bytesPerPixel;
+    if (numberOfPixels <= sampleCount)
+        return { };
+
+    auto byteSamplingInterval = bytesPerPixel * (numberOfPixels / (sampleCount - 1));
+    auto pixels = pixelBuffer->bytes();
+    HashCountedSet<Color> colorDistribution;
+    for (uint64_t i = 0; i < numberOfBytes; i += byteSamplingInterval) {
+        if (auto color = Color { SRGBA<uint8_t> { pixels[i + 2], pixels[i + 1], pixels[i], pixels[i + 3] } }; color.isValid())
+            colorDistribution.add(WTFMove(color));
     }
-    return Color(averageColor(samplesToAverage, validSampleCount));
+
+    for (auto& [color, count] : colorDistribution) {
+        if (count > minimumSampleCountForPredominantColor)
+            return color;
+    }
+
+    auto colorsAreSimilar = [](const Color& a, const Color& b) {
+        static constexpr auto maxDistanceSquaredForSimilarColors = 36;
+        auto [redA, greenA, blueA, alphaA] = a.toResolvedColorComponentsInColorSpace(DestinationColorSpace::SRGB());
+        auto [redB, greenB, blueB, alphaB] = b.toResolvedColorComponentsInColorSpace(DestinationColorSpace::SRGB());
+        auto distance = pow(255 * (redA - redB), 2) + pow(255 * (greenA - greenB), 2) + pow(255 * (blueA - blueB), 2);
+        return distance <= maxDistanceSquaredForSimilarColors;
+    };
+
+    Vector<std::pair<Color, unsigned>> colorsByDescendingFrequency;
+    colorsByDescendingFrequency.reserveInitialCapacity(colorDistribution.size());
+    for (auto& [color, count] : colorDistribution)
+        colorsByDescendingFrequency.append({ color, count });
+
+    std::stable_sort(colorsByDescendingFrequency.begin(), colorsByDescendingFrequency.end(), [](auto& a, auto& b) {
+        return a.second > b.second;
+    });
+
+    std::optional<Color> mostFrequentColor;
+    unsigned mostFrequentColorCount = 0;
+
+    // FIXME: This doesn't account for the case where a predominant color is not similar to the color with the highest frequency.
+    for (auto& [color, count] : colorsByDescendingFrequency) {
+        if (!mostFrequentColor) {
+            mostFrequentColor = color;
+            mostFrequentColorCount = count;
+            continue;
+        }
+
+        if (!colorsAreSimilar(*mostFrequentColor, color))
+            continue;
+
+        mostFrequentColorCount += count;
+
+        if (mostFrequentColorCount > minimumSampleCountForPredominantColor)
+            return WTFMove(*mostFrequentColor);
+    }
+
+    return { };
 }
 
 } // namespace WebCore

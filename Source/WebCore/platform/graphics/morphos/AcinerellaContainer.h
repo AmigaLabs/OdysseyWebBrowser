@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #if ENABLE(VIDEO)
 
 #include <wtf/Function.h>
@@ -66,8 +64,8 @@ public:
 	const String &url() const { return m_url; }
 	const String &hlsStreamURL() const { return m_hlsStreamURL; }
 
-    void ref() override;
-    void deref() override;
+    void ref() const override;
+    void deref() const override;
 	RefPtr<PlatformMediaResourceLoader> createResourceLoader() override;
 	String referrer() override;
 	void selectStream() override;
@@ -127,7 +125,7 @@ protected:
 	RefPtr<AcinerellaPointer>        m_acinerella;
 	Lock                             m_acinerellaLock;
 	RefPtr<AcinerellaNetworkBuffer>  m_networkBuffer;
-	RunLoop::Timer<Acinerella>       m_watchdogTimer;
+	RunLoop::Timer                   m_watchdogTimer;
 	MediaPlayerMorphOSInfo           m_info;
 
 	RefPtr<AcinerellaMuxedBuffer>    m_muxer;

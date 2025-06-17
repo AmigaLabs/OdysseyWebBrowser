@@ -27,13 +27,15 @@
 #include <wtf/RunLoop.h>
 
 #include <wtf/NeverDestroyed.h>
+#include <wtf/Ref.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/threads/BinarySemaphore.h>
 
 namespace WTF {
 
-static RunLoop* s_mainRunLoop;
+SUPPRESS_UNCOUNTED_LOCAL static RunLoop* s_mainRunLoop;
 #if USE(WEB_THREAD)
-static RunLoop* s_webRunLoop;
+SUPPRESS_UNCOUNTED_LOCAL static RunLoop* s_webRunLoop;
 #endif
 
 // Helper class for ThreadSpecificData.
@@ -53,7 +55,7 @@ public:
     RunLoop& runLoop() { return m_runLoop; }
 
 private:
-    Ref<RunLoop> m_runLoop;
+    const Ref<RunLoop> m_runLoop;
 };
 
 void RunLoop::initializeMain()
@@ -102,11 +104,23 @@ RunLoop* RunLoop::webIfExists()
 }
 #endif
 
-bool RunLoop::isMain()
+Ref<RunLoop> RunLoop::create(ASCIILiteral threadName, ThreadType threadType, Thread::QOS qos)
 {
-    ASSERT(s_mainRunLoop);
+    RefPtr<RunLoop> runLoop;
+    BinarySemaphore semaphore;
+    Thread::create(threadName, [&] SUPPRESS_UNCOUNTED_LAMBDA_CAPTURE {
+        runLoop = &RunLoop::current();
+        semaphore.signal();
+        runLoop->run();
+    }, threadType, qos)->detach();
+    semaphore.wait();
+    return runLoop.releaseNonNull();
+}
+
+bool RunLoop::isCurrent() const
+{
     // Avoid constructing the RunLoop for the current thread if it has not been created yet.
-    return runLoopHolder().isSet() && s_mainRunLoop == &RunLoop::current();
+    return runLoopHolder().isSet() && this == &RunLoop::current();
 }
 
 void RunLoop::performWork()
@@ -156,15 +170,17 @@ void RunLoop::dispatch(Function<void()>&& function)
         wakeUp();
 }
 
-void RunLoop::dispatchAfter(Seconds delay, Function<void()>&& function)
+Ref<RunLoop::DispatchTimer> RunLoop::dispatchAfter(Seconds delay, Function<void()>&& function)
 {
     RELEASE_ASSERT(function);
-    auto timer = new DispatchTimer(*this);
-    timer->setFunction([timer, function = WTFMove(function)] {
+    Ref<DispatchTimer> timer = adoptRef(*new DispatchTimer(*this));
+    timer->setFunction([timer = timer.copyRef(), function = WTFMove(function)]() mutable {
+        Ref<DispatchTimer> protectedTimer { WTFMove(timer) };
         function();
-        delete timer;
+        protectedTimer->stop();
     });
     timer->startOneShot(delay);
+    return timer;
 }
 
 void RunLoop::suspendFunctionDispatchForCurrentCycle()

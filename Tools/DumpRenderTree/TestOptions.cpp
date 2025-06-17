@@ -70,7 +70,9 @@ const TestFeatures& TestOptions::defaults()
             { "CanvasUsesAcceleratedDrawing", true },
             { "ColorFilterEnabled", true },
             { "CustomPasteboardDataEnabled", true },
+            { "DOMAudioSessionEnabled", true },
             { "DOMPasteAllowed", true },
+            { "DOMTestingAPIsEnabled", true },
             { "DeveloperExtrasEnabled", true },
             { "DirectoryUploadEnabled", true },
             { "DownloadAttributeEnabled", true },
@@ -79,64 +81,68 @@ const TestFeatures& TestOptions::defaults()
             { "GamepadsEnabled", true },
             { "HiddenPageCSSAnimationSuspensionEnabled", false },
             { "InlineMediaPlaybackRequiresPlaysInlineAttribute", false },
-            { "JavaEnabled", false },
             { "JavaScriptCanAccessClipboard", true },
             { "JavaScriptCanOpenWindowsAutomatically", true },
             { "LargeImageAsyncDecodingEnabled", false },
             { "LinkPreloadEnabled", true },
+            { "ManagedMediaSourceEnabled", true },
+            { "ManagedMediaSourceNeedsAirPlay", true },
             { "MediaCapabilitiesEnabled", true },
             { "MediaDataLoadsAutomatically", true },
             { "MediaDevicesEnabled", true },
             { "MediaPreloadingEnabled", true },
+            { "MediaRecorderEnabled", true },
             { "MockScrollbarsEnabled", true },
-            { "NPAPIPlugInsEnabledForTestingInWebKitLegacy", true },
             { "NeedsStorageAccessFromFileURLsQuirk", false },
-            { "OfflineWebApplicationCacheEnabled", true },
+            { "PeerConnectionVideoScalingAdaptationDisabled", true },
+            { "PushAPIEnabled", true },
+            { "ReferrerPolicyAttributeEnabled", true },
+            { "RemotePlaybackEnabled", true },
             { "RequiresUserGestureForAudioPlayback", false },
             { "RequiresUserGestureForMediaPlayback", false },
             { "RequiresUserGestureForVideoPlayback", false },
+            { "ScrollToTextFragmentIndicatorEnabled", false },
             { "ShouldPrintBackgrounds", true },
             { "ShrinksStandaloneImagesToFit", true },
-            { "SubpixelAntialiasedLayerTextEnabled", false },
+            { "SpeechRecognitionEnabled", true },
             { "TextAreasAreResizable", true },
             { "TextAutosizingEnabled", false },
             { "UsesBackForwardCache", false },
+            { "VisualViewportAPIEnabled", true },
             { "WebAudioEnabled", true },
+            { "WebRTCEncodedTransformEnabled", true },
             { "WebSQLEnabled", true },
             { "XSSAuditorEnabled", false },
 
             // FIXME: These experimental features are currently the only ones not enabled for WebKitLegacy, we
-            // should either enable them or stop exposing them (as we do with with preferences like HTTP3Enabled).
+            // should either enable them or stop exposing them (as we do with with preferences).
             // All other experimental features are automatically enabled regardless of their specified defaults.
             { "AsyncClipboardAPIEnabled", false },
             { "CSSOMViewSmoothScrollingEnabled", false },
             { "ContactPickerAPIEnabled", false },
             { "CoreMathMLEnabled", false },
+            { "DigitalCredentialsEnabled", false },
             { "GenericCueAPIEnabled", false },
-            { "IntersectionObserverEnabled", false },
-            { "IsLoggedInAPIEnabled", false },
-            { "LazyIframeLoadingEnabled", false },
+            { "LoginStatusAPIEnabled", false },
             { "LazyImageLoadingEnabled", false },
             { "RequestIdleCallbackEnabled", false },
-            { "ResizeObserverEnabled", false },
             { "WebAuthenticationEnabled", false },
-            { "WebGPUEnabled", false },
 #elif PLATFORM(WIN)
             // These are WebPreference values that must always be set as they may
             // differ from the default set in the WebPreferences*.yaml configuration.
             { "AcceleratedDrawingEnabled", false },
-            { "AllowCrossOriginSubresourcesToAskForCredentials", false },
             { "AllowFileAccessFromFileURLs", true },
             { "AllowTopNavigationToDataURLs", true },
             { "AllowUniversalAccessFromFileURLs", true },
-            { "AspectRatioEnabled", true },
             { "AsyncClipboardAPIEnabled", false },
             { "AttachmentElementEnabled", false },
-            { "CSSContainmentEnabled", false },
+            { "AttachmentWideLayoutEnabled", false },
             { "CSSCounterStyleAtRuleImageSymbolsEnabled", false },
-            { "CSSCounterStyleAtRulesEnabled", false },
-            { "CSSLogicalEnabled", false },
+            { "CSSGradientInterpolationColorSpacesEnabled", true },
+            { "CSSGradientPremultipliedAlphaInterpolationEnabled", true },
+            { "CSSInputSecurityEnabled", true },
             { "CSSOMViewSmoothScrollingEnabled", false },
+            { "CSSTextJustifyEnabled", true },
             { "CanvasColorSpaceEnabled", true },
             { "ColorFilterEnabled", false },
             { "ContactPickerAPIEnabled", false },
@@ -144,32 +150,25 @@ const TestFeatures& TestOptions::defaults()
             { "DOMPasteAllowed", true },
             { "DeveloperExtrasEnabled", true },
             { "HiddenPageDOMTimerThrottlingEnabled", false },
-            { "InspectorAdditionsEnabled", false },
-            { "IntersectionObserverEnabled", false },
             { "JavaScriptCanAccessClipboard", true },
             { "JavaScriptCanOpenWindowsAutomatically", true },
             { "JavaScriptEnabled", true },
-            { "KeygenElementEnabled", false },
             { "LayoutFormattingContextIntegrationEnabled", true },
-            { "LineHeightUnitsEnabled", false },
             { "LoadsImagesAutomatically", true },
             { "MainContentUserGestureOverrideEnabled", false },
-            { "MenuItemElementEnabled", false },
+            { "MockScrollbarsControllerEnabled", false },
             { "ModernMediaControlsEnabled", true },
             { "NeedsStorageAccessFromFileURLsQuirk", false },
             { "OverscrollBehaviorEnabled", true },
             { "PerformanceNavigationTimingAPIEnabled", true },
-            { "PluginsEnabled", true },
             { "PrivateClickMeasurementEnabled", false },
             { "RequestIdleCallbackEnabled", false },
-            { "ResizeObserverEnabled", false },
             { "SelectionAcrossShadowBoundariesEnabled", true },
             { "ShrinksStandaloneImagesToFit", true },
             { "SpatialNavigationEnabled", false },
             { "TabsToLinks", false },
             { "TelephoneNumberParsingEnabled", false },
             { "UsesBackForwardCache", false },
-            { "WebGPUEnabled", false },
             { "XSSAuditorEnabled", false },
 #endif
 #if ENABLE(GPU_PROCESS) && ENABLE(WEBGL)
@@ -208,6 +207,10 @@ const std::unordered_map<std::string, TestHeaderKeyType>& TestOptions::keyTypeMa
 
         { "additionalSupportedImageTypes", TestHeaderKeyType::StringTestRunner },
         { "jscOptions", TestHeaderKeyType::StringTestRunner },
+        { "captionDisplayMode", TestHeaderKeyType::StringTestRunner },
+
+        { "insecureUpgradePort", TestHeaderKeyType::UInt16TestRunner },
+        { "secureUpgradePort", TestHeaderKeyType::UInt16TestRunner },
     };
 
     return map;
@@ -229,6 +232,11 @@ template<typename T> T featureValue(std::string key, T defaultValue, const std::
 bool TestOptions::boolTestRunnerFeatureValue(std::string key, bool defaultValue) const
 {
     return featureValue(key, defaultValue, m_features.boolTestRunnerFeatures);
+}
+
+uint16_t TestOptions::uint16TestRunnerFeatureValue(std::string key, uint16_t defaultValue) const
+{
+    return featureValue(key, defaultValue, m_features.uint16TestRunnerFeatures);
 }
 
 std::string TestOptions::stringTestRunnerFeatureValue(std::string key, std::string defaultValue) const

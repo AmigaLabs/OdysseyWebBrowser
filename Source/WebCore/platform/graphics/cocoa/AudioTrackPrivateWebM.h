@@ -29,19 +29,22 @@
 
 #include "AudioTrackPrivate.h"
 #include <webm/dom_types.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 
+struct AudioInfo;
+
 class AudioTrackPrivateWebM final : public AudioTrackPrivate {
+    WTF_MAKE_TZONE_ALLOCATED(AudioTrackPrivateWebM);
 public:
     static Ref<AudioTrackPrivateWebM> create(webm::TrackEntry&&);
     virtual ~AudioTrackPrivateWebM() = default;
 
-    AtomString id() const final;
+    TrackID id() const final;
     AtomString label() const final;
     AtomString language() const final;
     int trackIndex() const final;
-    std::optional<uint64_t> trackUID() const final;
     std::optional<bool> defaultEnabled() const final;
     std::optional<MediaTime> codecDelay() const;
     void setDiscardPadding(const MediaTime&);
@@ -49,9 +52,16 @@ public:
 
 private:
     AudioTrackPrivateWebM(webm::TrackEntry&&);
+
+    String codec() const;
+    uint32_t sampleRate() const;
+    uint32_t numberOfChannels() const;
+    void setFormatDescription(Ref<AudioInfo>&&) final;
+    void updateConfiguration();
+
     webm::TrackEntry m_track;
+    RefPtr<AudioInfo> m_formatDescription;
     MediaTime m_discardPadding { MediaTime::invalidTime() };
-    mutable AtomString m_trackID;
     mutable AtomString m_label;
     mutable AtomString m_language;
 };

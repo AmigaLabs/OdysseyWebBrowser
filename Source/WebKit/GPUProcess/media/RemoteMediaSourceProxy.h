@@ -33,6 +33,9 @@
 #include <WebCore/MediaSourcePrivate.h>
 #include <WebCore/MediaSourcePrivateClient.h>
 #include <wtf/MediaTime.h>
+#include <wtf/RefCounted.h>
+#include <wtf/TZoneMalloc.h>
+#include <wtf/ThreadSafeWeakPtr.h>
 #include <wtf/WeakPtr.h>
 
 namespace IPC {
@@ -42,37 +45,41 @@ class Decoder;
 
 namespace WebCore {
 class ContentType;
-class MediaSourcePrivate;
 class PlatformTimeRanges;
 }
 
 namespace WebKit {
 
-class GPUConnectionToWebProcess;
+class RemoteMediaPlayerManagerProxy;
 class RemoteMediaPlayerProxy;
 
 class RemoteMediaSourceProxy final
     : public WebCore::MediaSourcePrivateClient
     , private IPC::MessageReceiver {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(RemoteMediaSourceProxy);
 public:
-    RemoteMediaSourceProxy(GPUConnectionToWebProcess&, RemoteMediaSourceIdentifier, bool webMParserEnabled, RemoteMediaPlayerProxy&);
+    RemoteMediaSourceProxy(RemoteMediaPlayerManagerProxy&, RemoteMediaSourceIdentifier, RemoteMediaPlayerProxy&);
     virtual ~RemoteMediaSourceProxy();
+
+    void ref() const final { WebCore::MediaSourcePrivateClient::ref(); }
+    void deref() const final { WebCore::MediaSourcePrivateClient::deref(); }
+
+    void setMediaPlayers(RemoteMediaPlayerProxy&, WebCore::MediaPlayerPrivateInterface*);
 
     // MediaSourcePrivateClient overrides
     void setPrivateAndOpen(Ref<WebCore::MediaSourcePrivate>&&) final;
-    MediaTime duration() const final;
-    std::unique_ptr<WebCore::PlatformTimeRanges> buffered() const final;
-    void seekToTime(const MediaTime&) final;
-#if USE(GSTREAMER)
-    void monitorSourceBuffers() final;
-#endif
+    void reOpen() final;
+    Ref<WebCore::MediaTimePromise> waitForTarget(const WebCore::SeekTarget&) final;
+    Ref<WebCore::MediaPromise> seekToTime(const MediaTime&) final;
+    RefPtr<WebCore::MediaSourcePrivate> mediaSourcePrivate() const final { return m_private; }
 
 #if !RELEASE_LOG_DISABLED
-    void setLogIdentifier(const void*) final;
+    void setLogIdentifier(uint64_t) final;
 #endif
 
     void failedToCreateRenderer(RendererType) final;
+
+    std::optional<SharedPreferencesForWebProcess> sharedPreferencesForWebProcess() const;
 
 private:
     // IPC::MessageReceiver
@@ -80,23 +87,23 @@ private:
     bool didReceiveSyncMessage(IPC::Connection&, IPC::Decoder&, UniqueRef<IPC::Encoder>&) final;
 
     using AddSourceBufferCallback = CompletionHandler<void(WebCore::MediaSourcePrivate::AddStatus, std::optional<RemoteSourceBufferIdentifier>)>;
-    void addSourceBuffer(const WebCore::ContentType&, AddSourceBufferCallback&&);
+    void addSourceBuffer(const WebCore::ContentType&, const WebCore::MediaSourceConfiguration&, AddSourceBufferCallback&&);
     void durationChanged(const MediaTime&);
-    void bufferedChanged(const WebCore::PlatformTimeRanges&);
-    void setReadyState(WebCore::MediaPlayerEnums::ReadyState);
-    void setIsSeeking(bool);
-    void waitForSeekCompleted();
-    void seekCompleted();
+    void bufferedChanged(WebCore::PlatformTimeRanges&&);
+    void markEndOfStream(WebCore::MediaSourcePrivate::EndOfStreamStatus);
+    void unmarkEndOfStream();
+    void setMediaPlayerReadyState(WebCore::MediaPlayerEnums::ReadyState);
     void setTimeFudgeFactor(const MediaTime&);
+    void attached();
+    void shutdown();
 
-    WeakPtr<GPUConnectionToWebProcess> m_connectionToWebProcess;
+    void disconnect();
+    RefPtr<GPUConnectionToWebProcess> connectionToWebProcess() const;
+
+    WeakPtr<RemoteMediaPlayerManagerProxy> m_manager;
     RemoteMediaSourceIdentifier m_identifier;
-    bool m_webMParserEnabled { false };
     RefPtr<WebCore::MediaSourcePrivate> m_private;
     WeakPtr<RemoteMediaPlayerProxy> m_remoteMediaPlayerProxy;
-
-    MediaTime m_duration;
-    WebCore::PlatformTimeRanges m_buffered;
 
     Vector<RefPtr<RemoteSourceBufferProxy>> m_sourceBuffers;
 };

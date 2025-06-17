@@ -29,12 +29,15 @@
 #import "DateComponents.h"
 #import "FontCascade.h"
 #import <CoreFoundation/CFNotificationCenter.h>
+#import <WebCore/LocalizedStrings.h>
 #import <math.h>
+#import <ranges>
 #import <wtf/Assertions.h>
+#import <wtf/IndexedRange.h>
 #import <wtf/NeverDestroyed.h>
 #import <wtf/StdLibExtras.h>
-
-using namespace std;
+#import <wtf/text/MakeString.h>
+#import <wtf/text/StringConcatenateNumbers.h>
 
 namespace WebCore {
 
@@ -99,27 +102,24 @@ RetainPtr<NSDateFormatter> LocalizedDateCache::createFormatterForType(DateCompon
     auto dateFormatter = adoptNS([[NSDateFormatter alloc] init]);
     NSLocale *currentLocale = [NSLocale currentLocale];
     [dateFormatter setLocale:currentLocale];
+    [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
 
     switch (type) {
     case DateComponentsType::Invalid:
         ASSERT_NOT_REACHED();
         break;
     case DateComponentsType::Date:
-        [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
         [dateFormatter setTimeStyle:NSDateFormatterNoStyle];
         [dateFormatter setDateStyle:NSDateFormatterMediumStyle];
         break;
     case DateComponentsType::DateTimeLocal:
-        [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
         [dateFormatter setTimeStyle:NSDateFormatterShortStyle];
         [dateFormatter setDateStyle:NSDateFormatterMediumStyle];
         break;
     case DateComponentsType::Month:
-        [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
         [dateFormatter setDateFormat:[NSDateFormatter dateFormatFromTemplate:@"MMMMyyyy" options:0 locale:currentLocale]];
         break;
     case DateComponentsType::Time:
-        [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
         [dateFormatter setTimeStyle:NSDateFormatterShortStyle];
         [dateFormatter setDateStyle:NSDateFormatterNoStyle];
         break;
@@ -131,10 +131,46 @@ RetainPtr<NSDateFormatter> LocalizedDateCache::createFormatterForType(DateCompon
     return dateFormatter;
 }
 
+#if ENABLE(INPUT_TYPE_WEEK_PICKER)
+
+static float calculateMaximumWidthForWeek(const MeasureTextClient& measurer)
+{
+    std::array<float, 10> numLengths;
+    for (auto [i, numLength] : indexedRange(numLengths)) {
+        numLength = measurer.measureText(makeString(i));
+        ASSERT(numLengths[i] == numLength);
+    }
+
+    std::span numLengthsSpan { numLengths };
+    int widestNum = std::distance(numLengthsSpan.begin(), std::ranges::max_element(numLengthsSpan));
+    int widestNumOneThroughFour = std::distance(numLengthsSpan.begin(), std::ranges::max_element(numLengthsSpan.subspan(1, 4)));
+    int widestNumNonZero = std::distance(numLengthsSpan.begin(), std::ranges::max_element(numLengthsSpan.subspan(1)));
+
+    RetainPtr<NSString> weekString;
+    // W50 is an edge case here; without this check, a suboptimal choice would be made when 5 and 0 are both large and all other numbers are narrow.
+    if (numLengths[5] + numLengths[0] > numLengths[widestNumOneThroughFour] + numLengths[widestNum])
+        weekString = adoptNS([NSString stringWithFormat:@"%d%d%d%d-W50", widestNumNonZero, widestNum, widestNum, widestNum]);
+    else
+        weekString = adoptNS([NSString stringWithFormat:@"%d%d%d%d-W%d%d", widestNumNonZero, widestNum, widestNum, widestNum, widestNumOneThroughFour, widestNum]);
+
+    if (auto components = DateComponents::fromParsingWeek((String)weekString.get()))
+        return measurer.measureText(inputWeekLabel(components.value()));
+
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
+#endif
+
 // NOTE: This does not check for the widest day of the week.
 // We assume no formatter option shows that information.
 float LocalizedDateCache::calculateMaximumWidth(DateComponentsType type, const MeasureTextClient& measurer)
 {
+#if ENABLE(INPUT_TYPE_WEEK_PICKER)
+    if (type == DateComponentsType::Week)
+        return calculateMaximumWidthForWeek(measurer);
+#endif
+
     float maximumWidth = 0;
 
     // Get the formatter we would use, copy it because we will force its time zone to be UTC.
@@ -146,12 +182,12 @@ float LocalizedDateCache::calculateMaximumWidth(DateComponentsType type, const M
     // date doesn't adjust for the current timezone. This is an arbitrary date
     // (x-27-2007) and time (10:45 PM).
     RetainPtr<NSCalendar> gregorian = adoptNS([[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian]);
-    [gregorian.get() setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
+    [gregorian setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
     RetainPtr<NSDateComponents> components = adoptNS([[NSDateComponents alloc] init]);
-    [components.get() setDay:27];
-    [components.get() setYear:2007];
-    [components.get() setHour:22];
-    [components.get() setMinute:45];
+    [components setDay:27];
+    [components setYear:2007];
+    [components setHour:22];
+    [components setMinute:45];
 
     static const NSUInteger numberOfGregorianMonths = [[dateFormatter monthSymbols] count];
     ASSERT(numberOfGregorianMonths == 12);
@@ -160,17 +196,17 @@ float LocalizedDateCache::calculateMaximumWidth(DateComponentsType type, const M
     NSUInteger totalMonthsToTest = 1;
     if (type == DateComponentsType::Date
         || type == DateComponentsType::DateTimeLocal
-        || type == DateComponentsType::Month)
+        || type == DateComponentsType::Month
+        )
         totalMonthsToTest = numberOfGregorianMonths;
     for (NSUInteger i = 0; i < totalMonthsToTest; ++i) {
-        [components.get() setMonth:(i + 1)];
-        NSDate *date = [gregorian.get() dateFromComponents:components.get()];
+        [components setMonth:(i + 1)];
+        NSDate *date = [gregorian dateFromComponents:components.get()];
         NSString *formattedDate = [dateFormatter stringFromDate:date];
-        maximumWidth = max(maximumWidth, measurer.measureText(String(formattedDate)));
+        maximumWidth = std::max(maximumWidth, measurer.measureText(String(formattedDate)));
     }
 
     return maximumWidth;
 }
 
 } // namespace WebCore
-

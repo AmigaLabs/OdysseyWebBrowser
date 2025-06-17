@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017-2022 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,7 +27,6 @@
 
 #if ENABLE(MEDIA_STREAM) && PLATFORM(IOS_FAMILY)
 
-#include "AudioSession.h"
 #include "CoreAudioCaptureSource.h"
 #include <wtf/WeakHashSet.h>
 
@@ -35,22 +34,13 @@ OBJC_CLASS WebCoreAudioCaptureSourceIOSListener;
 
 namespace WebCore {
 
-class CoreAudioCaptureSourceFactoryIOS final : public CoreAudioCaptureSourceFactory, public AudioSession::InterruptionObserver  {
+class CoreAudioCaptureSourceFactoryIOS final : public CoreAudioCaptureSourceFactory  {
 public:
     CoreAudioCaptureSourceFactoryIOS();
     ~CoreAudioCaptureSourceFactoryIOS();
 
 private:
-    // AudioSession::InterruptionObserver.
-    void beginAudioSessionInterruption() { beginInterruption(); }
-    void endAudioSessionInterruption(AudioSession::MayResume) { endInterruption(); }
-
-    CaptureSourceOrError createAudioCaptureSource(const CaptureDevice&, String&&, const MediaConstraints*) final;
-    void addExtensiveObserver(ExtensiveObserver&) final;
-    void removeExtensiveObserver(ExtensiveObserver&) final;
-
     RetainPtr<WebCoreAudioCaptureSourceIOSListener> m_listener;
-    WeakHashSet<ExtensiveObserver> m_observers;
 };
 
 } // namespace WebCore

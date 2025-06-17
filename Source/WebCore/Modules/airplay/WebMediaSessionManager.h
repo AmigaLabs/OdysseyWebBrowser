@@ -31,8 +31,8 @@
 #include "MediaPlaybackTargetPicker.h"
 #include "MediaPlaybackTargetPickerMock.h"
 #include "MediaProducer.h"
-#include "PlatformView.h"
 #include "PlaybackTargetClientContextIdentifier.h"
+#include <wtf/CheckedPtr.h>
 #include <wtf/Ref.h>
 #include <wtf/RefPtr.h>
 #include <wtf/RunLoop.h>
@@ -44,8 +44,10 @@ class IntRect;
 class WebMediaSessionLogger;
 class WebMediaSessionManagerClient;
 
-class WebMediaSessionManager : public MediaPlaybackTargetPicker::Client {
+class WebMediaSessionManager : public MediaPlaybackTargetPicker::Client, public CanMakeCheckedPtr<WebMediaSessionManager> {
     WTF_MAKE_NONCOPYABLE(WebMediaSessionManager);
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(WebMediaSessionManager);
 public:
 
     WEBCORE_EXPORT static WebMediaSessionManager& shared();
@@ -54,11 +56,11 @@ public:
     WEBCORE_EXPORT void setMockMediaPlaybackTargetPickerState(const String&, MediaPlaybackTargetContext::MockState);
     WEBCORE_EXPORT void mockMediaPlaybackTargetPickerDismissPopup();
 
-    WEBCORE_EXPORT PlaybackTargetClientContextIdentifier addPlaybackTargetPickerClient(WebMediaSessionManagerClient&, PlaybackTargetClientContextIdentifier);
+    WEBCORE_EXPORT std::optional<PlaybackTargetClientContextIdentifier> addPlaybackTargetPickerClient(WebMediaSessionManagerClient&, PlaybackTargetClientContextIdentifier);
     WEBCORE_EXPORT void removePlaybackTargetPickerClient(WebMediaSessionManagerClient&, PlaybackTargetClientContextIdentifier);
     WEBCORE_EXPORT void removeAllPlaybackTargetPickerClients(WebMediaSessionManagerClient&);
     WEBCORE_EXPORT void showPlaybackTargetPicker(WebMediaSessionManagerClient&, PlaybackTargetClientContextIdentifier, const IntRect&, bool, bool);
-    WEBCORE_EXPORT void clientStateDidChange(WebMediaSessionManagerClient&, PlaybackTargetClientContextIdentifier, WebCore::MediaProducer::MediaStateFlags);
+    WEBCORE_EXPORT void clientStateDidChange(WebMediaSessionManagerClient&, PlaybackTargetClientContextIdentifier, WebCore::MediaProducerMediaStateFlags);
 
     bool alwaysOnLoggingAllowed() const;
 
@@ -75,9 +77,9 @@ private:
     WebCore::MediaPlaybackTargetPickerMock& mockPicker();
 
     // MediaPlaybackTargetPicker::Client
-    void setPlaybackTarget(Ref<WebCore::MediaPlaybackTarget>&&) override;
-    void externalOutputDeviceAvailableDidChange(bool) override;
-    void playbackTargetPickerWasDismissed() override;
+    void setPlaybackTarget(Ref<WebCore::MediaPlaybackTarget>&&) final;
+    void externalOutputDeviceAvailableDidChange(bool) final;
+    void playbackTargetPickerWasDismissed() final;
 
     size_t find(WebMediaSessionManagerClient*, PlaybackTargetClientContextIdentifier);
 
@@ -103,8 +105,8 @@ private:
 
     WebMediaSessionLogger& logger();
 
-    RunLoop::Timer<WebMediaSessionManager> m_taskTimer;
-    RunLoop::Timer<WebMediaSessionManager> m_watchdogTimer;
+    RunLoop::Timer m_taskTimer;
+    RunLoop::Timer m_watchdogTimer;
 
     Vector<std::unique_ptr<ClientState>> m_clientState;
     RefPtr<MediaPlaybackTarget> m_playbackTarget;
@@ -118,7 +120,7 @@ private:
     bool m_mockPickerEnabled { false };
 };
 
-String mediaProducerStateString(WebCore::MediaProducer::MediaStateFlags);
+String mediaProducerStateString(WebCore::MediaProducerMediaStateFlags);
 
 } // namespace WebCore
 
@@ -126,8 +128,8 @@ namespace WTF {
 
 template<typename> struct LogArgument;
 
-template<> struct LogArgument<WebCore::MediaProducer::MediaStateFlags> {
-    static String toString(WebCore::MediaProducer::MediaStateFlags flags) { return WebCore::mediaProducerStateString(flags); }
+template<> struct LogArgument<WebCore::MediaProducerMediaStateFlags> {
+    static String toString(WebCore::MediaProducerMediaStateFlags flags) { return WebCore::mediaProducerStateString(flags); }
 };
 
 } // namespace WTF

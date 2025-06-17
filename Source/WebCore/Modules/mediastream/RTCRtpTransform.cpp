@@ -30,8 +30,11 @@
 
 #include "RTCRtpReceiver.h"
 #include "RTCRtpSender.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RTCRtpTransform);
 
 std::unique_ptr<RTCRtpTransform> RTCRtpTransform::from(std::optional<Internal>&& internal)
 {
@@ -52,7 +55,7 @@ RTCRtpTransform::~RTCRtpTransform()
 
 bool RTCRtpTransform::isAttached() const
 {
-    return switchOn(m_transform, [&](const RefPtr<RTCRtpSFrameTransform>& sframeTransform) {
+    return WTF::switchOn(m_transform, [&](const RefPtr<RTCRtpSFrameTransform>& sframeTransform) {
         return sframeTransform->isAttached();
     }, [&](const RefPtr<RTCRtpScriptTransform>& scriptTransform) {
         return scriptTransform->isAttached();
@@ -67,7 +70,8 @@ void RTCRtpTransform::attachToReceiver(RTCRtpReceiver& receiver, RTCRtpTransform
         m_backend = previousTransform->takeBackend();
     else if (auto* backend = receiver.backend())
         m_backend = backend->rtcRtpTransformBackend();
-    else
+
+    if (!m_backend)
         return;
 
     switchOn(m_transform, [&](RefPtr<RTCRtpSFrameTransform>& sframeTransform) {
@@ -85,7 +89,8 @@ void RTCRtpTransform::attachToSender(RTCRtpSender& sender, RTCRtpTransform* prev
         m_backend = previousTransform->takeBackend();
     else if (auto* backend = sender.backend())
         m_backend = backend->rtcRtpTransformBackend();
-    else
+
+    if (!m_backend)
         return;
 
     switchOn(m_transform, [&](RefPtr<RTCRtpSFrameTransform>& sframeTransform) {
@@ -131,14 +136,14 @@ void RTCRtpTransform::detachFromSender(RTCRtpSender&)
 
 bool operator==(const RTCRtpTransform& a, const RTCRtpTransform& b)
 {
-    return switchOn(a.m_transform, [&](const RefPtr<RTCRtpSFrameTransform>& sframeTransformA) {
-        return switchOn(b.m_transform, [&](const RefPtr<RTCRtpSFrameTransform>& sframeTransformB) {
+    return WTF::switchOn(a.m_transform, [&](const RefPtr<RTCRtpSFrameTransform>& sframeTransformA) {
+        return WTF::switchOn(b.m_transform, [&](const RefPtr<RTCRtpSFrameTransform>& sframeTransformB) {
             return sframeTransformA.get() == sframeTransformB.get();
         }, [&](const RefPtr<RTCRtpScriptTransform>&) {
             return false;
         });
     }, [&](const RefPtr<RTCRtpScriptTransform>& scriptTransformA) {
-        return switchOn(b.m_transform, [&](const RefPtr<RTCRtpSFrameTransform>&) {
+        return WTF::switchOn(b.m_transform, [&](const RefPtr<RTCRtpSFrameTransform>&) {
             return false;
         }, [&](const RefPtr<RTCRtpScriptTransform>& scriptTransformB) {
             return scriptTransformA.get() == scriptTransformB.get();

@@ -21,16 +21,18 @@
 
 #if ENABLE(WEBXR) && USE(OPENXR)
 
-#include "GraphicsContextGL.h"
+#include "GraphicsTypesGL.h"
+#include "IntSize.h"
 #include "OpenXRUtils.h"
 
 #include <wtf/Noncopyable.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/Vector.h>
 
 namespace PlatformXR {
 
 class OpenXRSwapchain {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(OpenXRSwapchain);
     WTF_MAKE_NONCOPYABLE(OpenXRSwapchain);
 public:
     static std::unique_ptr<OpenXRSwapchain> create(XrInstance, XrSession, const XrSwapchainCreateInfo&);
@@ -41,6 +43,7 @@ public:
     XrSwapchain swapchain() const { return m_swapchain; }
     int32_t width() const { return m_createInfo.width; }
     int32_t height() const { return m_createInfo.height; }
+    WebCore::IntSize size() const { return WebCore::IntSize(width(), height()); }
 
 private:
     OpenXRSwapchain(XrInstance, XrSwapchain, const XrSwapchainCreateInfo&, Vector<XrSwapchainImageOpenGLKHR>&&);

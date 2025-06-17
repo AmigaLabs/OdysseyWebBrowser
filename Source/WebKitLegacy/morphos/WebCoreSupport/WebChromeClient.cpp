@@ -39,7 +39,7 @@
 #include <WebCore/FileChooser.h>
 #include <WebCore/FileIconLoader.h>
 #include <WebCore/FloatRect.h>
-#include <WebCore/Frame.h>
+#include <WebCore/LocalFrame.h>
 #include <WebCore/FrameLoadRequest.h>
 #include <WebCore/FrameView.h>
 //#include <WebCore/FullScreenController.h>
@@ -56,6 +56,15 @@
 #include <WebCore/SecurityOrigin.h>
 #include <WebCore/WindowFeatures.h>
 #include <WebCore/ApplicationCacheStorage.h>
+#include <WebCore/CookieConsentDecisionResult.h>
+#include <WebCore/ModalContainerTypes.h>
+#include <WebCore/ColorChooser.h>
+#include <WebCore/DataListSuggestionPicker.h>
+#include <WebCore/RenderEmbeddedObject.h>
+#include <WebCore/HTMLPlugInImageElement.h>
+#include <WebCore/Storage.h>
+#include <WebCore/DateTimeChooser.h>
+#include <WebCore/FullscreenManager.h>
 #include "PopupMenu.h"
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -77,7 +86,6 @@ WebChromeClient::WebChromeClient(WebKit::WebPage& webPage)
 
 void WebChromeClient::chromeDestroyed()
 {
-    delete this;
 }
 
 void WebChromeClient::setWindowRect(const FloatRect& r)
@@ -85,12 +93,12 @@ void WebChromeClient::setWindowRect(const FloatRect& r)
 	notImplemented();
 }
 
-FloatRect WebChromeClient::windowRect()
+FloatRect WebChromeClient::windowRect() const
 {
     return { FloatPoint(0.f, 0.f), FloatSize(m_webPage.size()) };
 }
 
-FloatRect WebChromeClient::pageRect()
+FloatRect WebChromeClient::pageRect() const
 {
 	notImplemented();
 	return windowRect();
@@ -110,7 +118,7 @@ void WebChromeClient::unfocus()
 //    m_webPage.updateActiveState();
 }
 
-bool WebChromeClient::canTakeFocus(FocusDirection direction)
+bool WebChromeClient::canTakeFocus(FocusDirection direction) const
 {
 	notImplemented();
 	return true;
@@ -136,11 +144,7 @@ void WebChromeClient::focusedElementChanged(Element* element)
 	m_webPage.setFocusedElement(element);
 }
 
-void WebChromeClient::focusedFrameChanged(Frame*)
-{
-}
-
-Page* WebChromeClient::createWindow(Frame& frame, const WindowFeatures& features, const NavigationAction& navigationAction)
+RefPtr<WebCore::Page> WebChromeClient::createWindow(LocalFrame& frame, const String& openedMainFrameName, const WindowFeatures& features, const NavigationAction& navigationAction)
 {
 	if (!m_webPage._fCanOpenWindow || !m_webPage._fCanOpenWindow(navigationAction.url().string(), features))
 		return nullptr;
@@ -153,58 +157,14 @@ void WebChromeClient::show()
 	notImplemented();
 }
 
-bool WebChromeClient::canRunModal()
-{
-	notImplemented();
-	return false;
-}
-
-void WebChromeClient::runModal()
-{
-	notImplemented();
-}
-
-void WebChromeClient::setToolbarsVisible(bool visible)
-{
-	notImplemented();
-}
-
-bool WebChromeClient::toolbarsVisible()
-{
-	notImplemented();
-	return false;
-}
-
-void WebChromeClient::setStatusbarVisible(bool visible)
-{
-	notImplemented();
-}
-
-bool WebChromeClient::statusbarVisible()
-{
-	notImplemented();
-	return false;
-}
-
 void WebChromeClient::setScrollbarsVisible(bool b)
 {
 	m_webPage.setAllowsScrolling(b);
 }
 
-bool WebChromeClient::scrollbarsVisible()
+bool WebChromeClient::scrollbarsVisible() const
 {
 	return m_webPage.allowsScrolling();
-}
-
-void WebChromeClient::setMenubarVisible(bool visible)
-{
-	notImplemented();
-}
-
-bool WebChromeClient::menubarVisible()
-{
-	notImplemented();
-	return true;
 }
 
 void WebChromeClient::setResizable(bool resizable)
@@ -219,10 +179,18 @@ static BOOL messageIsError(MessageLevel level)
 }
 #endif
 
+#if 0
 void WebChromeClient::addMessageToConsole(MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, unsigned columnNumber, const String& url)
 {
 	if (m_webPage._fConsole)
 		m_webPage._fConsole(url, message, int(level), lineNumber, columnNumber);
+}
+#endif
+
+void WebChromeClient::addMessageWithArgumentsToConsole(MessageSource source, MessageLevel level, const String& message, std::span<const String> arguments, unsigned lineNumber, unsigned columnNumber, const String&url)
+{
+	if (m_webPage._fConsole)
+		m_webPage._fConsole(url, equalIgnoringASCIICase(message, "%s"_s) ? makeStringByJoining(arguments, " "_s) : message, int(level), lineNumber, columnNumber);
 }
 
 bool WebChromeClient::canRunBeforeUnloadConfirmPanel()
@@ -231,13 +199,14 @@ bool WebChromeClient::canRunBeforeUnloadConfirmPanel()
     return false;
 }
 
-bool WebChromeClient::runBeforeUnloadConfirmPanel(const String& message, Frame& frame)
+bool WebChromeClient::runBeforeUnloadConfirmPanel(const String& message, LocalFrame& frame)
 {
+// TODO!
 	notImplemented();
 	return true;
 }
 
-void WebChromeClient::closeWindowSoon()
+void WebChromeClient::closeWindow()
 {
     // We need to remove the parent WebPage from WebPageSets here, before it actually
     // closes, to make sure that JavaScript code that executes before it closes
@@ -260,29 +229,24 @@ void WebChromeClient::closeWindowSoon()
 #endif
 }
 
-void WebChromeClient::runJavaScriptAlert(Frame&, const String& message)
+void WebChromeClient::runJavaScriptAlert(WebCore::LocalFrame&, const String& message)
 {
 	if (m_webPage._fAlert)
 		m_webPage._fAlert(message);
 }
 
-bool WebChromeClient::runJavaScriptConfirm(Frame&, const String& message)
+bool WebChromeClient::runJavaScriptConfirm(WebCore::LocalFrame&, const String& message)
 {
 	if (m_webPage._fConfirm)
 		return m_webPage._fConfirm(message);
 	return false;
 }
 
-bool WebChromeClient::runJavaScriptPrompt(Frame&, const String& message, const String& defaultValue, String& result)
+bool WebChromeClient::runJavaScriptPrompt(WebCore::LocalFrame&, const String& message, const String& defaultValue, String& result)
 {
 	if (m_webPage._fPrompt)
 		return m_webPage._fPrompt(message, defaultValue, result);
 	return false;
-}
-
-void WebChromeClient::setStatusbarText(const String& statusText)
-{
-	notImplemented();
 }
 
 KeyboardUIMode WebChromeClient::keyboardUIMode()
@@ -293,19 +257,16 @@ KeyboardUIMode WebChromeClient::keyboardUIMode()
 
 void WebChromeClient::invalidateRootView(const IntRect& windowRect)
 {
-    ASSERT(core(m_webPage.topLevelFrame()));
     m_webPage.repaint(windowRect);
 }
 
 void WebChromeClient::invalidateContentsAndRootView(const IntRect& windowRect)
 {
-    ASSERT(core(m_webPage.topLevelFrame()));
     m_webPage.repaint(windowRect);
 }
 
 void WebChromeClient::invalidateContentsForSlowScroll(const IntRect& windowRect)
 {
-    ASSERT(core(m_webPage.topLevelFrame()));
     m_webPage.repaint(windowRect);
 }
 
@@ -332,6 +293,11 @@ IntRect WebChromeClient::rootViewToScreen(const IntRect& rect) const
 	return IntRect();
 }
 
+WebCore::IntPoint WebChromeClient::rootViewToScreen(const WebCore::IntPoint& point) const
+{
+    return IntPoint();
+}
+
 IntPoint WebChromeClient::screenToRootView(const IntPoint& point) const
 {
 	return IntPoint();
@@ -343,7 +309,7 @@ PlatformPageClient WebChromeClient::platformPageClient() const
 	return 0;
 }
 
-void WebChromeClient::contentsSizeChanged(Frame& frame, const IntSize& size) const
+void WebChromeClient::contentsSizeChanged(WebCore::LocalFrame& frame, const IntSize& size) const
 {
 //    dprintf("%s: to %dx%d\n", __PRETTY_FUNCTION__, size.width(), size.height());
     m_webPage.frameSizeChanged(frame, size.width(), size.height());
@@ -354,28 +320,23 @@ void WebChromeClient::intrinsicContentsSizeChanged(const IntSize& size) const
 //    dprintf("%s: to %dx%d\n", __PRETTY_FUNCTION__, size.width(), size.height());
 }
 
-void WebChromeClient::mouseDidMoveOverElement(const WebCore::HitTestResult&, unsigned modifierFlags, const WTF::String& toolTip, WebCore::TextDirection)
-{
-	notImplemented();
-}
-
-bool WebChromeClient::shouldUnavailablePluginMessageBeButton(RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason) const
+bool WebChromeClient::shouldUnavailablePluginMessageBeButton(WebCore::PluginUnavailabilityReason pluginUnavailabilityReason) const
 {
 	return false;
 }
 
-void WebChromeClient::unavailablePluginButtonClicked(Element& element, RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason) const
+void WebChromeClient::unavailablePluginButtonClicked(Element& element, WebCore::PluginUnavailabilityReason pluginUnavailabilityReason) const
 {
 	notImplemented();
 }
 
-void WebChromeClient::print(WebCore::Frame&, const WebCore::StringWithDirection&)
+void WebChromeClient::print(WebCore::LocalFrame&, const WebCore::StringWithDirection&)
 {
     if (m_webPage._fPrint)
         m_webPage._fPrint();
 }
 
-void WebChromeClient::exceededDatabaseQuota(Frame& frame, const String& databaseIdentifier, DatabaseDetails)
+void WebChromeClient::exceededDatabaseQuota(WebCore::LocalFrame& frame, const String& databaseIdentifier, DatabaseDetails)
 {
 	notImplemented();
 }
@@ -391,7 +352,7 @@ void WebChromeClient::reachedApplicationCacheOriginQuota(SecurityOrigin&, int64_
     notImplemented();
 }
 
-void WebChromeClient::runOpenPanel(Frame&, FileChooser& fileChooser)
+void WebChromeClient::runOpenPanel(WebCore::LocalFrame&, FileChooser& fileChooser)
 {
 	if (m_webPage._fFile)
 		m_webPage._fFile(fileChooser);
@@ -421,10 +382,9 @@ void WebChromeClient::setCursorHiddenUntilMouseMoves(bool)
     notImplemented();
 }
 
-void WebChromeClient::attachRootGraphicsLayer(Frame&, GraphicsLayer* graphicsLayer)
+void WebChromeClient::attachRootGraphicsLayer(WebCore::LocalFrame&, GraphicsLayer* graphicsLayer)
 {
-notImplemented();
-//    m_webPage.setRootChildLayer(graphicsLayer);
+    m_webPage.setRootGraphicsLayer(graphicsLayer);
 }
 
 void WebChromeClient::attachViewOverlayGraphicsLayer(GraphicsLayer*)
@@ -436,6 +396,17 @@ notImplemented();
 void WebChromeClient::triggerRenderingUpdate()
 {
 	m_webPage.flushCompositing();
+}
+
+bool WebChromeClient::scheduleRenderingUpdate()
+{
+    m_webPage.scheduleRenderingUpdate();
+    return true;
+}
+
+void WebChromeClient::renderingUpdateFramesPerSecondChanged()
+{
+// dprintf("%s:\n", __PRETTY_FUNCTION__);
 }
 
 bool WebChromeClient::selectItemWritingDirectionIsNatural()
@@ -458,6 +429,17 @@ RefPtr<SearchPopupMenu> WebChromeClient::createSearchPopupMenu(PopupMenuClient& 
     return adoptRef(new SearchPopupMenuMorphOS(&client, &m_webPage));
 }
 
+void WebChromeClient::localStorageCreatedForDocument(const LocalFrame& documentFrame, Storage* storage) const
+{
+    if (documentFrame.isMainFrame())
+        m_webPage.localStorageCreated(storage);
+}
+
+RefPtr<DateTimeChooser> WebChromeClient::createDateTimeChooser(DateTimeChooserClient&)
+{
+    return nullptr;
+}
+
 #if ENABLE(FULLSCREEN_API)
 
 bool WebChromeClient::supportsFullScreenForElement(const Element& element, bool requestingKeyboardAccess)
@@ -467,14 +449,17 @@ bool WebChromeClient::supportsFullScreenForElement(const Element& element, bool 
 	return true;
 }
 
-void WebChromeClient::enterFullScreenForElement(Element& element)
+void WebChromeClient::enterFullScreenForElement(Element& element, WebCore::HTMLMediaElementEnums::VideoFullscreenMode, CompletionHandler<void(WebCore::ExceptionOr<void>)>&& willEnterFullscreen, CompletionHandler<bool(bool)>&& didEnterFullscreen)
 {
+    willEnterFullscreen(element.document().fullscreenManager().willEnterFullscreen(element, WebCore::HTMLMediaElementEnums::VideoFullscreenModeStandard));
     m_webPage.setFullscreenElement(&element);
+    didEnterFullscreen(true);
 }
 
-void WebChromeClient::exitFullScreenForElement(Element* element)
+void WebChromeClient::exitFullScreenForElement(Element* element, CompletionHandler<void()>&& didExitFullscreen)
 {
     m_webPage.setFullscreenElement(nullptr);
+    didExitFullscreen();
 }
 
 #endif
@@ -484,7 +469,7 @@ bool WebChromeClient::supportsVideoFullscreen(WebCore::HTMLMediaElementEnums::Vi
 	return true;
 }
 
-bool WebChromeClient::shouldUseTiledBackingForFrameView(const FrameView& frameView) const
+bool WebChromeClient::shouldUseTiledBackingForFrameView(const LocalFrameView& frameView) const
 {
     return false;
 }
@@ -513,6 +498,22 @@ void WebChromeClient::clearPlaybackControlsManager()
 // dprintf("%s:\n", __PRETTY_FUNCTION__);
 }
  #endif
+
+void WebChromeClient::requestCookieConsent(CompletionHandler<void(CookieConsentDecisionResult)>&& completion)
+{
+// TODO!
+    completion(CookieConsentDecisionResult::NotSupported);
+}
+
+RefPtr<WebCore::ColorChooser> WebChromeClient::createColorChooser(WebCore::ColorChooserClient&, const WebCore::Color&)
+{
+    return nullptr;
+}
+
+RefPtr<WebCore::DataListSuggestionPicker> WebChromeClient::createDataListSuggestionPicker(WebCore::DataListSuggestionsClient&)
+{
+    return nullptr;
+}
 
 }
 

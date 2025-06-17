@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,22 +25,41 @@
 
 #pragma once
 
-#include <Foundation/Foundation.h>
-#include <wtf/RetainPtr.h>
-#include <wtf/Span.h>
+#import <dispatch/dispatch.h>
+#import <span>
 
 namespace WTF {
 
-inline Span<const std::byte> asBytes(NSData *data)
+#ifdef __OBJC__
+inline std::span<const uint8_t> span(NSData *data)
 {
-    return { reinterpret_cast<const std::byte*>(data.bytes), data.length };
+    if (!data)
+        return { };
+
+    return unsafeMakeSpan(static_cast<const uint8_t*>(data.bytes), data.length);
 }
 
-inline Span<const std::byte> asBytes(const RetainPtr<NSData>& data)
+inline RetainPtr<NSData> toNSData(std::span<const uint8_t> span)
 {
-    return asBytes(data.get());
+    return adoptNS([[NSData alloc] initWithBytes:span.data() length:span.size()]);
 }
+#endif // #ifdef __OBJC__
 
-}
+template<typename> class Function;
 
-using WTF::asBytes;
+#ifdef __cplusplus
+extern "C" {
+#endif
+WTF_EXPORT_PRIVATE bool dispatch_data_apply_span(dispatch_data_t, NOESCAPE const Function<bool(std::span<const uint8_t>)>& applier);
+#ifdef __cplusplus
+} // extern "C
+#endif
+
+} // namespace WTF
+
+using WTF::dispatch_data_apply_span;
+
+#ifdef __OBJC__
+using WTF::span;
+using WTF::toNSData;
+#endif

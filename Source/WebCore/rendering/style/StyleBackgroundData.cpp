@@ -22,10 +22,14 @@
 #include "config.h"
 #include "StyleBackgroundData.h"
 
-#include "RenderStyle.h"
+#include "BorderData.h"
 #include "RenderStyleConstants.h"
+#include "RenderStyleDifference.h"
+#include "RenderStyleInlines.h"
 
 namespace WebCore {
+
+DEFINE_ALLOCATOR_WITH_HEAP_IDENTIFIER(StyleBackgroundData);
 
 StyleBackgroundData::StyleBackgroundData()
     : background(FillLayer::create(FillLayerType::Background))
@@ -55,11 +59,11 @@ bool StyleBackgroundData::isEquivalentForPainting(const StyleBackgroundData& oth
 {
     if (background != other.background || color != other.color)
         return false;
-    if (currentColorDiffers && color == RenderStyle::currentColor())
+    if (currentColorDiffers && color.containsCurrentColor())
         return false;
     if (!outline.isVisible() && !other.outline.isVisible())
         return true;
-    if (currentColorDiffers && outline.color() == RenderStyle::currentColor())
+    if (currentColorDiffers && outline.color().containsCurrentColor())
         return false;
     return outline == other.outline;
 }
@@ -73,6 +77,15 @@ void StyleBackgroundData::dump(TextStream& ts, DumpStyleValues behavior) const
     if (behavior == DumpStyleValues::All || outline != OutlineValue())
         ts.dumpProperty("outline", outline);
 }
+
+#if !LOG_DISABLED
+void StyleBackgroundData::dumpDifferences(TextStream& ts, const StyleBackgroundData& other) const
+{
+    LOG_IF_DIFFERENT(background);
+    LOG_IF_DIFFERENT(color);
+    LOG_IF_DIFFERENT(outline);
+}
+#endif
 
 TextStream& operator<<(TextStream& ts, const StyleBackgroundData& backgroundData)
 {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2020-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,6 +26,9 @@
 
 #if USE(AVFOUNDATION)
 
+#include <VideoToolbox/VTCompressionSession.h>
+
+#include <pal/spi/cf/VideoToolboxSPI.h>
 #include <wtf/SoftLinking.h>
 
 SOFT_LINK_FRAMEWORK_FOR_HEADER(PAL, VideoToolbox)
@@ -42,6 +45,9 @@ SOFT_LINK_CONSTANT_FOR_HEADER(PAL, VideoToolbox, kVTCompressionPropertyKey_Avera
 #define kVTCompressionPropertyKey_AverageBitRate get_VideoToolbox_kVTCompressionPropertyKey_AverageBitRate()
 SOFT_LINK_CONSTANT_FOR_HEADER(PAL, VideoToolbox, kVTCompressionPropertyKey_ProfileLevel, CFStringRef)
 #define kVTCompressionPropertyKey_ProfileLevel get_VideoToolbox_kVTCompressionPropertyKey_ProfileLevel()
+
+SOFT_LINK_CONSTANT_FOR_HEADER(PAL, VideoToolbox, kVTEncodeFrameOptionKey_ForceKeyFrame, CFStringRef)
+#define kVTEncodeFrameOptionKey_ForceKeyFrame get_VideoToolbox_kVTEncodeFrameOptionKey_ForceKeyFrame()
 
 SOFT_LINK_CONSTANT_FOR_HEADER(PAL, VideoToolbox, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder, CFStringRef)
 #define kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder get_VideoToolbox_kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder()
@@ -63,5 +69,9 @@ SOFT_LINK_FUNCTION_FOR_HEADER(PAL, VideoToolbox, VTCompressionSessionPrepareToEn
 #define VTCompressionSessionPrepareToEncodeFrames softLink_VideoToolbox_VTCompressionSessionPrepareToEncodeFrames
 SOFT_LINK_FUNCTION_FOR_HEADER(PAL, VideoToolbox, VTCompressionSessionInvalidate, void, (VTCompressionSessionRef session), (session))
 #define VTCompressionSessionInvalidate softLink_VideoToolbox_VTCompressionSessionInvalidate
+SOFT_LINK_FUNCTION_FOR_HEADER(PAL, VideoToolbox, VTGetDefaultColorAttributesWithHints, OSStatus, (OSType codecTypeHint, CFStringRef colorSpaceNameHint, size_t widthHint, size_t heightHint, CFStringRef* colorPrimariesOut, CFStringRef* transferFunctionOut, CFStringRef* yCbCrMatrixOut), (codecTypeHint, colorSpaceNameHint, widthHint, heightHint, colorPrimariesOut, transferFunctionOut, yCbCrMatrixOut))
+#define VTGetDefaultColorAttributesWithHints softLink_VideoToolbox_VTGetDefaultColorAttributesWithHints
+
+SOFT_LINK_FUNCTION_MAY_FAIL_FOR_HEADER(PAL, VideoToolbox, VTRestrictVideoDecoders, OSStatus, (VTVideoDecoderRestrictions restrictionFlags, const CMVideoCodecType* allowedCodecTypeList, CMItemCount allowedCodecTypeCount), (restrictionFlags, allowedCodecTypeList, allowedCodecTypeCount));
 
 #endif // USE(AVFOUNDATION)

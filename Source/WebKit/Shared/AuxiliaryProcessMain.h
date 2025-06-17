@@ -30,12 +30,15 @@
 
 #include "AuxiliaryProcess.h"
 #include "WebKit2Initialize.h"
+#include <wtf/NeverDestroyed.h>
 #include <wtf/RunLoop.h>
+#include <wtf/RuntimeApplicationChecks.h>
 
 namespace WebKit {
 
 class AuxiliaryProcessMainCommon {
 public:
+    AuxiliaryProcessMainCommon();
     bool parseCommandLine(int argc, char** argv);
 
 protected:
@@ -56,7 +59,11 @@ public:
 
     int run(int argc, char** argv)
     {
+        // setAuxiliaryProcessType() should be called before we construct
+        // and initialize the AuxiliaryProcess. This is so isInXXXProcess()
+        // checks are valid.
         m_parameters.processType = AuxiliaryProcessType::processType;
+        setAuxiliaryProcessType(m_parameters.processType);
 
         if (!platformInitialize())
             return EXIT_FAILURE;

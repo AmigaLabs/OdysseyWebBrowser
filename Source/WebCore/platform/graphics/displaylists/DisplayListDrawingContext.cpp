@@ -27,16 +27,21 @@
 #include "DisplayListDrawingContext.h"
 
 #include "AffineTransform.h"
-#include "DisplayListRecorder.h"
+#include "DisplayListRecorderImpl.h"
 #include "DisplayListReplayer.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 namespace DisplayList {
 
-DrawingContext::DrawingContext(const FloatSize& logicalSize, const AffineTransform& initialCTM, Recorder::Delegate* delegate)
-    : m_context(m_displayList, GraphicsContextState(), FloatRect({ }, logicalSize), initialCTM, delegate)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(DrawingContext);
+
+DrawingContext::DrawingContext(const FloatSize& logicalSize, const AffineTransform& initialCTM, const DestinationColorSpace& colorSpace)
+    : m_context(m_displayList, GraphicsContextState(), FloatRect({ }, logicalSize), initialCTM, colorSpace)
 {
 }
+
+DrawingContext::~DrawingContext() = default;
 
 void DrawingContext::setTracksDisplayListReplay(bool tracksDisplayListReplay)
 {
@@ -54,7 +59,6 @@ void DrawingContext::replayDisplayList(GraphicsContext& destContext)
         m_replayedDisplayList = replayer.replay({ }, m_tracksDisplayListReplay).trackedDisplayList;
     else
         replayer.replay();
-    m_displayList.clear();
 }
 
 } // DisplayList

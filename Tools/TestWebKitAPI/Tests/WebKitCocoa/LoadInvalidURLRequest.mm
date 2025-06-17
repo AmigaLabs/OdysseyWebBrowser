@@ -26,6 +26,7 @@
 #import "config.h"
 
 #import "PlatformUtilities.h"
+#import "Test.h"
 #import "TestNavigationDelegate.h"
 #import "TestURLSchemeHandler.h"
 #import <WebKit/WKNavigationPrivate.h>
@@ -57,7 +58,7 @@ static NSURL *literalURL(const char* literal)
 {
     EXPECT_WK_STREQ(error.domain, @"WebKitErrorDomain");
     EXPECT_EQ(error.code, 101);
-    EXPECT_TRUE([error.userInfo[@"NSErrorFailingURLKey"] isEqual:literalURL(literal)]);
+    EXPECT_NULL(error.userInfo[@"NSErrorFailingURLKey"]);
 
     didFailProvisionalLoad = true;
     didFinishTest = true;
@@ -105,13 +106,13 @@ TEST(WebKit, LoadInvalidURLRequestNonASCII)
 {
     __block bool done = false;
     auto delegate = adoptNS([TestNavigationDelegate new]);
-    delegate.get().webContentProcessDidTerminate = ^(WKWebView *) {
+    delegate.get().webContentProcessDidTerminate = ^(WKWebView *, _WKProcessTerminationReason) {
         ASSERT_NOT_REACHED();
     };
     delegate.get().didFailProvisionalNavigation = ^(WKWebView *, WKNavigation *, NSError *error) {
         EXPECT_WK_STREQ(error.domain, @"WebKitErrorDomain");
         EXPECT_EQ(error.code, WebKitErrorCannotShowURL);
-        EXPECT_WK_STREQ([error.userInfo[@"NSErrorFailingURLKey"] absoluteString], "http://%C3%A2%C2%80%C2%80");
+        EXPECT_WK_STREQ([error.userInfo[@"NSErrorFailingURLKey"] absoluteString], "");
         done = true;
     };
     auto webView = adoptNS([WKWebView new]);
@@ -134,6 +135,19 @@ TEST(WebKit, LoadNSURLRequestSubclass)
     [configuration setURLSchemeHandler:handler.get() forURLScheme:@"test"];
     auto webView = adoptNS([[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration.get()]);
     [webView loadRequest:request.get()];
+    [webView _test_waitForDidFinishNavigation];
+}
+
+TEST(WebKit, LoadNSURLRequestWithMutablePropertiesAndKeys)
+{
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSBundle.test_resourcesBundle URLForResource:@"simple" withExtension:@"html"]];
+    [NSURLProtocol setProperty:[NSMutableData data] forKey:[NSMutableString stringWithString:@"mutablestring"] inRequest:request];
+    [NSURLProtocol setProperty:[NSMutableArray array] forKey:@"key1" inRequest:request];
+    [NSURLProtocol setProperty:[NSMutableDictionary dictionary] forKey:@"key2" inRequest:request];
+    [NSURLProtocol setProperty:[NSMutableString string] forKey:@"key3" inRequest:request];
+    auto webView = adoptNS([WKWebView new]);
+    auto response = adoptNS([[NSURLResponse alloc] initWithURL:request.URL MIMEType:nil expectedContentLength:0 textEncodingName:nil]);
+    [webView loadSimulatedRequest:request response:response.get() responseData:[NSData data]];
     [webView _test_waitForDidFinishNavigation];
 }
 

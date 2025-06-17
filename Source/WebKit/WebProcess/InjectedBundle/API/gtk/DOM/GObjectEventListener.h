@@ -36,13 +36,13 @@ public:
     static bool addEventListener(GObject* target, WebCore::EventTarget* coreTarget, const char* domEventName, GClosure* handler, bool useCapture)
     {
         Ref<GObjectEventListener> listener(adoptRef(*new GObjectEventListener(target, coreTarget, domEventName, handler, useCapture)));
-        return coreTarget->addEventListener(domEventName, WTFMove(listener), useCapture);
+        return coreTarget->addEventListener(AtomString(unsafeSpan8(domEventName)), WTFMove(listener), useCapture);
     }
 
     static bool removeEventListener(GObject* target, WebCore::EventTarget* coreTarget, const char* domEventName, GClosure* handler, bool useCapture)
     {
         GObjectEventListener key(target, coreTarget, domEventName, handler, useCapture);
-        return coreTarget->removeEventListener(domEventName, key, useCapture);
+        return coreTarget->removeEventListener(AtomString(unsafeSpan8(domEventName)), key, useCapture);
     }
 
     static void gobjectDestroyedCallback(GObjectEventListener* listener, GObject*)

@@ -31,15 +31,18 @@
 #include "IDBError.h"
 #include "IDBGetAllResult.h"
 #include "IDBGetResult.h"
+#include "IDBIndexIdentifier.h"
 #include "IDBKeyData.h"
+#include "IDBObjectStoreIdentifier.h"
 #include "IDBResourceIdentifier.h"
 #include "IDBValue.h"
 #include "IndexedDB.h"
 #include "JSValueInWrappedObject.h"
 #include <JavaScriptCore/Strong.h>
+#include <optional>
 #include <wtf/Function.h>
-#include <wtf/IsoMalloc.h>
 #include <wtf/Scope.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/ThreadSafeRefCounted.h>
 #include <wtf/WeakPtr.h>
 
@@ -54,14 +57,15 @@ class IDBObjectStore;
 class IDBResultData;
 class IDBTransaction;
 class ThreadSafeDataBuffer;
+class WebCoreOpaqueRoot;
 
 namespace IDBClient {
 class IDBConnectionProxy;
 class IDBConnectionToServer;
 }
 
-class IDBRequest : public EventTargetWithInlineData, public IDBActiveDOMObject, public ThreadSafeRefCounted<IDBRequest> {
-    WTF_MAKE_ISO_ALLOCATED(IDBRequest);
+class IDBRequest : public EventTarget, public IDBActiveDOMObject, public ThreadSafeRefCounted<IDBRequest> {
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(IDBRequest);
 public:
     enum class NullResultType {
         Empty,
@@ -78,12 +82,11 @@ public:
 
     virtual ~IDBRequest();
 
-    using Result = Variant<RefPtr<IDBCursor>, RefPtr<IDBDatabase>, IDBKeyData, Vector<IDBKeyData>, IDBGetResult, IDBGetAllResult, uint64_t, NullResultType>;
+    using Result = std::variant<RefPtr<IDBCursor>, RefPtr<IDBDatabase>, IDBKeyData, Vector<IDBKeyData>, IDBGetResult, IDBGetAllResult, uint64_t, NullResultType>;
     ExceptionOr<Result> result() const;
     JSValueInWrappedObject& resultWrapper() { return m_resultWrapper; }
-    JSValueInWrappedObject& cursorWrapper() { return m_cursorWrapper; }
 
-    using Source = Variant<RefPtr<IDBObjectStore>, RefPtr<IDBIndex>, RefPtr<IDBCursor>>;
+    using Source = std::variant<RefPtr<IDBObjectStore>, RefPtr<IDBIndex>, RefPtr<IDBCursor>>;
     const std::optional<Source>& source() const { return m_source; }
 
     ExceptionOr<DOMException*> error() const;
@@ -95,15 +98,16 @@ public:
 
     bool isDone() const { return m_readyState == ReadyState::Done; }
 
-    uint64_t sourceObjectStoreIdentifier() const;
-    uint64_t sourceIndexIdentifier() const;
+    std::optional<IDBObjectStoreIdentifier> sourceObjectStoreIdentifier() const;
+    std::optional<IDBIndexIdentifier> sourceIndexIdentifier() const;
     IndexedDB::ObjectStoreRecordType requestedObjectStoreRecordType() const;
     IndexedDB::IndexRecordType requestedIndexRecordType() const;
 
     ScriptExecutionContext* scriptExecutionContext() const final { return ActiveDOMObject::scriptExecutionContext(); }
 
-    using ThreadSafeRefCounted::ref;
-    using ThreadSafeRefCounted::deref;
+    // ActiveDOMObject.
+    void ref() const final { ThreadSafeRefCounted::ref(); }
+    void deref() const final { ThreadSafeRefCounted::deref(); }
 
     void completeRequestAndDispatchEvent(const IDBResultData&);
 
@@ -126,6 +130,8 @@ public:
 
     void setTransactionOperationID(uint64_t transactionOperationID) { m_currentTransactionOperationID = transactionOperationID; }
     bool willAbortTransactionAfterDispatchingEvent() const;
+    void transactionTransitionedToFinishing();
+    bool isEventBeingDispatched() const { return !!m_eventBeingDispatched; }
 
 protected:
     IDBRequest(ScriptExecutionContext&, IDBClient::IDBConnectionProxy&, IndexedDB::RequestType);
@@ -147,15 +153,15 @@ private:
     IDBRequest(ScriptExecutionContext&, IDBObjectStore&, IndexedDB::ObjectStoreRecordType, IDBTransaction&);
     IDBRequest(ScriptExecutionContext&, IDBIndex&, IndexedDB::IndexRecordType, IDBTransaction&);
 
-    EventTargetInterface eventTargetInterface() const override;
+    enum EventTargetInterfaceType eventTargetInterface() const override;
 
     // ActiveDOMObject.
     bool virtualHasPendingActivity() const final;
-    const char* activeDOMObjectName() const final;
     void stop() final;
 
     virtual void cancelForStop();
 
+    // EventTarget
     void refEventTarget() final { ref(); }
     void derefEventTarget() final { deref(); }
     void uncaughtExceptionInEventHandler() final;
@@ -172,7 +178,7 @@ protected:
     // Consider adding protected helper functions and making these private.
     RefPtr<IDBTransaction> m_transaction;
     RefPtr<DOMException> m_domError;
-    Event* m_openDatabaseSuccessEvent { nullptr };
+    WeakPtr<Event> m_openDatabaseSuccessEvent;
 
 private:
     IDBCursor* resultCursor();
@@ -181,7 +187,6 @@ private:
     IDBResourceIdentifier m_resourceIdentifier;
 
     JSValueInWrappedObject m_resultWrapper;
-    JSValueInWrappedObject m_cursorWrapper;
 
     uint64_t m_currentTransactionOperationID { 0 };
 
@@ -197,9 +202,12 @@ private:
     IndexedDB::IndexRecordType m_requestedIndexRecordType { IndexedDB::IndexRecordType::Key };
 
     bool m_shouldExposeTransactionToDOM { true };
-    bool m_hasPendingActivity { true };
+    enum class PendingActivityType : uint8_t { EndingEvent, CursorIteration, None };
+    PendingActivityType m_pendingActivity { PendingActivityType::EndingEvent };
     bool m_hasUncaughtException { false };
     RefPtr<Event> m_eventBeingDispatched;
 };
+
+WebCoreOpaqueRoot root(IDBRequest*);
 
 } // namespace WebCore

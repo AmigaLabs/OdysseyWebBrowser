@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007-2024 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Matt Lilek <webkit@mattlilek.com>
  * Copyright (C) 2010 Google Inc. All rights reserved.
  *
@@ -35,7 +35,6 @@
 #include "Document.h"
 #include "EventTarget.h"
 #include "InspectorDOMStorageAgent.h"
-#include "InspectorDatabaseAgent.h"
 #include "JSCommandLineAPIHost.h"
 #include "JSDOMGlobalObject.h"
 #include "JSEventListener.h"
@@ -43,18 +42,27 @@
 #include "Pasteboard.h"
 #include "Storage.h"
 #include "WebConsoleAgent.h"
+#include <JavaScriptCore/InjectedScriptBase.h>
 #include <JavaScriptCore/InspectorAgent.h>
 #include <JavaScriptCore/JSCInlines.h>
 #include <JavaScriptCore/JSLock.h>
-#include <JavaScriptCore/ScriptValue.h>
+#include <JavaScriptCore/ObjectConstructor.h>
 #include <wtf/JSONValues.h>
 #include <wtf/RefPtr.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMallocInlines.h>
+
+#if ENABLE(WEB_RTC)
+#include "JSRTCPeerConnection.h"
+#include "RTCLogsCallback.h"
+#endif
 
 namespace WebCore {
 
 using namespace JSC;
 using namespace Inspector;
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(CommandLineAPIHost::InspectableObject);
 
 Ref<CommandLineAPIHost> CommandLineAPIHost::create()
 {
@@ -95,7 +103,7 @@ void CommandLineAPIHost::inspect(JSC::JSGlobalObject& lexicalGlobalObject, JSC::
     if (!hintsObject)
         return;
 
-    auto remoteObject = Protocol::BindingTraits<Protocol::Runtime::RemoteObject>::runtimeCast(objectValue.releaseNonNull());
+    auto remoteObject = Inspector::Protocol::BindingTraits<Inspector::Protocol::Runtime::RemoteObject>::runtimeCast(objectValue.releaseNonNull());
     inspectorAgent->inspect(WTFMove(remoteObject), hintsObject.releaseNonNull());
 }
 
@@ -119,7 +127,7 @@ CommandLineAPIHost::EventListenersRecord CommandLineAPIHost::getEventListeners(J
             auto& jsListener = downcast<JSEventListener>(eventListener->callback());
 
             // Hide listeners from other contexts.
-            if (&jsListener.isolatedWorld() != &currentWorld(lexicalGlobalObject))
+            if (jsListener.isolatedWorld() != &currentWorld(lexicalGlobalObject))
                 continue;
 
             auto* function = jsListener.ensureJSFunction(*scriptExecutionContext);
@@ -136,17 +144,26 @@ CommandLineAPIHost::EventListenersRecord CommandLineAPIHost::getEventListeners(J
     return result;
 }
 
-void CommandLineAPIHost::clearConsoleMessages()
+#if ENABLE(WEB_RTC)
+void CommandLineAPIHost::gatherRTCLogs(JSGlobalObject& globalObject, RefPtr<RTCLogsCallback>&& callback)
 {
-    if (!m_instrumentingAgents)
+    RefPtr document = dynamicDowncast<Document>(jsCast<JSDOMGlobalObject*>(&globalObject)->scriptExecutionContext());
+    if (!document)
         return;
 
-    auto* consoleAgent = m_instrumentingAgents->webConsoleAgent();
-    if (!consoleAgent)
+    if (!callback) {
+        document->stopGatheringRTCLogs();
         return;
+    }
 
-    consoleAgent->clearMessages();
+    document->startGatheringRTCLogs([callback = callback.releaseNonNull()] (auto&& logType, auto&& logMessage, auto&& logLevel, auto&& connection) mutable {
+        ASSERT(!logType.isNull());
+        ASSERT(!logMessage.isNull());
+
+        callback->handleEvent({ WTFMove(logType), WTFMove(logMessage), WTFMove(logLevel), WTFMove(connection) });
+    });
 }
+#endif
 
 void CommandLineAPIHost::copyText(const String& text)
 {
@@ -173,15 +190,6 @@ JSC::JSValue CommandLineAPIHost::inspectedObject(JSC::JSGlobalObject& lexicalGlo
     return scriptValue ? scriptValue : jsUndefined();
 }
 
-String CommandLineAPIHost::databaseId(Database& database)
-{
-    if (m_instrumentingAgents) {
-        if (auto* databaseAgent = m_instrumentingAgents->enabledDatabaseAgent())
-            return databaseAgent->databaseId(database);
-    }
-    return { };
-}
-
 String CommandLineAPIHost::storageId(Storage& storage)
 {
     return InspectorDOMStorageAgent::storageId(storage);
@@ -195,7 +203,7 @@ JSValue CommandLineAPIHost::wrapper(JSGlobalObject* exec, JSDOMGlobalObject* glo
 
     JSObject* prototype = JSCommandLineAPIHost::createPrototype(exec->vm(), *globalObject);
     Structure* structure = JSCommandLineAPIHost::createStructure(exec->vm(), globalObject, prototype);
-    JSCommandLineAPIHost* commandLineAPIHost = JSCommandLineAPIHost::create(structure, globalObject, makeRef(*this));
+    JSCommandLineAPIHost* commandLineAPIHost = JSCommandLineAPIHost::create(structure, globalObject, Ref { *this });
     m_wrappers.addWrapper(globalObject, commandLineAPIHost);
 
     return commandLineAPIHost;

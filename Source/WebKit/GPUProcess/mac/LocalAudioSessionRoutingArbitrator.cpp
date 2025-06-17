@@ -26,8 +26,12 @@
 #include "config.h"
 #include "LocalAudioSessionRoutingArbitrator.h"
 
+#include "GPUConnectionToWebProcess.h"
 #include "GPUProcess.h"
 #include "GPUProcessConnectionMessages.h"
+#include "Logging.h"
+#include <wtf/LoggerHelper.h>
+#include <wtf/TZoneMallocInlines.h>
 
 #if ENABLE(ROUTING_ARBITRATION) && HAVE(AVAUDIO_ROUTING_ARBITER)
 
@@ -35,13 +39,16 @@ namespace WebKit {
 
 using namespace WebCore;
 
-UniqueRef<LocalAudioSessionRoutingArbitrator> LocalAudioSessionRoutingArbitrator::create(GPUConnectionToWebProcess& gpuConnectionToWebProcess)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(LocalAudioSessionRoutingArbitrator);
+
+std::unique_ptr<LocalAudioSessionRoutingArbitrator> LocalAudioSessionRoutingArbitrator::create(GPUConnectionToWebProcess& gpuConnectionToWebProcess)
 {
-    return makeUniqueRef<LocalAudioSessionRoutingArbitrator>(gpuConnectionToWebProcess);
+    return makeUnique<LocalAudioSessionRoutingArbitrator>(gpuConnectionToWebProcess);
 }
 
 LocalAudioSessionRoutingArbitrator::LocalAudioSessionRoutingArbitrator(GPUConnectionToWebProcess& gpuConnectionToWebProcess)
     : m_connectionToWebProcess(gpuConnectionToWebProcess)
+    , m_logIdentifier(LoggerHelper::uniqueLogIdentifier())
 {
 }
 
@@ -54,12 +61,36 @@ void LocalAudioSessionRoutingArbitrator::processDidTerminate()
 
 void LocalAudioSessionRoutingArbitrator::beginRoutingArbitrationWithCategory(AudioSession::CategoryType category, CompletionHandler<void(RoutingArbitrationError, DefaultRouteChanged)>&& callback)
 {
-    m_connectionToWebProcess.connection().sendWithAsyncReply(Messages::GPUProcessConnection::BeginRoutingArbitrationWithCategory(category), WTFMove(callback), 0);
+    ALWAYS_LOG(LOGIDENTIFIER, category);
+    RefPtr connection = m_connectionToWebProcess.get();
+    if (!connection)
+        return;
+    connection->protectedConnection()->sendWithAsyncReply(Messages::GPUProcessConnection::BeginRoutingArbitrationWithCategory(category), WTFMove(callback), 0);
 }
 
 void LocalAudioSessionRoutingArbitrator::leaveRoutingAbritration()
 {
-    m_connectionToWebProcess.connection().send(Messages::GPUProcessConnection::EndRoutingArbitration(), 0);
+    RefPtr connection = m_connectionToWebProcess.get();
+    if (!connection)
+        return;
+    connection->protectedConnection()->send(Messages::GPUProcessConnection::EndRoutingArbitration(), 0);
+}
+
+Logger& LocalAudioSessionRoutingArbitrator::logger()
+{
+    return m_connectionToWebProcess.get()->logger();
+};
+
+WTFLogChannel& LocalAudioSessionRoutingArbitrator::logChannel() const
+{
+    return WebKit2LogMedia;
+}
+
+bool LocalAudioSessionRoutingArbitrator::canLog() const
+{
+    if (RefPtr connection = m_connectionToWebProcess.get())
+        return connection->isAlwaysOnLoggingAllowed();
+    return false;
 }
 
 }

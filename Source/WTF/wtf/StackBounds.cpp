@@ -34,7 +34,7 @@
 
 #include <windows.h>
 
-#elif OS(UNIX) || OS(AROS) || OS(AMIGAOS)
+#elif OS(UNIX) || OS(HAIKU) || OS(MORPHOS) || OS(AROS) || OS(AMIGAOS)
 
 #include <pthread.h>
 #if HAVE(PTHREAD_NP_H)
@@ -47,6 +47,15 @@
 #include <unistd.h>
 #endif
 
+#if OS(QNX)
+#include <sys/storage.h>
+#endif
+
+#if OS(MORPHOS) || OS(AROS) || OS(AMIGAOS)
+#include <proto/exec.h>
+#include <exec/tasks.h>
+#endif
+
 #endif
 
 namespace WTF {
@@ -57,7 +66,9 @@ StackBounds StackBounds::newThreadStackBounds(PlatformThreadHandle thread)
 {
     void* origin = pthread_get_stackaddr_np(thread);
     rlim_t size = pthread_get_stacksize_np(thread);
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
     void* bound = static_cast<char*>(origin) - size;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     return StackBounds { origin, bound };
 }
 
@@ -70,13 +81,17 @@ StackBounds StackBounds::currentThreadStackBoundsInternal()
         rlimit limit;
         getrlimit(RLIMIT_STACK, &limit);
         rlim_t size = limit.rlim_cur;
+        if (size == RLIM_INFINITY)
+            size = 8 * MB;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
         void* bound = static_cast<char*>(origin) - size;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
         return StackBounds { origin, bound };
     }
     return newThreadStackBounds(pthread_self());
 }
 
-#elif OS(UNIX) || OS(MORPHOS) || OS(AROS) || OS(AMIGAOS)
+#elif OS(UNIX) || OS(HAIKU)
 
 #if OS(OPENBSD)
 
@@ -85,7 +100,21 @@ StackBounds StackBounds::newThreadStackBounds(PlatformThreadHandle thread)
     stack_t stack;
     pthread_stackseg_np(thread, &stack);
     void* origin = stack.ss_sp;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
     void* bound = static_cast<char*>(origin) - stack.ss_size;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
+    return StackBounds { origin, bound };
+}
+
+#elif OS(QNX)
+
+StackBounds StackBounds::newThreadStackBounds(PlatformThreadHandle thread)
+{
+    struct _thread_local_storage* tls = __tls();
+    void* bound = tls->__stackaddr;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+    void* origin = static_cast<char*>(bound) + tls->__stacksize;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     return StackBounds { origin, bound };
 }
 
@@ -109,7 +138,9 @@ StackBounds StackBounds::newThreadStackBounds(PlatformThreadHandle thread)
     UNUSED_PARAM(rc);
     ASSERT(bound);
     pthread_attr_destroy(&sattr);
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
     void* origin = static_cast<char*>(bound) + stackSize;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     // pthread_attr_getstack's bound is the lowest accessible pointer of the stack.
     return StackBounds { origin, bound };
 }
@@ -130,9 +161,13 @@ StackBounds StackBounds::currentThreadStackBoundsInternal()
         rlimit limit;
         getrlimit(RLIMIT_STACK, &limit);
         rlim_t size = limit.rlim_cur;
+        if (size == RLIM_INFINITY)
+            size = 8 * MB;
         // account for a guard page
         size -= static_cast<rlim_t>(sysconf(_SC_PAGESIZE));
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
         void* bound = static_cast<char*>(origin) - size;
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
         return StackBounds { origin, bound };
     }
 #endif
@@ -190,6 +225,22 @@ StackBounds StackBounds::currentThreadStackBoundsInternal()
     return StackBounds { origin, bound };
 }
 
+#elif OS(MORPHOS)
+StackBounds StackBounds::currentThreadStackBoundsInternal()
+{
+    struct Task *me = FindTask(0);
+    void *origin = (void *) me->tc_ETask->PPCSPUpper;
+    void *bound = (void *) me->tc_ETask->PPCSPLower;
+    return { origin, bound };
+}
+#elif OS(AROS) || OS(AMIGAOS)
+StackBounds StackBounds::currentThreadStackBoundsInternal()
+{
+    struct Task *me = FindTask(0);
+    void *origin = (void *) me->tc_SPUpper;
+    void *bound = (void *) me->tc_SPLower;
+    return { origin, bound };
+}
 #else
 #error Need a way to get the stack bounds on this platform
 #endif

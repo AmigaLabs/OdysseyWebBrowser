@@ -34,26 +34,31 @@
 
 #if ENABLE(MEDIA_SOURCE) && USE(GSTREAMER)
 
-GST_DEBUG_CATEGORY_EXTERN(webkit_mse_debug);
-#define GST_CAT_DEFAULT webkit_mse_debug
+GST_DEBUG_CATEGORY_STATIC(webkit_mse_track_debug);
+#define GST_CAT_DEFAULT webkit_mse_track_debug
 
 namespace WebCore {
 
-MediaSourceTrackGStreamer::MediaSourceTrackGStreamer(TrackPrivateBaseGStreamer::TrackType type, AtomString trackId, GRefPtr<GstCaps>&& initialCaps)
+MediaSourceTrackGStreamer::MediaSourceTrackGStreamer(TrackPrivateBaseGStreamer::TrackType type, TrackID trackId, GRefPtr<GstCaps>&& initialCaps)
     : m_type(type)
-    , m_trackId(trackId)
+    , m_id(trackId)
     , m_initialCaps(WTFMove(initialCaps))
     , m_queueDataMutex(trackId)
-{ }
+{
+    static std::once_flag debugRegisteredFlag;
+    std::call_once(debugRegisteredFlag, [] {
+        GST_DEBUG_CATEGORY_INIT(webkit_mse_track_debug, "webkitmsetrack", 0, "WebKit MSE Track");
+    });
+}
 
 MediaSourceTrackGStreamer::~MediaSourceTrackGStreamer()
 {
     ASSERT(m_isRemoved);
 }
 
-Ref<MediaSourceTrackGStreamer> MediaSourceTrackGStreamer::create(TrackPrivateBaseGStreamer::TrackType type, AtomString trackId, GRefPtr<GstCaps>&& initialCaps)
+Ref<MediaSourceTrackGStreamer> MediaSourceTrackGStreamer::create(TrackPrivateBaseGStreamer::TrackType type, TrackID trackId, GRefPtr<GstCaps>&& initialCaps)
 {
-    return makeRef(*new MediaSourceTrackGStreamer(type, trackId, WTFMove(initialCaps)));
+    return adoptRef(*new MediaSourceTrackGStreamer(type, trackId, WTFMove(initialCaps)));
 }
 
 bool MediaSourceTrackGStreamer::isReadyForMoreSamples()
@@ -90,6 +95,8 @@ void MediaSourceTrackGStreamer::remove()
     m_isRemoved = true;
 }
 
-}
+#undef GST_CAT_DEFAULT
 
-#endif
+} // namespace WebCore
+
+#endif // ENABLE(MEDIA_SOURCE) && USE(GSTREAMER)

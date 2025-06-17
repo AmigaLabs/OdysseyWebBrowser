@@ -30,7 +30,7 @@
 #include "RTCRtpSFrameTransform.h"
 #include "RTCRtpScriptTransform.h"
 #include "RTCRtpTransformBackend.h"
-#include <wtf/FastMalloc.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 
@@ -38,9 +38,9 @@ class RTCRtpReceiver;
 class RTCRtpSender;
 
 class RTCRtpTransform  {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(RTCRtpTransform);
 public:
-    using Internal = Variant<RefPtr<RTCRtpSFrameTransform>, RefPtr<RTCRtpScriptTransform>>;
+    using Internal = std::variant<RefPtr<RTCRtpSFrameTransform>, RefPtr<RTCRtpScriptTransform>>;
     static std::unique_ptr<RTCRtpTransform> from(std::optional<Internal>&&);
 
     explicit RTCRtpTransform(Internal&&);
@@ -66,10 +66,6 @@ private:
 };
 
 bool operator==(const RTCRtpTransform&, const RTCRtpTransform&);
-inline bool operator!=(const RTCRtpTransform& a, const RTCRtpTransform& b)
-{
-    return !(a == b);
-}
 
 } // namespace WebCore
 

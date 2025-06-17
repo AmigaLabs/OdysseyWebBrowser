@@ -29,16 +29,23 @@
 #include "SpeechRecognitionRequest.h"
 #include "SpeechRecognitionUpdate.h"
 #include <wtf/MediaTime.h>
+#include <wtf/TZoneMallocInlines.h>
 
 #if PLATFORM(COCOA)
 #include "MediaUtilities.h"
+#include <pal/cf/CoreMediaSoftLink.h>
 #endif
 
 namespace WebCore {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SpeechRecognizer);
+
 SpeechRecognizer::SpeechRecognizer(DelegateCallback&& delegateCallback, UniqueRef<SpeechRecognitionRequest>&& request)
     : m_delegateCallback(WTFMove(delegateCallback))
     , m_request(WTFMove(request))
+#if HAVE(SPEECHRECOGNIZER)
+    , m_currentAudioSampleTime(PAL::kCMTimeZero)
+#endif
 {
 }
 
@@ -97,12 +104,12 @@ void SpeechRecognizer::start(Ref<RealtimeMediaSource>&& source, bool mockSpeechR
 
 void SpeechRecognizer::startCapture(Ref<RealtimeMediaSource>&& source)
 {
-    auto dataCallback = [weakThis = makeWeakPtr(this)](const auto& time, const auto& data, const auto& description, auto sampleCount) {
+    auto dataCallback = [weakThis = WeakPtr { *this }](const auto& time, const auto& data, const auto& description, auto sampleCount) {
         if (weakThis)
             weakThis->dataCaptured(time, data, description, sampleCount);
     };
 
-    auto stateUpdateCallback = [weakThis = makeWeakPtr(this)](const auto& update) {
+    auto stateUpdateCallback = [weakThis = WeakPtr { *this }](const auto& update) {
         if (weakThis)
             weakThis->m_delegateCallback(update);
     };

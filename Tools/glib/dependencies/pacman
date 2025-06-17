@@ -9,6 +9,7 @@ PACKAGES=(
     cmake
     file
     findutils
+    flite
     gawk
     gcc
     gperf
@@ -20,11 +21,14 @@ PACKAGES=(
     gzip
     intltool
     itstool
+    lcms2
     libevent
     libjpeg-turbo
+    libjxl
     libkate
     libpng
     libseccomp
+    libsysprof-capture
     libsystemd
     libtasn1
     libtool

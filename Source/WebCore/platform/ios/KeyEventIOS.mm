@@ -40,7 +40,7 @@ namespace WebCore {
 
 int windowsKeyCodeForKeyCode(uint16_t keyCode)
 {
-    static const int windowsKeyCode[] = {
+    static constexpr auto windowsKeyCode = std::to_array<int>({
         /* 0 */ 0, // n/a
         /* 1 */ 0, // n/a
         /* 2 */ 0, // n/a
@@ -171,7 +171,7 @@ int windowsKeyCodeForKeyCode(uint16_t keyCode)
         /* 0x7F */ VK_VOLUME_MUTE, // Mute
         /* 0x80 */ VK_VOLUME_UP, // Volume Up
         /* 0x81 */ VK_VOLUME_DOWN, // Volume Down
-    };
+    });
     // Check if key is a modifier or the keypad comma (on JIS keyboard).
     switch (keyCode) {
     case kHIDUsage_KeypadComma:
@@ -194,7 +194,7 @@ int windowsKeyCodeForKeyCode(uint16_t keyCode)
         return VK_APPS;
     }
     // Otherwise check all other known keys.
-    if (keyCode < WTF_ARRAY_LENGTH(windowsKeyCode))
+    if (keyCode < std::size(windowsKeyCode))
         return windowsKeyCode[keyCode];
     return 0; // Unknown key
 }
@@ -296,13 +296,13 @@ static bool isFunctionKey(UChar charCode)
 void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type, bool backwardCompatibilityMode)
 {
     // Can only change type from KeyDown to RawKeyDown or Char, as we lack information for other conversions.
-    ASSERT(m_type == KeyDown);
-    ASSERT(type == RawKeyDown || type == Char);
+    ASSERT(m_type == Type::KeyDown);
+    ASSERT(type == Type::RawKeyDown || type == Type::Char);
     m_type = type;
     if (backwardCompatibilityMode)
         return;
 
-    if (type == PlatformEvent::RawKeyDown) {
+    if (type == PlatformEvent::Type::RawKeyDown) {
         m_text = String();
         m_unmodifiedText = String();
     } else {

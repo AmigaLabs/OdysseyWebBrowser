@@ -27,10 +27,10 @@
 
 #if !PLATFORM(IOS_FAMILY)
 
-#import "Utilities.h"
+#import "PlatformUtilities.h"
 #import <JavaScriptCore/InitializeThreading.h>
-#import <WebCore/Frame.h>
 #import <WebCore/FrameLoadRequest.h>
+#import <WebCore/LocalFrame.h>
 #import <WebCore/Page.h>
 #import <WebCore/PageConfiguration.h>
 #import <WebCore/Document.h>
@@ -51,8 +51,8 @@ static bool didRecieveData;
 static bool didComplete;
 static bool didInvalidate;
 
-static NSURL *documentURL = [[NSBundle mainBundle] URLForResource:@"simple" withExtension:@"html" subdirectory:@"TestWebKitAPI.resources"];
-static NSURL *resourceURL = [[NSBundle mainBundle] URLForResource:@"test" withExtension:@"mp4" subdirectory:@"TestWebKitAPI.resources"];
+static NSURL *documentURL = [NSBundle.test_resourcesBundle URLForResource:@"simple" withExtension:@"html"];
+static NSURL *resourceURL = [NSBundle.test_resourcesBundle URLForResource:@"test" withExtension:@"mp4"];
 
 @interface TestNSURLSessionLoaderDelegate : NSObject<WebFrameLoadDelegate>
 @end
@@ -99,7 +99,7 @@ static NSURL *resourceURL = [[NSBundle mainBundle] URLForResource:@"test" withEx
 using namespace WebCore;
 
 @interface WebView (WebViewInternalForTesting)
-- (WebCore::Frame*)_mainCoreFrame;
+- (WebCore::LocalFrame*)_mainCoreFrame;
 @end
 
 namespace TestWebKitAPI {
@@ -107,7 +107,7 @@ namespace TestWebKitAPI {
 class WebCoreNSURLSessionTest : public testing::Test {
 public:
     RetainPtr<WebView> view;
-    Frame* frame { nullptr };
+    LocalFrame* frame { nullptr };
     RetainPtr<TestNSURLSessionDataDelegate> delegate;
     RefPtr<MediaResourceLoader> loader;
     RefPtr<HTMLMediaElement> mediaElement;
@@ -127,7 +127,7 @@ public:
         delegate = adoptNS([[TestNSURLSessionDataDelegate alloc] init]);
         frame = [view _mainCoreFrame];
         mediaElement = HTMLVideoElement::create(*frame->document());
-        loader = adoptRef(new MediaResourceLoader(*frame->document(), *mediaElement.get(), emptyString(), FetchOptions::Destination::Video));
+        loader = MediaResourceLoader::create(*frame->document(), *mediaElement.get(), emptyString(), FetchOptions::Destination::Video);
     }
 
     virtual void TearDown()

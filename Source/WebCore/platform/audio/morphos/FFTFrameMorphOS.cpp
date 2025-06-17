@@ -53,11 +53,11 @@ FFTFrame::~FFTFrame()
 {
 }
 
-void FFTFrame::doFFT(const float* data)
+void FFTFrame::doFFT(std::span<const float>)
 {
 }
 
-void FFTFrame::doInverseFFT(float* data)
+void FFTFrame::doInverseFFT(std::span<float>)
 {
 }
 

@@ -29,6 +29,7 @@
 
 #include "NetworkRTCProvider.h"
 #include <Network/Network.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace rtc {
 class SocketAddress;
@@ -37,11 +38,14 @@ class SocketAddress;
 namespace WebKit {
 
 class NetworkRTCTCPSocketCocoa final : public NetworkRTCProvider::Socket {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(NetworkRTCTCPSocketCocoa);
 public:
-    static std::unique_ptr<NetworkRTCProvider::Socket> createClientTCPSocket(WebCore::LibWebRTCSocketIdentifier, NetworkRTCProvider&, const rtc::SocketAddress&, int options, const String& attributedBundleIdentifier, bool isRelayDisabled, Ref<IPC::Connection>&&);
+    static std::unique_ptr<NetworkRTCProvider::Socket> createClientTCPSocket(WebCore::LibWebRTCSocketIdentifier, NetworkRTCProvider&, const rtc::SocketAddress&, int options, const String& attributedBundleIdentifier, bool isFirstParty, bool isRelayDisabled, const WebCore::RegistrableDomain&, Ref<IPC::Connection>&&);
 
-    NetworkRTCTCPSocketCocoa(WebCore::LibWebRTCSocketIdentifier, NetworkRTCProvider&, const rtc::SocketAddress&, int options, const String& attributedBundleIdentifier, bool isRelayDisabled, Ref<IPC::Connection>&&);
+    NetworkRTCTCPSocketCocoa(WebCore::LibWebRTCSocketIdentifier, NetworkRTCProvider&, const rtc::SocketAddress&, int options, const String& attributedBundleIdentifier, bool isFirstParty, bool isRelayDisabled, const WebCore::RegistrableDomain&, Ref<IPC::Connection>&&);
+    ~NetworkRTCTCPSocketCocoa();
+
+    static void getInterfaceName(NetworkRTCProvider&, const URL&, const String& attributedBundleIdentifier, bool isFirstParty, bool isRelayDisabled, const WebCore::RegistrableDomain&, CompletionHandler<void(String&&)>&&);
 
 private:
     // NetworkRTCProvider::Socket.
@@ -49,15 +53,18 @@ private:
     Type type() const final { return Type::ClientTCP; }
     void close() final;
     void setOption(int option, int value) final;
-    void sendTo(const uint8_t*, size_t, const rtc::SocketAddress&, const rtc::PacketOptions&) final;
+    void sendTo(std::span<const uint8_t>, const rtc::SocketAddress&, const rtc::PacketOptions&) final;
 
-    Vector<uint8_t> createMessageBuffer(const uint8_t*, size_t);
+    Vector<uint8_t> createMessageBuffer(std::span<const uint8_t>);
 
     WebCore::LibWebRTCSocketIdentifier m_identifier;
-    NetworkRTCProvider& m_rtcProvider;
+    CheckedRef<NetworkRTCProvider> m_rtcProvider;
     Ref<IPC::Connection> m_connection;
     RetainPtr<nw_connection_t> m_nwConnection;
     bool m_isSTUN { false };
+#if ASSERT_ENABLED
+    bool m_isClosed { false };
+#endif
 };
 
 } // namespace WebKit

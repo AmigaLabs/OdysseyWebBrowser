@@ -31,8 +31,11 @@
 #include "MediaSession.h"
 #include "Navigator.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(NavigatorMediaSession);
 
 NavigatorMediaSession::NavigatorMediaSession(Navigator& navigator)
     : m_navigator(navigator)
@@ -46,11 +49,21 @@ MediaSession& NavigatorMediaSession::mediaSession(Navigator& navigator)
     return NavigatorMediaSession::from(navigator)->mediaSession();
 }
 
+RefPtr<MediaSession> NavigatorMediaSession::mediaSessionIfExists(Navigator& navigator)
+{
+    return NavigatorMediaSession::from(navigator)->mediaSessionIfExists();
+}
+
 MediaSession& NavigatorMediaSession::mediaSession()
 {
     if (!m_mediaSession)
-        m_mediaSession = MediaSession::create(m_navigator);
+        m_mediaSession = MediaSession::create(Ref { m_navigator.get() });
     return *m_mediaSession;
+}
+
+RefPtr<MediaSession> NavigatorMediaSession::mediaSessionIfExists()
+{
+    return m_mediaSession;
 }
 
 NavigatorMediaSession* NavigatorMediaSession::from(Navigator& navigator)
@@ -64,9 +77,9 @@ NavigatorMediaSession* NavigatorMediaSession::from(Navigator& navigator)
     return supplement;
 }
 
-const char* NavigatorMediaSession::supplementName()
+ASCIILiteral NavigatorMediaSession::supplementName()
 {
-    return "NavigatorMediaSession";
+    return "NavigatorMediaSession"_s;
 }
 
 }

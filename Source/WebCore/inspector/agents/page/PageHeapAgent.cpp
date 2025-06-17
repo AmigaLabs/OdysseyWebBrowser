@@ -25,11 +25,14 @@
 
 #include "config.h"
 #include "PageHeapAgent.h"
+#include <wtf/TZoneMallocInlines.h>
 
 
 namespace WebCore {
 
 using namespace Inspector;
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(PageHeapAgent);
 
 PageHeapAgent::PageHeapAgent(PageAgentContext& context)
     : WebHeapAgent(context)
@@ -39,7 +42,7 @@ PageHeapAgent::PageHeapAgent(PageAgentContext& context)
 
 PageHeapAgent::~PageHeapAgent() = default;
 
-Protocol::ErrorStringOr<void> PageHeapAgent::enable()
+Inspector::Protocol::ErrorStringOr<void> PageHeapAgent::enable()
 {
     auto result = WebHeapAgent::enable();
 
@@ -48,7 +51,7 @@ Protocol::ErrorStringOr<void> PageHeapAgent::enable()
     return result;
 }
 
-Protocol::ErrorStringOr<void> PageHeapAgent::disable()
+Inspector::Protocol::ErrorStringOr<void> PageHeapAgent::disable()
 {
     m_instrumentingAgents.setEnabledPageHeapAgent(nullptr);
 

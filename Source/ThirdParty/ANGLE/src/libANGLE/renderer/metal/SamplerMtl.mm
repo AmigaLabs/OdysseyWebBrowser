@@ -27,16 +27,14 @@ void SamplerMtl::onDestroy(const gl::Context *context)
     mSamplerState = nil;
 }
 
-const mtl::AutoObjCPtr<id<MTLSamplerState>> &SamplerMtl::getSampler(ContextMtl *contextMtl)
+const angle::ObjCPtr<id<MTLSamplerState>> &SamplerMtl::getSampler(ContextMtl *contextMtl)
 {
     if (!mSamplerState)
     {
-        DisplayMtl *displayMtl = contextMtl->getDisplay();
-
         mtl::SamplerDesc samplerDesc(mState);
 
-        mSamplerState =
-            displayMtl->getStateCache().getSamplerState(displayMtl->getMetalDevice(), samplerDesc);
+        mSamplerState = contextMtl->getDisplay()->getStateCache().getSamplerState(
+            contextMtl->getMetalDevice(), samplerDesc);
     }
 
     return mSamplerState;

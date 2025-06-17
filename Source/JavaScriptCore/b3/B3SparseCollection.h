@@ -62,6 +62,11 @@ public:
         return result;
     }
 
+    T* cloneAndAdd(const T& node)
+    {
+        return add(makeUnique<T>(node));
+    }
+
     template<typename... Arguments>
     T* addNew(Arguments&&... arguments)
     {
@@ -152,11 +157,6 @@ public:
         {
             ASSERT(m_collection == other.m_collection);
             return m_index == other.m_index;
-        }
-
-        bool operator!=(const iterator& other) const
-        {
-            return !(*this == other);
         }
 
     private:

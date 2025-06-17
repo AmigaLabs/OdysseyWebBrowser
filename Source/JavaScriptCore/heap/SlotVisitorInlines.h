@@ -30,6 +30,8 @@
 #include "PreciseAllocation.h"
 #include "SlotVisitor.h"
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace JSC {
 
 ALWAYS_INLINE void SlotVisitor::appendUnbarriered(JSValue* slot, size_t count)
@@ -54,7 +56,7 @@ ALWAYS_INLINE void SlotVisitor::appendUnbarriered(JSCell* cell)
         }
     } else {
         MarkedBlock& block = cell->markedBlock();
-        dependency = block.aboutToMark(m_markingVersion);
+        dependency = block.aboutToMark(m_markingVersion, cell);
         if (LIKELY(block.isMarked(cell, dependency))) {
             if (LIKELY(!m_heapAnalyzer))
                 return;
@@ -90,7 +92,7 @@ ALWAYS_INLINE void SlotVisitor::appendHiddenUnbarriered(JSCell* cell)
             return;
     } else {
         MarkedBlock& block = cell->markedBlock();
-        dependency = block.aboutToMark(m_markingVersion);
+        dependency = block.aboutToMark(m_markingVersion, cell);
         if (LIKELY(block.isMarked(cell, dependency)))
             return;
     }
@@ -116,11 +118,27 @@ ALWAYS_INLINE void SlotVisitor::appendHidden(const WriteBarrierBase<T, Traits>& 
     appendHiddenUnbarriered(slot.get());
 }
 
+ALWAYS_INLINE void SlotVisitor::append(const WriteBarrierStructureID& slot)
+{
+    appendUnbarriered(reinterpret_cast<JSCell*>(slot.get()));
+}
+
+ALWAYS_INLINE void SlotVisitor::appendHidden(const WriteBarrierStructureID& slot)
+{
+    appendHiddenUnbarriered(reinterpret_cast<JSCell*>(slot.get()));
+}
+
 template<typename Iterator>
 ALWAYS_INLINE void SlotVisitor::append(Iterator begin, Iterator end)
 {
     for (auto it = begin; it != end; ++it)
         append(*it);
+}
+
+ALWAYS_INLINE void SlotVisitor::appendValues(std::span<const WriteBarrier<Unknown>> barriers)
+{
+    for (auto& barrier : barriers)
+        append(barrier);
 }
 
 ALWAYS_INLINE void SlotVisitor::appendValues(const WriteBarrierBase<Unknown>* barriers, size_t count)
@@ -179,3 +197,5 @@ IterationStatus SlotVisitor::forEachMarkStack(const Func& func)
 }
 
 } // namespace JSC
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

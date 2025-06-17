@@ -29,12 +29,10 @@
 #if PLATFORM(MAC) && ENABLE(REMOTE_INSPECTOR)
 
 #import "GlobalFindInPageState.h"
+#import "MessageSenderInlines.h"
 #import "RemoteWebInspectorUIMessages.h"
 #import "RemoteWebInspectorUIProxyMessages.h"
-#import <WebKit/WKFrameInfo.h>
 #import "WKInspectorViewController.h"
-#import <WebKit/WKNavigationAction.h>
-#import <WebKit/WKNavigationDelegate.h>
 #import "WKWebViewInternal.h"
 #import "WebInspectorUIProxy.h"
 #import "WebPageGroup.h"
@@ -43,15 +41,25 @@
 #import <SecurityInterface/SFCertificatePanel.h>
 #import <SecurityInterface/SFCertificateView.h>
 #import <WebCore/CertificateInfo.h>
+#import <WebCore/Color.h>
+#import <WebKit/WKFrameInfo.h>
+#import <WebKit/WKNavigationAction.h>
+#import <WebKit/WKNavigationDelegate.h>
+#import <wtf/BlockPtr.h>
 #import <wtf/text/Base64.h>
 
 @interface WKRemoteWebInspectorUIProxyObjCAdapter : NSObject <NSWindowDelegate, WKInspectorViewControllerDelegate> {
-    WebKit::RemoteWebInspectorUIProxy* _inspectorProxy;
+    WeakPtr<WebKit::RemoteWebInspectorUIProxy> _inspectorProxy;
 }
 - (instancetype)initWithRemoteWebInspectorUIProxy:(WebKit::RemoteWebInspectorUIProxy*)inspectorProxy;
 @end
 
 @implementation WKRemoteWebInspectorUIProxyObjCAdapter
+
+- (RefPtr<WebKit::RemoteWebInspectorUIProxy>)protectedInspectorProxy
+{
+    return _inspectorProxy.get();
+}
 
 - (NSRect)window:(NSWindow *)window willPositionSheet:(NSWindow *)sheet usingRect:(NSRect)rect
 {
@@ -72,17 +80,17 @@
 
 - (void)inspectorWKWebViewDidBecomeActive:(WKInspectorViewController *)inspectorViewController
 {
-    _inspectorProxy->didBecomeActive();
+    self.protectedInspectorProxy->didBecomeActive();
 }
 
 - (void)inspectorViewControllerInspectorDidCrash:(WKInspectorViewController *)inspectorViewController
 {
-    _inspectorProxy->closeFromCrash();
+    self.protectedInspectorProxy->closeFromCrash();
 }
 
 - (BOOL)inspectorViewControllerInspectorIsUnderTest:(WKInspectorViewController *)inspectorViewController
 {
-    return _inspectorProxy->isUnderTest();
+    return self.protectedInspectorProxy->isUnderTest();
 }
 
 @end
@@ -97,7 +105,7 @@ WKWebView *RemoteWebInspectorUIProxy::webView() const
 
 void RemoteWebInspectorUIProxy::didBecomeActive()
 {
-    m_inspectorPage->send(Messages::RemoteWebInspectorUI::UpdateFindString(WebKit::stringForFind()));
+    protectedInspectorPage()->protectedLegacyMainFrameProcess()->send(Messages::RemoteWebInspectorUI::UpdateFindString(WebKit::stringForFind()), m_inspectorPage->webPageIDInMainFrameProcess());
 }
 
 WebPageProxy* RemoteWebInspectorUIProxy::platformCreateFrontendPageAndWindow()
@@ -147,90 +155,49 @@ void RemoteWebInspectorUIProxy::platformBringToFront()
     [m_window makeFirstResponder:webView()];
 }
 
-void RemoteWebInspectorUIProxy::platformSave(const String& suggestedURL, const String& content, bool base64Encoded, bool forceSaveDialog)
+void RemoteWebInspectorUIProxy::platformSave(Vector<InspectorFrontendClient::SaveData>&& saveDatas, bool forceSaveAs)
 {
-    // FIXME: Share with WebInspectorUIProxyMac.
+    RetainPtr<NSString> urlCommonPrefix;
+    for (auto& item : saveDatas) {
+        if (!urlCommonPrefix)
+            urlCommonPrefix = item.url;
+        else
+            urlCommonPrefix = [urlCommonPrefix commonPrefixWithString:item.url options:0];
+    }
+    if ([urlCommonPrefix hasSuffix:@"."])
+        urlCommonPrefix = [urlCommonPrefix substringToIndex:[urlCommonPrefix length] - 1];
 
-    ASSERT(!suggestedURL.isEmpty());
-    
-    NSURL *platformURL = m_suggestedToActualURLMap.get(suggestedURL).get();
+    RetainPtr platformURL = m_suggestedToActualURLMap.get(urlCommonPrefix.get());
     if (!platformURL) {
-        platformURL = [NSURL URLWithString:suggestedURL];
+        platformURL = [NSURL URLWithString:urlCommonPrefix.get()];
         // The user must confirm new filenames before we can save to them.
-        forceSaveDialog = true;
-    }
-    
-    ASSERT(platformURL);
-    if (!platformURL)
-        return;
-
-    // Necessary for the block below.
-    String suggestedURLCopy = suggestedURL;
-    String contentCopy = content;
-
-    auto saveToURL = ^(NSURL *actualURL) {
-        ASSERT(actualURL);
-
-        m_suggestedToActualURLMap.set(suggestedURLCopy, actualURL);
-
-        if (base64Encoded) {
-            auto decodedData = base64Decode(contentCopy, Base64DecodeOptions::ValidatePadding);
-            if (!decodedData)
-                return;
-            auto dataContent = adoptNS([[NSData alloc] initWithBytes:decodedData->data() length:decodedData->size()]);
-            [dataContent writeToURL:actualURL atomically:YES];
-        } else
-            [contentCopy writeToURL:actualURL atomically:YES encoding:NSUTF8StringEncoding error:NULL];
-
-        m_inspectorPage->send(Messages::RemoteWebInspectorUI::DidSave([actualURL absoluteString]));
-    };
-
-    if (!forceSaveDialog) {
-        saveToURL(platformURL);
-        return;
+        forceSaveAs = true;
     }
 
-    NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.nameFieldStringValue = platformURL.lastPathComponent;
-
-    // If we have a file URL we've already saved this file to a path and
-    // can provide a good directory to show. Otherwise, use the system's
-    // default behavior for the initial directory to show in the dialog.
-    if (platformURL.isFileURL)
-        panel.directoryURL = [platformURL URLByDeletingLastPathComponent];
-
-    auto completionHandler = ^(NSInteger result) {
-        if (result == NSModalResponseCancel)
-            return;
-        ASSERT(result == NSModalResponseOK);
-        saveToURL(panel.URL);
-    };
-
-    NSWindow *window = m_window ? m_window.get() : [NSApp keyWindow];
-    if (window)
-        [panel beginSheetModalForWindow:window completionHandler:completionHandler];
-    else
-        completionHandler([panel runModal]);
+    WebInspectorUIProxy::showSavePanel(m_window.get(), platformURL.get(), WTFMove(saveDatas), forceSaveAs, [urlCommonPrefix, protectedThis = Ref { *this }] (NSURL *actualURL) {
+        protectedThis->m_suggestedToActualURLMap.set(urlCommonPrefix.get(), actualURL);
+    });
 }
 
-void RemoteWebInspectorUIProxy::platformAppend(const String& suggestedURL, const String& content)
+void RemoteWebInspectorUIProxy::platformLoad(const String& path, CompletionHandler<void(const String&)>&& completionHandler)
 {
-    // FIXME: Share with WebInspectorUIProxyMac.
+    if (auto contents = FileSystem::readEntireFile(path))
+        completionHandler(String::adopt(WTFMove(*contents)));
+    else
+        completionHandler(nullString());
+}
 
-    ASSERT(!suggestedURL.isEmpty());
-    
-    RetainPtr<NSURL> actualURL = m_suggestedToActualURLMap.get(suggestedURL);
-    // Do not append unless the user has already confirmed this filename in save().
-    if (!actualURL)
-        return;
+void RemoteWebInspectorUIProxy::platformPickColorFromScreen(CompletionHandler<void(const std::optional<WebCore::Color>&)>&& completionHandler)
+{
+    auto sampler = adoptNS([[NSColorSampler alloc] init]);
+    [sampler.get() showSamplerWithSelectionHandler:makeBlockPtr([completionHandler = WTFMove(completionHandler)](NSColor *selectedColor) mutable {
+        if (!selectedColor) {
+            completionHandler(std::nullopt);
+            return;
+        }
 
-    NSFileHandle *handle = [NSFileHandle fileHandleForWritingToURL:actualURL.get() error:NULL];
-    [handle seekToEndOfFile];
-    [handle writeData:[content dataUsingEncoding:NSUTF8StringEncoding]];
-    [handle closeFile];
-
-    WebPageProxy* inspectorPage = webView()->_page.get();
-    inspectorPage->send(Messages::RemoteWebInspectorUI::DidAppend([actualURL absoluteString]));
+        completionHandler(Color::createAndPreserveColorSpace(selectedColor.CGColor));
+    }).get()];
 }
 
 void RemoteWebInspectorUIProxy::platformSetSheetRect(const FloatRect& rect)
@@ -264,12 +231,17 @@ void RemoteWebInspectorUIProxy::platformSetForcedAppearance(InspectorFrontendCli
 
 void RemoteWebInspectorUIProxy::platformStartWindowDrag()
 {
-    webView()->_page->startWindowDrag();
+    webView()._protectedPage->startWindowDrag();
 }
 
 void RemoteWebInspectorUIProxy::platformOpenURLExternally(const String& url)
 {
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:url]];
+}
+
+void RemoteWebInspectorUIProxy::platformRevealFileExternally(const String& path)
+{
+    [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ [NSURL URLWithString:path] ]];
 }
 
 void RemoteWebInspectorUIProxy::platformShowCertificate(const CertificateInfo& certificateInfo)
@@ -279,11 +251,7 @@ void RemoteWebInspectorUIProxy::platformShowCertificate(const CertificateInfo& c
     RetainPtr<SFCertificatePanel> certificatePanel = adoptNS([[SFCertificatePanel alloc] init]);
 
     ASSERT(m_window);
-#if HAVE(SEC_TRUST_SERIALIZATION)
-    [certificatePanel beginSheetForWindow:m_window.get() modalDelegate:nil didEndSelector:NULL contextInfo:nullptr trust:certificateInfo.trust() showGroup:YES];
-#else
-    [certificatePanel beginSheetForWindow:m_window.get() modalDelegate:nil didEndSelector:NULL contextInfo:nullptr certificates:(NSArray *)certificateInfo.certificateChain() showGroup:YES];
-#endif
+    [certificatePanel beginSheetForWindow:m_window.get() modalDelegate:nil didEndSelector:NULL contextInfo:nullptr trust:certificateInfo.trust().get() showGroup:YES];
 
     // This must be called after the trust panel has been displayed, because the certificateView doesn't exist beforehand.
     SFCertificateView *certificateView = [certificatePanel certificateView];

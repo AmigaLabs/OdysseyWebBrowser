@@ -23,11 +23,17 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if PLATFORM(MAC)
+
 #import <AppKit/AppKit.h>
 
 #if USE(APPLE_INTERNAL_SDK)
 
+#define CGCOLORTAGGEDPOINTER_H_
+
 #import <AppKit/NSInspectorBar.h>
+#import <AppKit/NSMenu_Private.h>
+#import <AppKit/NSPreviewRepresentingActivityItem_Private.h>
 #import <AppKit/NSTextInputClient_Private.h>
 #import <AppKit/NSWindow_Private.h>
 
@@ -39,6 +45,11 @@
 
 @interface NSInspectorBar : NSObject
 @property (getter=isVisible) BOOL visible;
+@end
+
+@interface NSKeyboardShortcut
++ (id)shortcutWithKeyEquivalent:(NSString *)keyEquivalent modifierMask:(NSUInteger)modifierMask;
+@property (readonly) NSString *localizedDisplayName;
 @end
 
 #if HAVE(NSSCROLLVIEW_SEPARATOR_TRACKING_ADAPTER)
@@ -60,10 +71,7 @@ typedef NS_OPTIONS(NSUInteger, NSWindowShadowOptions) {
 - (void)setInspectorBar:(NSInspectorBar *)bar;
 
 @property (readonly) NSWindowShadowOptions shadowOptions;
-
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 101400
 @property CGFloat titlebarAlphaValue;
-#endif
 
 #if HAVE(NSSCROLLVIEW_SEPARATOR_TRACKING_ADAPTER)
 - (BOOL)registerScrollViewSeparatorTrackingAdapter:(NSObject<NSScrollViewSeparatorTrackingAdapter> *)adapter;
@@ -72,7 +80,17 @@ typedef NS_OPTIONS(NSUInteger, NSWindowShadowOptions) {
 
 @end
 
+@class LPLinkMetadata;
+
+@interface NSPreviewRepresentingActivityItem ()
+- (instancetype)initWithItem:(id)item linkMetadata:(LPLinkMetadata *)linkMetadata;
+@end
+
 #endif
+
+@interface NSPopover (IPI)
+@property (readonly) NSView *positioningView;
+@end
 
 @interface NSWorkspace (NSWorkspaceAccessibilityDisplayInternal_IPI)
 + (void)_invalidateAccessibilityDisplayValues;
@@ -82,13 +100,21 @@ typedef NS_OPTIONS(NSUInteger, NSWindowShadowOptions) {
 - (void)_update;
 @end
 
-#if __MAC_OS_X_VERSION_MAX_ALLOWED < 101400
-@interface NSWindow (IPI)
-@property CGFloat titlebarAlphaValue;
-@end
-#endif
-
 // FIXME: Move this above once <rdar://problem/70224980> is in an SDK.
 @interface NSCursor ()
 + (void)hideUntilChanged;
 @end
+
+#if HAVE(NSWINDOW_SNAPSHOT_READINESS_HANDLER)
+// FIXME: Move this above once <rdar://problem/112554759> is in an SDK.
+@interface NSWindow (Staging_112554759)
+typedef void (^NSWindowSnapshotReadinessHandler) (void);
+- (NSWindowSnapshotReadinessHandler)_holdResizeSnapshotWithReason:(NSString *)reason;
+@end
+#endif
+
+#if USE(APPLE_INTERNAL_SDK) && __has_include(<WebKitAdditions/AppKitSPIAdditions.h>)
+#import <WebKitAdditions/AppKitSPIAdditions.h>
+#endif
+
+#endif // PLATFORM(MAC)

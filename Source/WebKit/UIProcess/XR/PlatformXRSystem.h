@@ -28,38 +28,87 @@
 #if ENABLE(WEBXR)
 
 #include "MessageReceiver.h"
-#include "WebCoreArgumentCoders.h"
+#include "PlatformXRCoordinator.h"
+#include "ProcessThrottler.h"
 #include <WebCore/PlatformXR.h>
+#include <WebCore/SecurityOriginData.h>
+#include <wtf/RefCounted.h>
+#include <wtf/TZoneMalloc.h>
+
+namespace WebCore {
+class SecurityOriginData;
+}
 
 namespace WebKit {
 
 class PlatformXRCoordinator;
 class WebPageProxy;
 
+struct SharedPreferencesForWebProcess;
 struct XRDeviceInfo;
 
-class PlatformXRSystem : public IPC::MessageReceiver {
-    WTF_MAKE_FAST_ALLOCATED;
+class PlatformXRSystem : public IPC::MessageReceiver, public PlatformXRCoordinatorSessionEventClient, public RefCounted<PlatformXRSystem> {
+    WTF_MAKE_TZONE_ALLOCATED(PlatformXRSystem);
 public:
-    PlatformXRSystem(WebPageProxy&);
+    static Ref<PlatformXRSystem> create(WebPageProxy& page)
+    {
+        return adoptRef(*new PlatformXRSystem(page));
+    }
+
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
+
     virtual ~PlatformXRSystem();
+
+    std::optional<SharedPreferencesForWebProcess> sharedPreferencesForWebProcess() const;
+
+    USING_CAN_MAKE_WEAKPTR(PlatformXRCoordinatorSessionEventClient);
 
     void invalidate();
 
+    bool hasActiveSession() const { return !!m_immersiveSessionActivity; }
+    void ensureImmersiveSessionActivity();
+
 private:
+    explicit PlatformXRSystem(WebPageProxy&);
+
     static PlatformXRCoordinator* xrCoordinator();
+
+    bool webXREnabled() const;
 
     // IPC::MessageReceiver
     void didReceiveMessage(IPC::Connection&, IPC::Decoder&) final;
 
     // Message handlers
     void enumerateImmersiveXRDevices(CompletionHandler<void(Vector<XRDeviceInfo>&&)>&&);
-    void initializeTrackingAndRendering();
-    void shutDownTrackingAndRendering();
-    void requestFrame(CompletionHandler<void(PlatformXR::Device::FrameData&&)>&&);
-    void submitFrame();
+    void requestPermissionOnSessionFeatures(IPC::Connection&, const WebCore::SecurityOriginData&, PlatformXR::SessionMode, const PlatformXR::Device::FeatureList&, const PlatformXR::Device::FeatureList&, const PlatformXR::Device::FeatureList&, const PlatformXR::Device::FeatureList&, const PlatformXR::Device::FeatureList&, CompletionHandler<void(std::optional<PlatformXR::Device::FeatureList>&&)>&&);
+    void initializeTrackingAndRendering(IPC::Connection&);
+    void shutDownTrackingAndRendering(IPC::Connection&);
+    void requestFrame(IPC::Connection&, std::optional<PlatformXR::RequestData>&&, CompletionHandler<void(PlatformXR::FrameData&&)>&&);
+    void submitFrame(IPC::Connection&);
+    void didCompleteShutdownTriggeredBySystem(IPC::Connection&);
 
-    WebPageProxy& m_page;
+    // PlatformXRCoordinatorSessionEventClient
+    void sessionDidEnd(XRDeviceIdentifier) final;
+    void sessionDidUpdateVisibilityState(XRDeviceIdentifier, PlatformXR::VisibilityState) final;
+
+    std::optional<PlatformXR::SessionMode> m_immersiveSessionMode;
+    std::optional<WebCore::SecurityOriginData> m_immersiveSessionSecurityOriginData;
+    std::optional<PlatformXR::Device::FeatureList> m_immersiveSessionGrantedFeatures;
+    enum class ImmersiveSessionState : uint8_t {
+        Idle,
+        RequestingPermissions,
+        PermissionsGranted,
+        SessionRunning,
+        SessionEndingFromWebContent,
+        SessionEndingFromSystem,
+    };
+    ImmersiveSessionState m_immersiveSessionState { ImmersiveSessionState::Idle };
+    void setImmersiveSessionState(ImmersiveSessionState, CompletionHandler<void(bool)>&&);
+    void invalidateImmersiveSessionState(ImmersiveSessionState nextSessionState = ImmersiveSessionState::Idle);
+
+    WeakPtr<WebPageProxy> m_page;
+    RefPtr<ProcessThrottler::ForegroundActivity> m_immersiveSessionActivity;
 };
 
 } // namespace WebKit

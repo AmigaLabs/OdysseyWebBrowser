@@ -31,11 +31,12 @@
 #import "PlatformUtilities.h"
 #import "TestNavigationDelegate.h"
 #import "TestWKWebView.h"
-#import "UIKitSPI.h"
+#import "UIKitSPIForTesting.h"
+#import "WKTouchEventsGestureRecognizer.h"
 #import <wtf/RetainPtr.h>
 
 @interface UIView (WKContentView)
-- (void)_webTouchEventsRecognized:(UIWebTouchEventsGestureRecognizer *)gestureRecognizer;
+- (void)_touchEventsRecognized;
 @end
 
 static WKWebView *globalWebView = nil;
@@ -59,81 +60,71 @@ static WKWebView *globalWebView = nil;
 
 @end
 
-@interface WKWebView (TouchEventTests)
-@property (nonatomic, readonly) UIWebTouchEventsGestureRecognizer *touchEventGestureRecognizer;
-@end
-
-@implementation WKWebView (TouchEventTests)
-
-- (UIWebTouchEventsGestureRecognizer *)touchEventGestureRecognizer
+static Class touchEventsGestureRecognizerClass()
 {
-    for (UIGestureRecognizer *gestureRecognizer in self.textInputContentView.gestureRecognizers) {
-        if ([gestureRecognizer isKindOfClass:UIWebTouchEventsGestureRecognizer.class])
-            return (UIWebTouchEventsGestureRecognizer *)gestureRecognizer;
-    }
-    return nil;
+    static Class result = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        result = NSClassFromString(@"WKTouchEventsGestureRecognizer");
+    });
+    return result;
 }
-
-@end
 
 namespace TestWebKitAPI {
 
-static _UIWebTouchPoint globalTouchPoint { CGPointZero, CGPointZero, 100, UITouchPhaseBegan, 1, 0, 0, 0, UIWebTouchPointTypeDirect };
-static _UIWebTouchEvent globalTouchEvent { UIWebTouchEventTouchBegin, CACurrentMediaTime(), CGPointZero, CGPointZero, 1, 0, false, &globalTouchPoint, 1, true };
+static WebKit::WKTouchPoint globalTouchPoint { CGPointZero, CGPointZero, 100, UITouchPhaseBegan, 1, 0, 0, 0, WebKit::WKTouchPointType::Direct };
+static WebKit::WKTouchEvent globalTouchEvent { WebKit::WKTouchEventType::Begin, CACurrentMediaTime(), CGPointZero, 1, 0, false, { globalTouchPoint }, { }, { }, true };
 static void updateSimulatedTouchEvent(CGPoint location, UITouchPhase phase)
 {
-    globalTouchPoint.locationInScreenCoordinates = location;
-    globalTouchPoint.locationInDocumentCoordinates = location;
-    globalTouchEvent.locationInScreenCoordinates = location;
-    globalTouchEvent.locationInDocumentCoordinates = location;
+    globalTouchEvent.locationInRootViewCoordinates = location;
     globalTouchPoint.phase = phase;
     switch (phase) {
     case UITouchPhaseBegan:
-        globalTouchEvent.type = UIWebTouchEventTouchBegin;
+        globalTouchEvent.type = WebKit::WKTouchEventType::Begin;
         break;
     case UITouchPhaseMoved:
-        globalTouchEvent.type = UIWebTouchEventTouchChange;
+        globalTouchEvent.type = WebKit::WKTouchEventType::Change;
         break;
     case UITouchPhaseEnded:
-        globalTouchEvent.type = UIWebTouchEventTouchEnd;
+        globalTouchEvent.type = WebKit::WKTouchEventType::End;
         break;
     case UITouchPhaseCancelled:
-        globalTouchEvent.type = UIWebTouchEventTouchCancel;
+        globalTouchEvent.type = WebKit::WKTouchEventType::Cancel;
         break;
     default:
         break;
     }
 }
 
-static const _UIWebTouchEvent* simulatedTouchEvent(id, SEL)
+static const WebKit::WKTouchEvent* simulatedTouchEvent(id, SEL)
 {
     return &globalTouchEvent;
 }
 
 TEST(TouchEventTests, DestroyWebViewWhileHandlingTouchEnd)
 {
-    InstanceMethodSwizzler lastTouchEventSwizzler { UIWebTouchEventsGestureRecognizer.class, @selector(lastTouchEvent), reinterpret_cast<IMP>(simulatedTouchEvent) };
+    InstanceMethodSwizzler lastTouchEventSwizzler { touchEventsGestureRecognizerClass(), @selector(lastTouchEvent), reinterpret_cast<IMP>(simulatedTouchEvent) };
     @autoreleasepool {
-        auto messageHandler = adoptNS([TouchEventScriptMessageHandler new]);
-        auto controller = adoptNS([[WKUserContentController alloc] init]);
+        RetainPtr messageHandler = adoptNS([TouchEventScriptMessageHandler new]);
+        RetainPtr controller = adoptNS([[WKUserContentController alloc] init]);
         [controller addScriptMessageHandler:messageHandler.get() name:@"testHandler"];
 
-        auto configuration = adoptNS([[WKWebViewConfiguration alloc] init]);
+        RetainPtr configuration = adoptNS([[WKWebViewConfiguration alloc] init]);
         [configuration setUserContentController:controller.get()];
 
         globalWebView = [[WKWebView alloc] initWithFrame:CGRectMake(0, 0, 320, 500) configuration:configuration.get()];
-        auto hostWindow = adoptNS([[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 320, 500)]);
+        RetainPtr hostWindow = adoptNS([[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 320, 500)]);
         [hostWindow setHidden:NO];
         [hostWindow addSubview:globalWebView];
 
-        [globalWebView loadRequest:[NSURLRequest requestWithURL:[NSBundle.mainBundle URLForResource:@"active-touch-events" withExtension:@"html" subdirectory:@"TestWebKitAPI.resources"]]];
+        [globalWebView loadRequest:[NSURLRequest requestWithURL:[NSBundle.test_resourcesBundle URLForResource:@"active-touch-events" withExtension:@"html"]]];
         [globalWebView _test_waitForDidFinishNavigation];
 
         updateSimulatedTouchEvent(CGPointMake(100, 100), UITouchPhaseBegan);
-        [[globalWebView textInputContentView] _webTouchEventsRecognized:globalWebView.touchEventGestureRecognizer];
+        [[globalWebView textInputContentView] _touchEventsRecognized];
 
         updateSimulatedTouchEvent(CGPointMake(100, 100), UITouchPhaseEnded);
-        [[globalWebView textInputContentView] _webTouchEventsRecognized:globalWebView.touchEventGestureRecognizer];
+        [[globalWebView textInputContentView] _touchEventsRecognized];
     }
 
     __block bool done = false;

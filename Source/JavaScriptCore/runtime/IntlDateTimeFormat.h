@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2015 Andy VanWagoner (andy@vanwagoner.family)
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2021-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,13 +32,6 @@
 
 struct UDateIntervalFormat;
 
-#if !defined(HAVE_ICU_U_DATE_INTERVAL_FORMAT_FORMAT_RANGE_TO_PARTS)
-// ICU header is up-to-date if the build is non-Darwin or using Apple Internal SDK.
-#if (USE(APPLE_INTERNAL_SDK) || !OS(DARWIN)) && U_ICU_VERSION_MAJOR_NUM >= 64
-#define HAVE_ICU_U_DATE_INTERVAL_FORMAT_FORMAT_RANGE_TO_PARTS 1
-#endif
-#endif
-
 namespace JSC {
 
 enum class RelevantExtensionKey : uint8_t;
@@ -53,7 +46,7 @@ class IntlDateTimeFormat final : public JSNonFinalObject {
 public:
     using Base = JSNonFinalObject;
 
-    static constexpr bool needsDestruction = true;
+    static constexpr DestructionMode needsDestruction = NeedsDestruction;
 
     static void destroy(JSCell* cell)
     {
@@ -61,7 +54,7 @@ public:
     }
 
     template<typename CellType, SubspaceAccess mode>
-    static IsoSubspace* subspaceFor(VM& vm)
+    static GCClient::IsoSubspace* subspaceFor(VM& vm)
     {
         return vm.intlDateTimeFormatSpace<mode>();
     }
@@ -71,7 +64,9 @@ public:
 
     DECLARE_INFO;
 
-    void initializeDateTimeFormat(JSGlobalObject*, JSValue locales, JSValue options);
+    enum class RequiredComponent : uint8_t { Date, Time, Any };
+    enum class Defaults : uint8_t { Date, Time, All };
+    void initializeDateTimeFormat(JSGlobalObject*, JSValue locales, JSValue options, RequiredComponent, Defaults);
     JSValue format(JSGlobalObject*, double value) const;
     JSValue formatToParts(JSGlobalObject*, double value, JSString* sourceType = nullptr) const;
     JSValue formatRange(JSGlobalObject*, double startDate, double endDate);
@@ -88,12 +83,14 @@ public:
 
 private:
     IntlDateTimeFormat(VM&, Structure*);
-    void finishCreation(VM&);
+    DECLARE_DEFAULT_FINISH_CREATION;
     DECLARE_VISIT_CHILDREN;
 
     static Vector<String> localeData(const String&, RelevantExtensionKey);
 
     UDateIntervalFormat* createDateIntervalFormatIfNecessary(JSGlobalObject*);
+
+    static double handleDateTimeValue(JSGlobalObject*, JSValue);
 
     enum class Weekday : uint8_t { None, Narrow, Short, Long };
     enum class Era : uint8_t { None, Narrow, Short, Long };
@@ -107,7 +104,7 @@ private:
     enum class TimeZoneName : uint8_t { None, Short, Long, ShortOffset, LongOffset, ShortGeneric, LongGeneric };
     enum class DateTimeStyle : uint8_t { None, Full, Long, Medium, Short };
 
-    void setFormatsFromPattern(const StringView&);
+    void setFormatsFromPattern(StringView);
     static ASCIILiteral hourCycleString(HourCycle);
     static ASCIILiteral weekdayString(Weekday);
     static ASCIILiteral eraString(Era);
@@ -125,6 +122,7 @@ private:
     static HourCycle parseHourCycle(const String&);
     static void replaceHourCycleInSkeleton(Vector<UChar, 32>&, bool hour12);
     static void replaceHourCycleInPattern(Vector<UChar, 32>&, HourCycle);
+    static String buildSkeleton(Weekday, Era, Year, Month, Day, TriState, HourCycle, Hour, DayPeriod, Minute, Second, unsigned, TimeZoneName);
 
     using UDateFormatDeleter = ICUDeleter<udat_close>;
 
@@ -137,6 +135,7 @@ private:
     String m_calendar;
     String m_numberingSystem;
     String m_timeZone;
+    String m_timeZoneForICU;
     HourCycle m_hourCycle { HourCycle::None };
     Weekday m_weekday { Weekday::None };
     Era m_era { Era::None };

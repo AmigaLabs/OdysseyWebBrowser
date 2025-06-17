@@ -608,9 +608,7 @@ WI.NativePrototypeFunctionParameters = {
     CSSStyleDeclaration: {
         getPropertyCSSValue: "[propertyName]",
         getPropertyPriority: "[propertyName]",
-        getPropertyShorthand: "[propertyName]",
         getPropertyValue: "[propertyName]",
-        isPropertyImplicit: "[propertyName]",
         item: "[index]",
         removeProperty: "[propertyName]",
         setProperty: "[propertyName], [value], [priority]",
@@ -700,7 +698,6 @@ WI.NativePrototypeFunctionParameters = {
 
     CommandLineAPIHost: {
         copyText: "text",
-        databaseId: "database",
         getEventListeners: "target",
         inspect: "objectId, hints",
         storageId: "storage",
@@ -726,11 +723,6 @@ WI.NativePrototypeFunctionParameters = {
 
     CustomEvent: {
         initCustomEvent: "type, [bubbles], [cancelable], [detail]",
-        __proto__: null,
-    },
-
-    DOMApplicationCache: {
-        /* EventTarget */
         __proto__: null,
     },
 
@@ -779,18 +771,6 @@ WI.NativePrototypeFunctionParameters = {
     DataTransferItemList: {
         add: "file",
         item: "[index]",
-        __proto__: null,
-    },
-
-    Database: {
-        changeVersion: "oldVersion, newVersion, [callback], [errorCallback], [successCallback]",
-        readTransaction: "callback, [errorCallback], [successCallback]",
-        transaction: "callback, [errorCallback], [successCallback]",
-        __proto__: null,
-    },
-
-    DatabaseCallback: {
-        handleEvent: "database",
         __proto__: null,
     },
 
@@ -1271,11 +1251,6 @@ WI.NativePrototypeFunctionParameters = {
         __proto__: null,
     },
 
-    QuickTimePluginReplacement: {
-        postEvent: "eventName",
-        __proto__: null,
-    },
-
     RTCDTMFSender: {
         insertDTMF: "tones, [duration], [interToneGap]",
         __proto__: null,
@@ -1696,11 +1671,6 @@ WI.NativePrototypeFunctionParameters = {
 
     StringCallback: {
         handleEvent: "data",
-        __proto__: null,
-    },
-
-    StyleMedia: {
-        matchMedium: "[mediaquery]",
         __proto__: null,
     },
 

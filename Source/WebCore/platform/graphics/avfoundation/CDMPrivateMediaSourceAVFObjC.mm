@@ -29,12 +29,12 @@
 #if ENABLE(LEGACY_ENCRYPTED_MEDIA) && ENABLE(MEDIA_SOURCE)
 
 #import "CDMSessionAVContentKeySession.h"
-#import "CDMSessionAVStreamSession.h"
 #import "ContentType.h"
 #import "LegacyCDM.h"
 #import "MediaPlayerPrivateMediaSourceAVFObjC.h"
 #import <JavaScriptCore/RegularExpression.h>
 #import <wtf/NeverDestroyed.h>
+#import <wtf/TZoneMallocInlines.h>
 #import <wtf/text/StringToIntegerConversion.h>
 #import <wtf/text/StringView.h>
 
@@ -44,9 +44,11 @@ using JSC::Yarr::RegularExpression;
 
 namespace WebCore {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(CDMPrivateMediaSourceAVFObjC);
+
 auto CDMPrivateMediaSourceAVFObjC::parseKeySystem(const String& keySystem) -> std::optional<KeySystemParameters>
 {
-    static NeverDestroyed<RegularExpression> keySystemRE("^com\\.apple\\.fps\\.[23]_\\d+(?:,\\d+)*$", JSC::Yarr::TextCaseInsensitive);
+    static NeverDestroyed<RegularExpression> keySystemRE("^com\\.apple\\.fps\\.[23]_\\d+(?:,\\d+)*$"_s, OptionSet<JSC::Yarr::Flags> { JSC::Yarr::Flags::IgnoreCase });
 
     if (keySystemRE.get().match(keySystem) < 0)
         return std::nullopt;
@@ -69,11 +71,7 @@ CDMPrivateMediaSourceAVFObjC::~CDMPrivateMediaSourceAVFObjC()
 static bool queryDecoderAvailability()
 {
     if (!canLoad_VideoToolbox_VTGetGVADecoderAvailability()) {
-#if HAVE(AVSTREAMSESSION)
-        return false;
-#else
         return true;
-#endif
     }
     uint32_t totalInstanceCount = 0;
     OSStatus status = VTGetGVADecoderAvailability(&totalInstanceCount, nullptr);
@@ -104,7 +102,7 @@ bool CDMPrivateMediaSourceAVFObjC::supportsKeySystemAndMimeType(const String& ke
         return true;
 
     // FIXME: Why is this ignoring case since the check in supportsMIMEType is checking case?
-    if (equalLettersIgnoringASCIICase(mimeType, "keyrelease"))
+    if (equalLettersIgnoringASCIICase(mimeType, "keyrelease"_s))
         return true;
 
     MediaEngineSupportParameters parameters;
@@ -114,10 +112,10 @@ bool CDMPrivateMediaSourceAVFObjC::supportsKeySystemAndMimeType(const String& ke
     return MediaPlayerPrivateMediaSourceAVFObjC::supportsTypeAndCodecs(parameters) != MediaPlayer::SupportsType::IsNotSupported;
 }
 
-bool CDMPrivateMediaSourceAVFObjC::supportsMIMEType(const String& mimeType)
+bool CDMPrivateMediaSourceAVFObjC::supportsMIMEType(const String& mimeType) const
 {
     // FIXME: Why is this checking case since the check in supportsKeySystemAndMimeType is ignoring case?
-    if (mimeType == "keyrelease")
+    if (mimeType == "keyrelease"_s)
         return true;
 
     MediaEngineSupportParameters parameters;
@@ -127,7 +125,7 @@ bool CDMPrivateMediaSourceAVFObjC::supportsMIMEType(const String& mimeType)
     return MediaPlayerPrivateMediaSourceAVFObjC::supportsTypeAndCodecs(parameters) != MediaPlayer::SupportsType::IsNotSupported;
 }
 
-std::unique_ptr<LegacyCDMSession> CDMPrivateMediaSourceAVFObjC::createSession(LegacyCDMSessionClient* client)
+RefPtr<LegacyCDMSession> CDMPrivateMediaSourceAVFObjC::createSession(LegacyCDMSessionClient& client)
 {
     String keySystem = m_cdm->keySystem(); // Local copy for StringView usage
     auto parameters = parseKeySystem(m_cdm->keySystem());
@@ -135,22 +133,7 @@ std::unique_ptr<LegacyCDMSession> CDMPrivateMediaSourceAVFObjC::createSession(Le
     if (!parameters)
         return nullptr;
 
-    std::unique_ptr<CDMSessionMediaSourceAVFObjC> session;
-    
-#if HAVE(AVSTREAMSESSION)
-    bool shouldUseAVContentKeySession = parameters.value().version == 3;
-#else
-    bool shouldUseAVContentKeySession = true;
-#endif
-    
-    if (shouldUseAVContentKeySession && CDMSessionAVContentKeySession::isAvailable())
-        session = makeUnique<CDMSessionAVContentKeySession>(WTFMove(parameters.value().protocols), parameters.value().version, *this, client);
-    else
-#if HAVE(AVSTREAMSESSION)
-        session = makeUnique<CDMSessionAVStreamSession>(WTFMove(parameters.value().protocols), *this, client);
-#else
-        return nullptr;
-#endif
+    RefPtr session = CDMSessionAVContentKeySession::create(WTFMove(parameters.value().protocols), parameters.value().version, *this, client);
 
     m_sessions.append(session.get());
     return WTFMove(session);
@@ -160,6 +143,16 @@ void CDMPrivateMediaSourceAVFObjC::invalidateSession(CDMSessionMediaSourceAVFObj
 {
     ASSERT(m_sessions.contains(session));
     m_sessions.removeAll(session);
+}
+
+void CDMPrivateMediaSourceAVFObjC::ref() const
+{
+    m_cdm->ref();
+}
+
+void CDMPrivateMediaSourceAVFObjC::deref() const
+{
+    m_cdm->deref();
 }
 
 }

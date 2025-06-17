@@ -29,14 +29,21 @@
 
 #if ENABLE(APPLE_PAY)
 
-class WebPaymentCoordinatorClient final : public WebCore::PaymentCoordinatorClient {
-public:
-    WebPaymentCoordinatorClient();
+#import <wtf/TZoneMalloc.h>
 
-private:
+class WebPaymentCoordinatorClient final : public WebCore::PaymentCoordinatorClient, public RefCounted<WebPaymentCoordinatorClient> {
+    WTF_MAKE_TZONE_ALLOCATED(WebPaymentCoordinatorClient);
+public:
+    static Ref<WebPaymentCoordinatorClient> create();
     ~WebPaymentCoordinatorClient();
 
-    std::optional<String> validatedPaymentNetwork(const String&) override;
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
+
+private:
+    WebPaymentCoordinatorClient();
+
+    std::optional<String> validatedPaymentNetwork(const String&) const override;
     bool canMakePayments() override;
     void canMakePaymentsWithActiveCard(const String&, const String&, CompletionHandler<void(bool)>&&) override;
     void openPaymentSetup(const String& merchantIdentifier, const String& domainName, CompletionHandler<void(bool)>&&) override;
@@ -48,11 +55,9 @@ private:
 #if ENABLE(APPLE_PAY_COUPON_CODE)
     void completeCouponCodeChange(std::optional<WebCore::ApplePayCouponCodeUpdate>&&) override;
 #endif
-    void completePaymentSession(std::optional<WebCore::PaymentAuthorizationResult>&&) override;
+    void completePaymentSession(WebCore::ApplePayPaymentAuthorizationResult&&) override;
     void abortPaymentSession() override;
     void cancelPaymentSession() override;
-    void paymentCoordinatorDestroyed() override;
-    bool supportsUnrestrictedApplePay() const override;
 };
 
 #endif

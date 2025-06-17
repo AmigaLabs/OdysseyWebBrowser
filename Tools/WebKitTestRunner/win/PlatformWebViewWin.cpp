@@ -39,8 +39,12 @@
 #include <cairo.h>
 #endif
 
-#if USE(DIRECT2D)
-#include <d2d1_1.h>
+#if USE(SKIA)
+IGNORE_CLANG_WARNINGS_BEGIN("cast-align")
+#include <skia/core/SkColorSpace.h>
+#include <skia/core/SkImage.h>
+#include <skia/core/SkPixmap.h>
+IGNORE_CLANG_WARNINGS_END
 #endif
 
 namespace WTR {
@@ -89,6 +93,7 @@ PlatformWebView::PlatformWebView(WKPageConfigurationRef configuration, const Tes
     RECT viewRect = { };
     m_view = WKViewCreate(viewRect, configuration, m_window);
     WKViewSetIsInWindow(m_view, true);
+    WKViewSetUsesOffscreenRendering(m_view, true);
 
     ShowWindow(m_window, SW_SHOW);
 }
@@ -220,8 +225,16 @@ static cairo_surface_t* generateCairoSurfaceFromBitmap(BITMAP bitmapTag)
 
     return image;
 }
+#elif USE(SKIA)
+static SkImage* generateCairoSurfaceFromBitmap(BITMAP bitmapTag)
+{
+    auto imageInfo = SkImageInfo::MakeN32Premul(bitmapTag.bmWidth, bitmapTag.bmHeight, SkColorSpace::MakeSRGB());
+    SkPixmap pixmap(imageInfo, bitmapTag.bmBits, bitmapTag.bmWidthBytes);
+    return SkImages::RasterFromPixmapCopy(pixmap).release();
+}
+#endif
 
-cairo_surface_t* PlatformWebView::windowSnapshotImage()
+PlatformImage PlatformWebView::windowSnapshotImage()
 {
     RECT windowRect;
     ::GetClientRect(m_window, &windowRect);
@@ -254,7 +267,6 @@ cairo_surface_t* PlatformWebView::windowSnapshotImage()
 
     return generateCairoSurfaceFromBitmap(bitmapTag);
 }
-#endif
 
 void PlatformWebView::changeWindowScaleIfNeeded(float)
 {
@@ -279,6 +291,11 @@ void PlatformWebView::setDrawsBackground(bool)
 
 void PlatformWebView::setEditable(bool)
 {
+}
+
+bool PlatformWebView::isSecureEventInputEnabled() const
+{
+    return false;
 }
 
 } // namespace WTR

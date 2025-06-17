@@ -28,75 +28,88 @@
 
 #if ENABLE(MEDIA_STREAM)
 
+#include "AudioMediaStreamTrackRenderer.h"
 #include "AudioSampleDataSource.h"
 #include "AudioSession.h"
 #include "CAAudioStreamDescription.h"
-#include "Logging.h"
-
-#include <pal/spi/cocoa/AudioToolboxSPI.h>
-#include <wtf/FastMalloc.h>
-#include <wtf/Lock.h>
-
-#if PLATFORM(COCOA)
 #include "CoreAudioCaptureDevice.h"
 #include "CoreAudioCaptureDeviceManager.h"
-#endif
+#include "Logging.h"
+#include "SpanCoreAudio.h"
+#include <Accelerate/Accelerate.h>
+#include <pal/spi/cocoa/AudioToolboxSPI.h>
+#include <wtf/Lock.h>
+#include <wtf/RefCounted.h>
+#include <wtf/TZoneMallocInlines.h>
 
 #include <pal/cf/AudioToolboxSoftLink.h>
 #include <pal/cf/CoreMediaSoftLink.h>
 
 namespace WebCore {
 
-class LocalAudioMediaStreamTrackRendererInternalUnit final : public AudioMediaStreamTrackRendererInternalUnit {
-    WTF_MAKE_FAST_ALLOCATED;
+class LocalAudioMediaStreamTrackRendererInternalUnit final : public AudioMediaStreamTrackRendererInternalUnit, public RefCounted<LocalAudioMediaStreamTrackRendererInternalUnit>  {
+    WTF_MAKE_TZONE_ALLOCATED_INLINE(LocalAudioMediaStreamTrackRendererInternalUnit);
 public:
-    explicit LocalAudioMediaStreamTrackRendererInternalUnit(RenderCallback&&);
+    static Ref<AudioMediaStreamTrackRendererInternalUnit> create(const String& deviceID, Client& client)
+    {
+        auto unit = adoptRef(*new LocalAudioMediaStreamTrackRendererInternalUnit(client));
+        unit->setAudioOutputDevice(deviceID);
+        return unit;
+    }
+
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
 
 private:
+    explicit LocalAudioMediaStreamTrackRendererInternalUnit(Client&);
     void createAudioUnitIfNeeded();
 
     // AudioMediaStreamTrackRendererInternalUnit API.
     void start() final;
     void stop() final;
-    void retrieveFormatDescription(CompletionHandler<void(const CAAudioStreamDescription*)>&&) final;
-    void setAudioOutputDevice(const String&) final;
+    void retrieveFormatDescription(CompletionHandler<void(std::optional<CAAudioStreamDescription>)>&&) final;
+    void setAudioOutputDevice(const String&);
 
+    OSStatus render(AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32 sampleCount, AudioBufferList*);
     static OSStatus renderingCallback(void*, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32 inBusNumber, UInt32 sampleCount, AudioBufferList*);
 
-    RenderCallback m_renderCallback;
-    std::unique_ptr<CAAudioStreamDescription> m_outputDescription;
+    ThreadSafeWeakPtr<Client> m_client;
+    std::optional<CAAudioStreamDescription> m_outputDescription;
     AudioComponentInstance m_remoteIOUnit { nullptr };
     bool m_isStarted { false };
+    uint64_t m_sampleTime { 0 };
 #if PLATFORM(MAC)
     uint32_t m_deviceID { 0 };
 #endif
+    String m_audioOutputDeviceID;
 };
 
-UniqueRef<AudioMediaStreamTrackRendererInternalUnit> AudioMediaStreamTrackRendererInternalUnit::createLocalInternalUnit(RenderCallback&& renderCallback)
-{
-    return makeUniqueRef<LocalAudioMediaStreamTrackRendererInternalUnit>(WTFMove(renderCallback));
-}
 
-LocalAudioMediaStreamTrackRendererInternalUnit::LocalAudioMediaStreamTrackRendererInternalUnit(RenderCallback&& renderCallback)
-    : m_renderCallback(WTFMove(renderCallback))
+LocalAudioMediaStreamTrackRendererInternalUnit::LocalAudioMediaStreamTrackRendererInternalUnit(Client& client)
+    : m_client(client)
 {
 }
 
-void LocalAudioMediaStreamTrackRendererInternalUnit::retrieveFormatDescription(CompletionHandler<void(const CAAudioStreamDescription*)>&& callback)
+void LocalAudioMediaStreamTrackRendererInternalUnit::retrieveFormatDescription(CompletionHandler<void(std::optional<CAAudioStreamDescription>)>&& callback)
 {
     createAudioUnitIfNeeded();
-    callback(m_outputDescription.get());
+    callback(m_outputDescription);
 }
 
 void LocalAudioMediaStreamTrackRendererInternalUnit::setAudioOutputDevice(const String& deviceID)
 {
 #if PLATFORM(MAC)
+    if (deviceID == AudioMediaStreamTrackRenderer::defaultDeviceID())
+        return;
+
     auto device = CoreAudioCaptureDeviceManager::singleton().coreAudioDeviceWithUID(deviceID);
 
     if (!device && !deviceID.isEmpty()) {
         RELEASE_LOG(WebRTC, "AudioMediaStreamTrackRendererInternalUnit::setAudioOutputDeviceId - did not find device");
         return;
     }
+
+    m_audioOutputDeviceID = deviceID;
 
     auto audioUnitDeviceID = device ? device->deviceID() : 0;
     if (m_deviceID == audioUnitDeviceID)
@@ -125,6 +138,7 @@ void LocalAudioMediaStreamTrackRendererInternalUnit::start()
     if (!m_remoteIOUnit)
         return;
 
+    m_sampleTime = 0;
     if (auto error = PAL::AudioOutputUnitStart(m_remoteIOUnit)) {
         RELEASE_LOG_ERROR(WebRTC, "AudioMediaStreamTrackRendererInternalUnit::start AudioOutputUnitStart failed, error = %d", error);
         PAL::AudioComponentInstanceDispose(m_remoteIOUnit);
@@ -156,7 +170,6 @@ void LocalAudioMediaStreamTrackRendererInternalUnit::createAudioUnitIfNeeded()
     if (m_remoteIOUnit)
         return;
 
-    CAAudioStreamDescription outputDescription;
     AudioComponentInstance remoteIOUnit { nullptr };
 
     AudioComponentDescription ioUnitDescription { kAudioUnitType_Output, 0, kAudioUnitManufacturer_Apple, 0, 0 };
@@ -205,16 +218,19 @@ void LocalAudioMediaStreamTrackRendererInternalUnit::createAudioUnitIfNeeded()
         return;
     }
 
-    UInt32 size = sizeof(outputDescription.streamDescription());
-    error  = PAL::AudioUnitGetProperty(remoteIOUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &outputDescription.streamDescription(), &size);
-    if (error) {
-        RELEASE_LOG_ERROR(WebRTC, "AudioMediaStreamTrackRendererInternalUnit::createAudioUnit unable to get input stream format, error = %d", error);
-        return;
+    if (!m_outputDescription) {
+        AudioStreamBasicDescription outputDescription { };
+        UInt32 size = sizeof(outputDescription);
+        error  = PAL::AudioUnitGetProperty(remoteIOUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &outputDescription, &size);
+        if (error) {
+            RELEASE_LOG_ERROR(WebRTC, "AudioMediaStreamTrackRendererInternalUnit::createAudioUnit unable to get input stream format, error = %d", error);
+            return;
+        }
+
+        outputDescription.mSampleRate = AudioSession::protectedSharedSession()->sampleRate();
+        m_outputDescription = outputDescription;
     }
-
-    outputDescription.streamDescription().mSampleRate = AudioSession::sharedSession().sampleRate();
-
-    error = PAL::AudioUnitSetProperty(remoteIOUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &outputDescription.streamDescription(), sizeof(outputDescription.streamDescription()));
+    error = PAL::AudioUnitSetProperty(remoteIOUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &m_outputDescription->streamDescription(), sizeof(m_outputDescription->streamDescription()));
     if (error) {
         RELEASE_LOG_ERROR(WebRTC, "AudioMediaStreamTrackRendererInternalUnit::createAudioUnit unable to set input stream format, error = %d", error);
         return;
@@ -225,14 +241,80 @@ void LocalAudioMediaStreamTrackRendererInternalUnit::createAudioUnitIfNeeded()
         RELEASE_LOG_ERROR(WebRTC, "AudioMediaStreamTrackRendererInternalUnit::createAudioUnit AudioUnitInitialize() failed, error = %d", error);
         return;
     }
-
-    m_outputDescription = makeUnique<CAAudioStreamDescription>(outputDescription);
     m_remoteIOUnit = remoteIOUnit;
+}
+
+static void clipAudioBuffer(std::span<float> span)
+{
+    float minimum = -1;
+    float maximum = 1;
+    vDSP_vclip(span.data(), 1, &minimum, &maximum, span.data(), 1, span.size());
+}
+
+static void clipAudioBuffer(std::span<double> span)
+{
+    double minimum = -1;
+    double maximum = 1;
+    vDSP_vclipD(span.data(), 1, &minimum, &maximum, span.data(), 1, span.size());
+}
+
+static void clipAudioBufferList(AudioBufferList& list, AudioStreamDescription::PCMFormat format)
+{
+    switch (format) {
+    case AudioStreamDescription::Int16:
+        break;
+    case AudioStreamDescription::Int32:
+        break;
+    case AudioStreamDescription::Float32:
+        for (auto& buffer : span(list))
+            clipAudioBuffer(mutableSpan<float>(buffer));
+        break;
+    case AudioStreamDescription::Float64:
+        for (auto& buffer : span(list))
+            clipAudioBuffer(mutableSpan<double>(buffer));
+        break;
+    case AudioStreamDescription::Uint8:
+    case AudioStreamDescription::Int24:
+    case AudioStreamDescription::None:
+        ASSERT_NOT_REACHED();
+        break;
+    }
+}
+
+OSStatus LocalAudioMediaStreamTrackRendererInternalUnit::render(AudioUnitRenderActionFlags* actionFlags, const AudioTimeStamp* timeStamp, UInt32 sampleCount, AudioBufferList* ioData)
+{
+    RefPtr client = m_client.get();
+    if (!client)
+        return kAudio_ParamError;
+
+    auto sampleTime = timeStamp->mSampleTime;
+    // If we observe an irregularity in the timeline, we trigger a reset.
+    if (m_sampleTime && (m_sampleTime + 2 * sampleCount < sampleTime || sampleTime <= m_sampleTime))
+        client->reset();
+    m_sampleTime = sampleTime < std::numeric_limits<Float64>::max() - sampleCount ? sampleTime : 0;
+
+    auto result = client->render(sampleCount, *ioData, sampleTime, timeStamp->mHostTime, *actionFlags);
+    // FIXME: We should probably introduce a limiter to limit the amount of clipping.
+    clipAudioBufferList(*ioData, m_outputDescription->format());
+    return result;
 }
 
 OSStatus LocalAudioMediaStreamTrackRendererInternalUnit::renderingCallback(void* processor, AudioUnitRenderActionFlags* actionFlags, const AudioTimeStamp* timeStamp, UInt32, UInt32 sampleCount, AudioBufferList* ioData)
 {
-    return static_cast<LocalAudioMediaStreamTrackRendererInternalUnit*>(processor)->m_renderCallback(sampleCount, *ioData, timeStamp->mSampleTime, timeStamp->mHostTime, *actionFlags);
+    return static_cast<LocalAudioMediaStreamTrackRendererInternalUnit*>(processor)->render(actionFlags, timeStamp, sampleCount, ioData);
+}
+
+static auto createInternalUnit = LocalAudioMediaStreamTrackRendererInternalUnit::create;
+
+void AudioMediaStreamTrackRendererInternalUnit::setCreateFunction(CreateFunction function)
+{
+    ASSERT(function);
+    createInternalUnit = function;
+}
+
+Ref<AudioMediaStreamTrackRendererInternalUnit> AudioMediaStreamTrackRendererInternalUnit::create(const String& deviceID, Client& client)
+{
+    return createInternalUnit(deviceID, client);
 }
 
 } // namespace WebCore

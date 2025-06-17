@@ -36,12 +36,15 @@
 #include <WebCore/MediaDecodingConfiguration.h>
 #include <WebCore/MediaEncodingConfiguration.h>
 #include <WebCore/MediaEngineConfigurationFactory.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebKit {
 using namespace WebCore;
 
-RemoteMediaEngineConfigurationFactory::RemoteMediaEngineConfigurationFactory(WebProcess& process)
-    : m_process(process)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RemoteMediaEngineConfigurationFactory);
+
+RemoteMediaEngineConfigurationFactory::RemoteMediaEngineConfigurationFactory(WebProcess& webProcess)
+    : m_webProcess(webProcess)
 {
 }
 
@@ -51,7 +54,7 @@ void RemoteMediaEngineConfigurationFactory::registerFactory()
 {
     MediaEngineConfigurationFactory::clearFactories();
 
-    auto createDecodingConfiguration = [weakThis = makeWeakPtr(this)] (MediaDecodingConfiguration&& configuration, MediaEngineConfigurationFactory::DecodingConfigurationCallback&& callback) {
+    auto createDecodingConfiguration = [weakThis = WeakPtr { *this }] (MediaDecodingConfiguration&& configuration, MediaEngineConfigurationFactory::DecodingConfigurationCallback&& callback) {
         if (!weakThis) {
             callback({{ }, WTFMove(configuration)});
             return;
@@ -63,7 +66,7 @@ void RemoteMediaEngineConfigurationFactory::registerFactory()
 #if PLATFORM(COCOA)
     MediaEngineConfigurationFactory::CreateEncodingConfiguration createEncodingConfiguration = nullptr;
 #else
-    auto createEncodingConfiguration = [weakThis = makeWeakPtr(this)] (MediaEncodingConfiguration&& configuration, MediaEngineConfigurationFactory::EncodingConfigurationCallback&& callback) {
+    auto createEncodingConfiguration = [weakThis = WeakPtr { *this }] (MediaEncodingConfiguration&& configuration, MediaEngineConfigurationFactory::EncodingConfigurationCallback&& callback) {
         if (!weakThis) {
             callback({{ }, WTFMove(configuration)});
             return;
@@ -76,26 +79,32 @@ void RemoteMediaEngineConfigurationFactory::registerFactory()
     MediaEngineConfigurationFactory::installFactory({ WTFMove(createDecodingConfiguration), WTFMove(createEncodingConfiguration) });
 }
 
-const char* RemoteMediaEngineConfigurationFactory::supplementName()
+ASCIILiteral RemoteMediaEngineConfigurationFactory::supplementName()
 {
-    return "RemoteMediaEngineConfigurationFactory";
+    return "RemoteMediaEngineConfigurationFactory"_s;
 }
 
 GPUProcessConnection& RemoteMediaEngineConfigurationFactory::gpuProcessConnection()
 {
-    return m_process.ensureGPUProcessConnection();
+    return WebProcess::singleton().ensureGPUProcessConnection();
 }
 
 void RemoteMediaEngineConfigurationFactory::createDecodingConfiguration(MediaDecodingConfiguration&& configuration, MediaEngineConfigurationFactory::DecodingConfigurationCallback&& callback)
 {
-    gpuProcessConnection().connection().sendWithAsyncReply(Messages::RemoteMediaEngineConfigurationFactoryProxy::CreateDecodingConfiguration(WTFMove(configuration)), [callback = WTFMove(callback)] (MediaCapabilitiesDecodingInfo&& info) mutable {
+    if (!m_webProcess->mediaPlaybackEnabled())
+        return callback({ });
+
+    gpuProcessConnection().protectedConnection()->sendWithAsyncReply(Messages::RemoteMediaEngineConfigurationFactoryProxy::CreateDecodingConfiguration(WTFMove(configuration)), [callback = WTFMove(callback)] (MediaCapabilitiesDecodingInfo&& info) mutable {
         callback(WTFMove(info));
     });
 }
 
 void RemoteMediaEngineConfigurationFactory::createEncodingConfiguration(MediaEncodingConfiguration&& configuration, MediaEngineConfigurationFactory::EncodingConfigurationCallback&& callback)
 {
-    gpuProcessConnection().connection().sendWithAsyncReply(Messages::RemoteMediaEngineConfigurationFactoryProxy::CreateEncodingConfiguration(WTFMove(configuration)), [callback = WTFMove(callback)] (MediaCapabilitiesEncodingInfo&& info) mutable {
+    if (!m_webProcess->mediaPlaybackEnabled())
+        return callback({ });
+
+    gpuProcessConnection().protectedConnection()->sendWithAsyncReply(Messages::RemoteMediaEngineConfigurationFactoryProxy::CreateEncodingConfiguration(WTFMove(configuration)), [callback = WTFMove(callback)] (MediaCapabilitiesEncodingInfo&& info) mutable {
         callback(WTFMove(info));
     });
 }

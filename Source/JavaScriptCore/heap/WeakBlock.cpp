@@ -32,18 +32,20 @@
 #include "JSCInlines.h"
 #include "WeakHandleOwner.h"
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace JSC {
 
 DEFINE_ALLOCATOR_WITH_HEAP_IDENTIFIER(WeakBlock);
 
-WeakBlock* WeakBlock::create(Heap& heap, CellContainer container)
+WeakBlock* WeakBlock::create(JSC::Heap& heap, CellContainer container)
 {
     heap.didAllocateBlock(WeakBlock::blockSize);
     return new (NotNull, WeakBlockMalloc::malloc(blockSize)) WeakBlock(container);
 
 }
 
-void WeakBlock::destroy(Heap& heap, WeakBlock* block)
+void WeakBlock::destroy(JSC::Heap& heap, WeakBlock* block)
 {
     block->~WeakBlock();
     WeakBlockMalloc::free(block);
@@ -116,8 +118,8 @@ void WeakBlock::specializedVisit(ContainerType& container, Visitor& visitor)
         if (visitor.isMarked(container, jsValue.asCell()))
             continue;
         
-        const char* reason = "";
-        const char** reasonPtr = nullptr;
+        ASCIILiteral reason = ""_s;
+        ASCIILiteral* reasonPtr = nullptr;
         if (UNLIKELY(heapAnalyzer))
             reasonPtr = &reason;
 
@@ -180,3 +182,5 @@ void WeakBlock::reap()
 }
 
 } // namespace JSC
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

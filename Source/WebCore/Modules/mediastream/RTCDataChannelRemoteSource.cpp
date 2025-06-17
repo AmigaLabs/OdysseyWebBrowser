@@ -27,9 +27,14 @@
 
 #if ENABLE(WEB_RTC)
 
+#include "ProcessQualified.h"
 #include "RTCDataChannelHandler.h"
+#include "ScriptExecutionContextIdentifier.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RTCDataChannelRemoteSource);
 
 RTCDataChannelRemoteSource::RTCDataChannelRemoteSource(RTCDataChannelIdentifier identifier, UniqueRef<RTCDataChannelHandler>&& handler, Ref<RTCDataChannelRemoteSourceConnection>&& connection)
     : m_identifier(identifier)
@@ -37,12 +42,10 @@ RTCDataChannelRemoteSource::RTCDataChannelRemoteSource(RTCDataChannelIdentifier 
     , m_connection(WTFMove(connection))
 {
     // FIXME: We should ask m_handler to call us on its own background thread.
-    m_handler->setClient(*this, { });
+    m_handler->setClient(*this, std::nullopt);
 }
 
-RTCDataChannelRemoteSource::~RTCDataChannelRemoteSource()
-{
-}
+RTCDataChannelRemoteSource::~RTCDataChannelRemoteSource() = default;
 
 } // namespace WebCore
 

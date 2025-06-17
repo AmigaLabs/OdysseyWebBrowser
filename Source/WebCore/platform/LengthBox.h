@@ -21,8 +21,8 @@
 
 #pragma once
 
+#include "BoxExtents.h"
 #include "Length.h"
-#include "RectEdges.h"
 #include "WritingMode.h"
 
 namespace WebCore {
@@ -55,6 +55,7 @@ public:
     }
 
     LengthBox(const LengthBox&) = default;
+    LengthBox& operator=(const LengthBox&) = default;
 
     bool isZero() const
     {
@@ -62,10 +63,26 @@ public:
     }
 };
 
-using LayoutBoxExtent = RectEdges<LayoutUnit>;
-using FloatBoxExtent = RectEdges<float>;
+using IntOutsets = IntBoxExtent;
+using LayoutOptionalOutsets = RectEdges<std::optional<LayoutUnit>>;
+
+inline LayoutBoxExtent toLayoutBoxExtent(const IntBoxExtent& extent)
+{
+    return { extent.top(), extent.right(), extent.bottom(), extent.left() };
+}
+
+inline FloatBoxExtent toFloatBoxExtent(const IntBoxExtent& extent)
+{
+    return {
+        static_cast<float>(extent.top()),
+        static_cast<float>(extent.right()),
+        static_cast<float>(extent.bottom()),
+        static_cast<float>(extent.left()),
+    };
+}
 
 WTF::TextStream& operator<<(WTF::TextStream&, const LengthBox&);
+WTF::TextStream& operator<<(WTF::TextStream&, const IntBoxExtent&);
 WEBCORE_EXPORT WTF::TextStream& operator<<(WTF::TextStream&, const FloatBoxExtent&);
 
 } // namespace WebCore

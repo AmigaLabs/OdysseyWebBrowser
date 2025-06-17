@@ -30,8 +30,8 @@
 
 #import "WebViewInternal.h"
 #import <WebCore/ChromeClient.h>
-#import <WebCore/Frame.h>
 #import <WebCore/IntSize.h>
+#import <WebCore/LocalFrame.h>
 #import <WebCore/ScrollingConstraints.h>
 #import <WebCore/WebCoreThreadRun.h>
 #import <pal/spi/cg/CoreGraphicsSPI.h>
@@ -47,7 +47,6 @@
 #import <algorithm>
 
 using namespace WebCore;
-using namespace std;
 
 static Lock webFixedPositionContentDataLock;
 
@@ -167,8 +166,8 @@ WebFixedPositionContentData::~WebFixedPositionContentData()
 - (void)didFinishScrollingOrZooming
 {
     WebThreadRun(^{
-        if (Frame* frame = [_private->m_webView _mainCoreFrame])
-            frame->viewportOffsetChanged(Frame::CompletedScrollOffset);
+        if (auto* frame = [_private->m_webView _mainCoreFrame])
+            frame->viewportOffsetChanged(LocalFrame::CompletedScrollOffset);
     });
 }
 

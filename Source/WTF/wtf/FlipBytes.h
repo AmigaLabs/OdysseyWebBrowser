@@ -24,7 +24,11 @@
  */
 
 #pragma once
+
+#include <wtf/Compiler.h>
 #include <optional>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 
 namespace WTF {
 
@@ -95,6 +99,16 @@ inline T flipBytes(T value)
         u.word = flipBytes(u.word);
         return u.original;
     }
+    if (sizeof(value) == 16) {
+        union {
+            T original;
+            uint64_t words[2];
+        } u, v;
+        v.original = value;
+        u.words[0] = flipBytes(v.words[1]);
+        u.words[1] = flipBytes(v.words[0]);
+        return u.original;
+    }
     RELEASE_ASSERT_NOT_REACHED();
     return T();
 }
@@ -148,3 +162,5 @@ inline T flipBytesIfLittleEndian(T value, bool littleEndian)
 using WTF::needToFlipBytesIfLittleEndian;
 using WTF::flipBytes;
 using WTF::flipBytesIfLittleEndian;
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

@@ -33,17 +33,21 @@
 #include "GUniquePtrSoup.h"
 #include "Logging.h"
 #include "SoupVersioning.h"
+#include "WebKitAutoconfigProxyResolver.h"
 #include <glib/gstdio.h>
 #include <libsoup/soup.h>
 #include <pal/crypto/CryptoDigest.h>
 #include <wtf/FileSystem.h>
 #include <wtf/HashSet.h>
 #include <wtf/NeverDestroyed.h>
+#include <wtf/TZoneMallocInlines.h>
+#include <wtf/glib/GSpanExtras.h>
 #include <wtf/text/Base64.h>
 #include <wtf/text/CString.h>
-#include <wtf/text/StringHash.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SoupNetworkSession);
 
 static CString& initialAcceptLanguages()
 {
@@ -85,31 +89,19 @@ private:
             return String();
 
         auto digest = PAL::CryptoDigest::create(PAL::CryptoDigest::Algorithm::SHA_256);
-        digest->addBytes(certificateData->data, certificateData->len);
+        digest->addBytes(span(certificateData));
 
-        auto hash = digest->computeHash();
-        return base64EncodeToString(hash);
+        return base64EncodeToString(digest->computeHash());
     }
 
-    HashSet<String> m_certificates;
+    UncheckedKeyHashSet<String> m_certificates;
 };
-
-using AllowedCertificatesMap = HashMap<String, HostTLSCertificateSet, ASCIICaseInsensitiveHash>;
-
-static AllowedCertificatesMap& allowedCertificates()
-{
-    static NeverDestroyed<AllowedCertificatesMap> certificates;
-    return certificates;
-}
 
 SoupNetworkSession::SoupNetworkSession(PAL::SessionID sessionID)
     : m_sessionID(sessionID)
 {
-    // Values taken from http://www.browserscope.org/ following
-    // the rule "Do What Every Other Modern Browser Is Doing". They seem
-    // to significantly improve page loading time compared to soup's
-    // default values.
-    static const int maxConnections = 17;
+    // These values match Chrome 81. https://stackoverflow.com/a/30064610
+    static const int maxConnections = 256;
     static const int maxConnectionsPerHost = 6;
 
     m_soupSession = adoptGRef(soup_session_new_with_options(
@@ -132,6 +124,21 @@ SoupNetworkSession::SoupNetworkSession(PAL::SessionID sessionID)
 
     if (soup_auth_negotiate_supported() && !m_sessionID.isEphemeral())
         soup_session_add_feature_by_type(m_soupSession.get(), SOUP_TYPE_AUTH_NEGOTIATE);
+
+#if ENABLE(DEVELOPER_MODE)
+    // Optionally load a custom path with the TLS CAFile. This is used on the GTK/WPE bundles. See script generate-bundle
+    // Don't enable this outside DEVELOPER_MODE because using a non-default TLS database has surprising undesired effects
+    // on how certificate verification is performed. See https://webkit.org/b/237107#c14 and git commit 82999879b on glib
+    const char* customTLSCAFile = g_getenv("WEBKIT_TLS_CAFILE_PEM");
+    if (customTLSCAFile) {
+        GUniqueOutPtr<GError> error;
+        GRefPtr<GTlsDatabase> customTLSDB = adoptGRef(g_tls_file_database_new(customTLSCAFile, &error.outPtr()));
+        if (error)
+            WTFLogAlways("Failed to load TLS database \"%s\": %s", customTLSCAFile, error->message);
+        else
+            soup_session_set_tls_database(m_soupSession.get(), customTLSDB.get());
+    }
+#endif // ENABLE(DEVELOPER_MODE)
 
     setupLogger();
 }
@@ -242,14 +249,11 @@ void SoupNetworkSession::clearHSTSCache(WallTime modifiedSince)
 #endif
 }
 
-static inline bool stringIsNumeric(const char* str)
+static inline bool stringIsNumeric(const std::string_view& str)
 {
-    while (*str) {
-        if (!g_ascii_isdigit(*str))
-            return false;
-        str++;
-    }
-    return true;
+    return std::all_of(str.cbegin(), str.cend(), [](const auto c) {
+        return WTF::isASCIIDigit(c);
+    });
 }
 
 // Old versions of WebKit created this cache.
@@ -265,7 +269,8 @@ void SoupNetworkSession::clearOldSoupCache(const String& cacheDirectory)
         return;
 
     while (const char* name = g_dir_read_name(dir.get())) {
-        if (!g_str_has_prefix(name, "soup.cache") && !stringIsNumeric(name))
+        const auto nameView = std::string_view(name);
+        if (!nameView.starts_with("soup.cache") && !stringIsNumeric(nameView))
             continue;
 
         GUniquePtr<gchar> filename(g_build_filename(cachePath.data(), name, nullptr));
@@ -274,9 +279,9 @@ void SoupNetworkSession::clearOldSoupCache(const String& cacheDirectory)
     }
 }
 
-void SoupNetworkSession::setProxySettings(SoupNetworkProxySettings&& settings)
+void SoupNetworkSession::setProxySettings(const SoupNetworkProxySettings& settings)
 {
-    m_proxySettings = WTFMove(settings);
+    m_proxySettings = settings;
 
     GRefPtr<GProxyResolver> resolver;
     switch (m_proxySettings.mode) {
@@ -299,6 +304,9 @@ void SoupNetworkSession::setProxySettings(SoupNetworkProxySettings&& settings)
         for (const auto& iter : m_proxySettings.proxyMap)
             g_simple_proxy_resolver_set_uri_proxy(G_SIMPLE_PROXY_RESOLVER(resolver.get()), iter.key.data(), iter.value.data());
         break;
+    case SoupNetworkProxySettings::Mode::Auto:
+        resolver = webkitAutoconfigProxyResolverNew(m_proxySettings.defaultProxyURL);
+        break;
     }
 
     soup_session_set_proxy_resolver(m_soupSession.get(), resolver.get());
@@ -320,13 +328,28 @@ void SoupNetworkSession::setIgnoreTLSErrors(bool ignoreTLSErrors)
     m_ignoreTLSErrors = ignoreTLSErrors;
 }
 
+static StringView hostForComparison(const URL& requestURL)
+{
+    StringView host = requestURL.host();
+
+    // If the host component of the URL is an IPv6 address, it will be
+    // surrounded by [ ] brackets. We have to remove them because they're part
+    // of the WTF::URL's host component and the string representation of the URL,
+    // but not part of GUri or SoupURI's host and not part of the host passed to
+    // allowSpecificHTTPSCertificateForHost.
+    if (host[0] == '[' && host.length() >= 2 && host[host.length() - 1] == ']')
+        return host.substring(1, host.length() - 2);
+
+    return host;
+}
+
 std::optional<ResourceError> SoupNetworkSession::checkTLSErrors(const URL& requestURL, GTlsCertificate* certificate, GTlsCertificateFlags tlsErrors)
 {
     if (m_ignoreTLSErrors || !tlsErrors)
         return std::nullopt;
 
-    auto it = allowedCertificates().find(requestURL.host().toStringWithoutCopying());
-    if (it != allowedCertificates().end() && it->value.contains(certificate))
+    auto it = m_allowedCertificates.find<ASCIICaseInsensitiveStringViewHashTranslator>(hostForComparison(requestURL));
+    if (it != m_allowedCertificates.end() && it->value.contains(certificate))
         return std::nullopt;
 
     return ResourceError::tlsError(requestURL, tlsErrors, certificate);
@@ -334,7 +357,7 @@ std::optional<ResourceError> SoupNetworkSession::checkTLSErrors(const URL& reque
 
 void SoupNetworkSession::allowSpecificHTTPSCertificateForHost(const CertificateInfo& certificateInfo, const String& host)
 {
-    allowedCertificates().add(host, HostTLSCertificateSet()).iterator->value.add(certificateInfo.certificate());
+    m_allowedCertificates.add(host, HostTLSCertificateSet()).iterator->value.add(certificateInfo.certificate().get());
 }
 
 } // namespace WebCore

@@ -29,11 +29,17 @@
 
 #include "MessageReceiver.h"
 #include "WebProcessSupplement.h"
+#include <wtf/CheckedRef.h>
 #include <wtf/CompletionHandler.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 class CaptureDevice;
+struct CaptureDeviceWithCapabilities;
+struct MediaDeviceHashSalts;
 struct MediaStreamRequest;
+
+enum class MediaConstraintType : uint8_t;
 }
 
 namespace WebKit {
@@ -41,27 +47,30 @@ namespace WebKit {
 class WebProcess;
 
 class UserMediaCaptureManager : public WebProcessSupplement, public IPC::MessageReceiver {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(UserMediaCaptureManager);
     WTF_MAKE_NONCOPYABLE(UserMediaCaptureManager);
 public:
     explicit UserMediaCaptureManager(WebProcess&);
     ~UserMediaCaptureManager();
 
-    static const char* supplementName() { return "UserMediaCaptureManager"; }
+    void ref() const final;
+    void deref() const final;
+
+    static ASCIILiteral supplementName() { return "UserMediaCaptureManager"_s; }
 
 private:
     // IPC::MessageReceiver
     void didReceiveMessage(IPC::Connection&, IPC::Decoder&) final;
 
     // Messages::UserMediaCaptureManager
-    using ValidateUserMediaRequestConstraintsCallback = CompletionHandler<void(std::optional<String> invalidConstraint, Vector<WebCore::CaptureDevice>& audioDevices, Vector<WebCore::CaptureDevice>& videoDevices, std::optional<String> deviceIdentifierHashSalt)>;
-    void validateUserMediaRequestConstraints(WebCore::MediaStreamRequest, String hashSalt, ValidateUserMediaRequestConstraintsCallback&&);
+    using ValidateUserMediaRequestConstraintsCallback = CompletionHandler<void(std::optional<WebCore::MediaConstraintType> invalidConstraint, Vector<WebCore::CaptureDevice>& audioDevices, Vector<WebCore::CaptureDevice>& videoDevices)>;
+    void validateUserMediaRequestConstraints(WebCore::MediaStreamRequest, WebCore::MediaDeviceHashSalts&&, ValidateUserMediaRequestConstraintsCallback&&);
     ValidateUserMediaRequestConstraintsCallback m_validateUserMediaRequestConstraintsCallback;
 
-    using GetMediaStreamDevicesCallback = CompletionHandler<void(Vector<WebCore::CaptureDevice>&&)>;
-    void getMediaStreamDevices(GetMediaStreamDevicesCallback&&);
+    using GetMediaStreamDevicesCallback = CompletionHandler<void(Vector<WebCore::CaptureDeviceWithCapabilities>&&)>;
+    void getMediaStreamDevices(bool revealIdsAndLabels, GetMediaStreamDevicesCallback&&);
 
-    WebProcess& m_process;
+    CheckedRef<WebProcess> m_process;
 };
 
 } // namespace WebKit

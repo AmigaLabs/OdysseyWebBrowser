@@ -4,14 +4,6 @@
 
 #include <wtf/Function.h>
 
-#if OS(MORPHOS)
-#define EP_PROFILING 0
-#include <libeventprofiler.h>
-#else
-#define EP_EVENT(x)
-#define EP_SCOPE(x)
-#endif
-
 namespace WebCore {
 
 class NetworkingContext;
@@ -33,6 +25,7 @@ struct MediaPlayerMorphOSInfo
 	WTF::String m_audioCodec;
 	WTF::String m_videoCodec;
 	float       m_duration = 0;
+    float       m_fps = 0;
 	int         m_frequency = 0;
 	int         m_bits;
 	int         m_channels = 0;

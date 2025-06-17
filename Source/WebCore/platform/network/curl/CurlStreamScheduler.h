@@ -28,20 +28,41 @@
 #include "CurlStream.h"
 #include <wtf/Function.h>
 #include <wtf/HashMap.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 
 class CurlStreamScheduler {
+    WTF_MAKE_TZONE_ALLOCATED(CurlStreamScheduler);
+    WTF_MAKE_NONCOPYABLE(CurlStreamScheduler);
 public:
-    CurlStreamScheduler() { };
-    virtual ~CurlStreamScheduler() { };
+    CurlStreamScheduler();
+    virtual ~CurlStreamScheduler();
 
-    virtual CurlStreamID createStream(const URL&, CurlStream::Client&) = 0;
-    virtual void destroyStream(CurlStreamID) = 0;
-    virtual void send(CurlStreamID, UniqueArray<uint8_t>&&, size_t) = 0;
+    WEBCORE_EXPORT CurlStreamID createStream(const URL&, CurlStream::Client&);
+    WEBCORE_EXPORT void destroyStream(CurlStreamID);
+    WEBCORE_EXPORT void send(CurlStreamID, UniqueArray<uint8_t>&&, size_t);
 
-    virtual void callClientOnMainThread(CurlStreamID, WTF::Function<void(CurlStream::Client&)>&&) = 0;
-    virtual long maxConnects() const { return 16; }
+    void callOnWorkerThread(Function<void()>&&);
+    void callClientOnMainThread(CurlStreamID, Function<void(CurlStream::Client&)>&&);
+
+private:
+    void startThreadIfNeeded();
+    void stopThreadIfNoMoreJobRunning();
+
+    void executeTasks();
+
+    void workerThread();
+
+    Lock m_mutex;
+    RefPtr<Thread> m_thread;
+    bool m_runThread { false };
+
+    CurlStreamID m_currentStreamID = 1;
+
+    Vector<Function<void()>> m_taskQueue;
+    HashMap<CurlStreamID, CurlStream::Client*> m_clientList;
+    HashMap<CurlStreamID, std::unique_ptr<CurlStream>> m_streamList;
 };
 
 } // namespace WebCore

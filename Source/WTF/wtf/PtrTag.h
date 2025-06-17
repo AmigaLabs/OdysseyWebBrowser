@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2018-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,7 +28,14 @@
 #include <wtf/Assertions.h>
 #include <wtf/DataLog.h>
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace WTF {
+
+enum class PACKeyType {
+    ProcessIndependent,
+    ProcessDependent
+};
 
 #define FOR_EACH_BASE_WTF_PTRTAG(v) \
     v(NoPtrTag) \
@@ -45,7 +52,7 @@ namespace WTF {
     FOR_EACH_ADDITIONAL_WTF_PTRTAG(v) \
 
 enum PtrTag : uintptr_t {
-    NoPtrTag,
+    NoPtrTag = 0, // Note: We use the 0 tag for temporarily holding the return PC during JSC's arity fixup.
     CFunctionPtrTag,
 };
 
@@ -80,6 +87,9 @@ ALWAYS_INLINE static PtrType untagNativeCodePtrImpl(PtrType ptr)
 #endif
 }
 
+template<PtrTag tag, typename PtrType>
+ALWAYS_INLINE static bool isTaggedNativeCodePtrImpl(PtrType);
+
 template<PtrTag passedTag>
 struct PtrTagTraits {
     static constexpr PtrTag tag = passedTag;
@@ -97,6 +107,12 @@ struct PtrTagTraits {
     ALWAYS_INLINE static PtrType untagCodePtr(PtrType ptr)
     {
         return untagNativeCodePtrImpl<tag>(ptr);
+    }
+
+    template<typename PtrType>
+    ALWAYS_INLINE static bool isTagged(PtrType ptr)
+    {
+        return isTaggedNativeCodePtrImpl<tag>(ptr);
     }
 };
 
@@ -119,21 +135,12 @@ constexpr uintptr_t makePtrTagHash(const char (&str)[N])
 
 #define WTF_DECLARE_PTRTAG(tag) \
     constexpr PtrTag tag = static_cast<PtrTag>(WTF_PTRTAG_HASH(#tag)); \
-    static_assert(tag != NoPtrTag && tag != CFunctionPtrTag, "");
+    static_assert(tag != NoPtrTag && tag != CFunctionPtrTag);
 
-static_assert(static_cast<uintptr_t>(NoPtrTag) == static_cast<uintptr_t>(0), "");
-static_assert(static_cast<uintptr_t>(CFunctionPtrTag) == static_cast<uintptr_t>(1), "");
-
-#if COMPILER(MSVC)
-#pragma warning(push)
-#pragma warning(disable:4307)
-#endif
+static_assert(static_cast<uintptr_t>(NoPtrTag) == static_cast<uintptr_t>(0));
+static_assert(static_cast<uintptr_t>(CFunctionPtrTag) == static_cast<uintptr_t>(1));
 
 FOR_EACH_ADDITIONAL_WTF_PTRTAG(WTF_DECLARE_PTRTAG)
-
-#if COMPILER(MSVC)
-#pragma warning(pop)
-#endif
 
 struct PtrTagLookup {
     using TagForPtrFunc = const char* (*)(const void*);
@@ -153,10 +160,10 @@ struct PtrTagLookup {
 #if CPU(ARM64E)
 #define ENABLE_PTRTAG_DEBUGGING ASSERT_ENABLED
 
+#if ENABLE(PTRTAG_DEBUGGING)
+
 WTF_EXPORT_PRIVATE void registerPtrTagLookup(PtrTagLookup*);
 WTF_EXPORT_PRIVATE void reportBadTag(const void*, PtrTag expectedTag);
-
-#if ENABLE(PTRTAG_DEBUGGING)
 
 WTF_EXPORT_PRIVATE const char* ptrTagName(PtrTag);
 WTF_EXPORT_PRIVATE const char* tagForPtr(const void*);
@@ -206,9 +213,9 @@ template<typename T, typename PtrType, typename = std::enable_if_t<std::is_point
 inline constexpr T removeCodePtrTag(PtrType ptr)
 {
 #if CPU(ARM64E)
-    return bitwise_cast<T>(ptrauth_strip(ptr, ptrauth_key_process_dependent_code));
+    return std::bit_cast<T>(ptrauth_strip(ptr, ptrauth_key_process_dependent_code));
 #else
-    return bitwise_cast<T>(ptr);
+    return std::bit_cast<T>(ptr);
 #endif
 }
 
@@ -234,7 +241,7 @@ inline PtrType tagCodePtrImpl(PtrType ptr)
 template<typename T, PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
 inline T tagCodePtr(PtrType ptr)
 {
-    return bitwise_cast<T>(tagCodePtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
+    return std::bit_cast<T>(tagCodePtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
 }
 
 template<PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
@@ -253,7 +260,7 @@ inline PtrType untagCodePtrImpl(PtrType ptr)
 template<typename T, PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
 inline T untagCodePtr(PtrType ptr)
 {
-    return bitwise_cast<T>(untagCodePtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
+    return std::bit_cast<T>(untagCodePtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
 }
 
 template<PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
@@ -295,7 +302,7 @@ inline PtrType retagCodePtrImpl(PtrType ptr)
 template<typename T, PtrTag oldTag, PtrTag newTag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
 inline T retagCodePtr(PtrType ptr)
 {
-    return bitwise_cast<T>(retagCodePtrImpl<PtrTagAction::DebugAssert, oldTag, newTag>(ptr));
+    return std::bit_cast<T>(retagCodePtrImpl<PtrTagAction::DebugAssert, oldTag, newTag>(ptr));
 }
 
 template<PtrTag oldTag, PtrTag newTag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
@@ -304,7 +311,7 @@ inline PtrType retagCodePtr(PtrType ptr) { return retagCodePtrImpl<PtrTagAction:
 template<typename PtrType>
 void assertIsCFunctionPtr(PtrType value)
 {
-    void* ptr = bitwise_cast<void*>(value);
+    void* ptr = std::bit_cast<void*>(value);
     WTF_PTRTAG_ASSERT(PtrTagAction::DebugAssert, ptr, CFunctionPtrTag, ptr == (tagCodePtrImpl<PtrTagAction::NoAssert, CFunctionPtrTag>(removeCodePtrTag(ptr))));
 }
 
@@ -318,24 +325,35 @@ void assertIsNullOrCFunctionPtr(PtrType ptr)
 template<typename PtrType>
 void assertIsNotTagged(PtrType value)
 {
-    void* ptr = bitwise_cast<void*>(value);
+    void* ptr = std::bit_cast<void*>(value);
     WTF_PTRTAG_ASSERT(PtrTagAction::DebugAssert, ptr, NoPtrTag, ptr == removeCodePtrTag(ptr));
+}
+
+template<PtrTag tag, typename PtrType>
+ALWAYS_INLINE static bool isTaggedNativeCodePtrImpl(PtrType ptr)
+{
+#if CPU(ARM64E)
+    return ptr == tagNativeCodePtrImpl<tag>(removeCodePtrTag(ptr));
+#else
+    UNUSED_PARAM(ptr);
+    return true;
+#endif
 }
 
 template<PtrTag tag, typename PtrType>
 bool isTaggedWith(PtrType value)
 {
-    void* ptr = bitwise_cast<void*>(value);
+    void* ptr = std::bit_cast<void*>(value);
     if (tag == NoPtrTag)
         return ptr == removeCodePtrTag(ptr);
-    return ptr == tagCodePtrImpl<PtrTagAction::NoAssert, tag>(removeCodePtrTag(ptr));
+    return PtrTagTraits<tag>::isTagged(ptr);
 }
 
 template<PtrTag tag, typename PtrType>
 void assertIsTaggedWith(PtrType value)
 {
     UNUSED_PARAM(value);
-    WTF_PTRTAG_ASSERT(PtrTagAction::DebugAssert, value, tag, isTaggedWith<tag>(value));
+    WTF_PTRTAG_ASSERT(PtrTagAction::DebugAssert, value, tag, PtrTagTraits<tag>::isTagged(value));
 }
 
 template<PtrTag tag, typename PtrType>
@@ -357,7 +375,7 @@ inline PtrType tagCFunctionPtrImpl(PtrType ptr)
 template<typename T, PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
 inline T tagCFunctionPtr(PtrType ptr)
 {
-    return bitwise_cast<T>(tagCFunctionPtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
+    return std::bit_cast<T>(tagCFunctionPtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
 }
 
 template<PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
@@ -372,7 +390,7 @@ inline FunctionType tagCFunction(FunctionType func)
 template<typename ReturnType, PtrTag newTag, typename FunctionType, class = typename std::enable_if<std::is_pointer<FunctionType>::value && std::is_function<typename std::remove_pointer<FunctionType>::type>::value>::type>
 inline ReturnType tagCFunction(FunctionType func)
 {
-    return bitwise_cast<ReturnType>(tagCFunction<newTag>(func));
+    return std::bit_cast<ReturnType>(tagCFunction<newTag>(func));
 }
 
 template<PtrTagAction tagAction, PtrTag tag, typename PtrType>
@@ -387,13 +405,13 @@ inline PtrType untagCFunctionPtrImpl(PtrType ptr)
 template<typename T, PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
 inline T untagCFunctionPtr(PtrType ptr)
 {
-    return bitwise_cast<T>(untagCFunctionPtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
+    return std::bit_cast<T>(untagCFunctionPtrImpl<PtrTagAction::DebugAssert, tag>(ptr));
 }
 
 template<typename T, PtrTag tag, PtrTagAction tagAction, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
 inline T untagCFunctionPtr(PtrType ptr)
 {
-    return bitwise_cast<T>(untagCFunctionPtrImpl<tagAction, tag>(ptr));
+    return std::bit_cast<T>(untagCFunctionPtrImpl<tagAction, tag>(ptr));
 }
 
 template<PtrTag tag, typename PtrType, typename = std::enable_if_t<std::is_pointer<PtrType>::value>>
@@ -408,17 +426,20 @@ inline const void* untagReturnPC(const void* pc, const void* sp)
     return ptr;
 }
 
-template <typename IntType>
+template <typename IntType, PACKeyType keyType = PACKeyType::ProcessDependent>
 inline IntType untagInt(IntType ptrInt, PtrTag tag)
 {
     static_assert(sizeof(IntType) == sizeof(uintptr_t));
-    return bitwise_cast<IntType>(ptrauth_auth_data(bitwise_cast<void*>(ptrInt), ptrauth_key_process_dependent_data, tag));
+    if constexpr (keyType == PACKeyType::ProcessDependent)
+        return std::bit_cast<IntType>(ptrauth_auth_data(std::bit_cast<void*>(ptrInt), ptrauth_key_process_dependent_data, tag));
+    return std::bit_cast<IntType>(ptrauth_auth_data(std::bit_cast<void*>(ptrInt), ptrauth_key_process_independent_data, tag));
 }
 
 template<typename T>
 inline T* tagArrayPtr(std::nullptr_t ptr, size_t length)
 {
     ASSERT(!length);
+    length = length & ((1ull << 48) - 1); // See rdar://107561209, rdar://107724053.
     return ptrauth_sign_unauthenticated(static_cast<T*>(ptr), ptrauth_key_process_dependent_data, length);
 }
 
@@ -426,6 +447,7 @@ inline T* tagArrayPtr(std::nullptr_t ptr, size_t length)
 template<typename T>
 inline T* tagArrayPtr(T* ptr, size_t length)
 {
+    length = length & ((1ull << 48) - 1); // See rdar://107561209, rdar://107724053.
     return ptrauth_sign_unauthenticated(ptr, ptrauth_key_process_dependent_data, length);
 }
 
@@ -444,21 +466,26 @@ inline T* removeArrayPtrTag(T* ptr)
 template<typename T>
 inline T* retagArrayPtr(T* ptr, size_t oldLength, size_t newLength)
 {
+    newLength = newLength & ((1ull << 48) - 1); // See rdar://107561209, rdar://107724053.
     return ptrauth_auth_and_resign(ptr, ptrauth_key_process_dependent_data, oldLength, ptrauth_key_process_dependent_data, newLength);
 }
 
-template <PtrTag tag, typename IntType>
+template <PtrTag tag, typename IntType, PACKeyType keyType = PACKeyType::ProcessDependent>
 inline IntType tagInt(IntType ptrInt)
 {
     static_assert(sizeof(IntType) == sizeof(uintptr_t));
-    return bitwise_cast<IntType>(ptrauth_sign_unauthenticated(bitwise_cast<void*>(ptrInt), ptrauth_key_process_dependent_data, tag));
+    if constexpr (keyType == PACKeyType::ProcessDependent)
+        return std::bit_cast<IntType>(ptrauth_sign_unauthenticated(std::bit_cast<void*>(ptrInt), ptrauth_key_process_dependent_data, tag));
+    return std::bit_cast<IntType>(ptrauth_sign_unauthenticated(std::bit_cast<void*>(ptrInt), ptrauth_key_process_independent_data, tag));
 }
 
-template <typename IntType>
+template <typename IntType, PACKeyType keyType = PACKeyType::ProcessDependent>
 inline IntType tagInt(IntType ptrInt, PtrTag tag)
 {
     static_assert(sizeof(IntType) == sizeof(uintptr_t));
-    return bitwise_cast<IntType>(ptrauth_sign_unauthenticated(bitwise_cast<void*>(ptrInt), ptrauth_key_process_dependent_data, tag));
+    if constexpr (keyType == PACKeyType::ProcessDependent)
+        return std::bit_cast<IntType>(ptrauth_sign_unauthenticated(std::bit_cast<void*>(ptrInt), ptrauth_key_process_dependent_data, tag));
+    return std::bit_cast<IntType>(ptrauth_sign_unauthenticated(std::bit_cast<void*>(ptrInt), ptrauth_key_process_independent_data, tag));
 }
 
 inline bool usesPointerTagging() { return true; }
@@ -470,6 +497,10 @@ inline bool usesPointerTagging() { return true; }
 #define WTF_VTBL_FUNCPTR_PTRAUTH(discriminator) WTF_VTBL_FUNCPTR_PTRAUTH_STR(#discriminator)
 #define WTF_VTBL_FUNCPTR_PTRAUTH_STR(discriminatorStr) \
     __ptrauth(ptrauth_key_process_independent_code, 1, ptrauth_string_discriminator(discriminatorStr))
+
+#define WTF_FUNCPTR_PTRAUTH(discriminator) WTF_FUNCPTR_PTRAUTH_STR(#discriminator)
+#define WTF_FUNCPTR_PTRAUTH_STR(discriminatorStr) \
+    __ptrauth(ptrauth_key_process_dependent_code, 1, ptrauth_string_discriminator(discriminatorStr))
 
 #else // not CPU(ARM64E)
 
@@ -509,21 +540,21 @@ inline T* retagArrayPtr(T* ptr, size_t, size_t)
     return ptr;
 }
 
-template <PtrTag, typename IntType>
+template <PtrTag, typename IntType, PACKeyType>
 inline IntType tagInt(IntType ptrInt)
 {
-    static_assert(sizeof(IntType) == sizeof(uintptr_t), "");
+    static_assert(sizeof(IntType) == sizeof(uintptr_t));
     return ptrInt;
 }
 
-template <typename IntType>
+template <typename IntType, PACKeyType>
 inline IntType tagInt(IntType ptrInt, PtrTag)
 {
     static_assert(sizeof(IntType) == sizeof(uintptr_t));
     return ptrInt;
 }
 
-template <typename IntType>
+template <typename IntType, PACKeyType>
 inline IntType untagInt(IntType ptrInt, PtrTag)
 {
     static_assert(sizeof(IntType) == sizeof(uintptr_t));
@@ -534,20 +565,43 @@ inline bool usesPointerTagging() { return false; }
 
 #define WTF_VTBL_FUNCPTR_PTRAUTH(discriminator)
 #define WTF_VTBL_FUNCPTR_PTRAUTH_STR(discriminatorStr)
+#define WTF_FUNCPTR_PTRAUTH(discriminator)
+#define WTF_FUNCPTR_PTRAUTH_STR(discriminatorStr)
 
 #endif // CPU(ARM64E)
+
+template <PACKeyType keyType, PtrTag tag, typename IntType>
+inline IntType tagInt(IntType ptrInt)
+{
+    return tagInt<tag, IntType, keyType>(ptrInt);
+}
+
+template <PACKeyType keyType, typename IntType>
+inline IntType tagInt(IntType ptrInt, PtrTag tag)
+{
+    return tagInt<IntType, keyType>(ptrInt, tag);
+}
+
+template <PACKeyType keyType, typename IntType>
+inline IntType untagInt(IntType ptrInt, PtrTag tag)
+{
+    return untagInt<IntType, keyType>(ptrInt, tag);
+}
 
 } // namespace WTF
 
 using WTF::CFunctionPtrTag;
 using WTF::NoPtrTag;
+using WTF::PACKeyType;
 using WTF::PlatformRegistersLRPtrTag;
 using WTF::PlatformRegistersPCPtrTag;
 using WTF::PtrTag;
 using WTF::PtrTagCallerType;
 using WTF::PtrTagCalleeType;
 
+#if ENABLE(PTRTAG_DEBUGGING)
 using WTF::reportBadTag;
+#endif
 
 using WTF::untagReturnPC;
 using WTF::tagArrayPtr;
@@ -572,3 +626,5 @@ using WTF::isTaggedWith;
 using WTF::assertIsTaggedWith;
 using WTF::assertIsNullOrTaggedWith;
 using WTF::usesPointerTagging;
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

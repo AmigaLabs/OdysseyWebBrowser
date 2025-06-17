@@ -44,8 +44,6 @@ class SurfaceMtl : public SurfaceImpl
     void destroy(const egl::Display *display) override;
 
     egl::Error initialize(const egl::Display *display) override;
-    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
-                                              const gl::FramebufferState &state) override;
 
     egl::Error makeCurrent(const gl::Context *context) override;
     egl::Error unMakeCurrent(const gl::Context *context) override;
@@ -63,7 +61,7 @@ class SurfaceMtl : public SurfaceImpl
     egl::Error releaseTexImage(const gl::Context *context, EGLint buffer) override;
     egl::Error getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc) override;
     egl::Error getMscRate(EGLint *numerator, EGLint *denominator) override;
-    void setSwapInterval(EGLint interval) override;
+    void setSwapInterval(const egl::Display *display, EGLint interval) override;
     void setFixedWidth(EGLint width) override;
     void setFixedHeight(EGLint height) override;
 
@@ -74,19 +72,25 @@ class SurfaceMtl : public SurfaceImpl
     EGLint getSwapBehavior() const override;
 
     angle::Result initializeContents(const gl::Context *context,
+                                     GLenum binding,
                                      const gl::ImageIndex &imageIndex) override;
 
-    const mtl::TextureRef &getColorTexture()  { return mColorTexture; }
+    const mtl::TextureRef &getColorTexture() { return mColorTexture; }
     const mtl::Format &getColorFormat() const { return mColorFormat; }
-    int getSamples() const  { return mSamples; }
+    int getSamples() const { return mSamples; }
+    bool hasDepthStencil() const { return mDepthTexture || mStencilTexture; }
 
-    bool hasRobustResourceInit() const  { return mRobustResourceInit; }
+    bool hasRobustResourceInit() const { return mRobustResourceInit; }
 
     angle::Result getAttachmentRenderTarget(const gl::Context *context,
                                             GLenum binding,
                                             const gl::ImageIndex &imageIndex,
                                             GLsizei samples,
                                             FramebufferAttachmentRenderTarget **rtOut) override;
+    egl::Error attachToFramebuffer(const gl::Context *context,
+                                   gl::Framebuffer *framebuffer) override;
+    egl::Error detachFromFramebuffer(const gl::Context *context,
+                                     gl::Framebuffer *framebuffer) override;
 
   protected:
     // Ensure companion (MS, depth, stencil) textures' size is correct w.r.t color texture.
@@ -107,6 +111,8 @@ class SurfaceMtl : public SurfaceImpl
     bool mAutoResolveMSColorTexture = false;
 
     bool mRobustResourceInit = false;
+    bool mColorTextureInitialized         = true;
+    bool mDepthStencilTexturesInitialized = true;
 
     mtl::Format mColorFormat;
     mtl::Format mDepthFormat;
@@ -132,35 +138,36 @@ class WindowSurfaceMtl : public SurfaceMtl
     void destroy(const egl::Display *display) override;
 
     egl::Error initialize(const egl::Display *display) override;
-    FramebufferImpl *createDefaultFramebuffer(const gl::Context *context,
-                                              const gl::FramebufferState &state) override;
 
     egl::Error swap(const gl::Context *context) override;
 
-    void setSwapInterval(EGLint interval) override;
+    void setSwapInterval(const egl::Display *display, EGLint interval) override;
     EGLint getSwapBehavior() const override;
 
     angle::Result initializeContents(const gl::Context *context,
+                                     GLenum binding,
                                      const gl::ImageIndex &imageIndex) override;
 
     // width and height can change with client window resizing
     EGLint getWidth() const override;
     EGLint getHeight() const override;
-
     angle::Result getAttachmentRenderTarget(const gl::Context *context,
                                             GLenum binding,
                                             const gl::ImageIndex &imageIndex,
                                             GLsizei samples,
                                             FramebufferAttachmentRenderTarget **rtOut) override;
+    egl::Error attachToFramebuffer(const gl::Context *context,
+                                   gl::Framebuffer *framebuffer) override;
+    egl::Error detachFromFramebuffer(const gl::Context *context,
+                                     gl::Framebuffer *framebuffer) override;
 
     angle::Result ensureCurrentDrawableObtained(const gl::Context *context);
-    angle::Result ensureCurrentDrawableObtained(const gl::Context *context,
-                                                bool *newDrawableOut /** nullable */);
 
     // Ensure the the texture returned from getColorTexture() is ready for glReadPixels(). This
     // implicitly calls ensureCurrentDrawableObtained().
     angle::Result ensureColorTextureReadyForReadPixels(const gl::Context *context);
     bool preserveBuffer() const { return mRetainBuffer; }
+
   private:
     angle::Result swapImpl(const gl::Context *context);
     angle::Result obtainNextDrawable(const gl::Context *context);
@@ -170,9 +177,9 @@ class WindowSurfaceMtl : public SurfaceMtl
     // Check if metal layer has been resized.
     bool checkIfLayerResized(const gl::Context *context);
 
-    mtl::AutoObjCObj<CAMetalLayer> mMetalLayer = nil;
+    angle::ObjCPtr<CAMetalLayer> mMetalLayer = nil;
     CALayer *mLayer;
-    mtl::AutoObjCPtr<id<CAMetalDrawable>> mCurrentDrawable = nil;
+    angle::ObjCPtr<id<CAMetalDrawable>> mCurrentDrawable = nil;
 
     // Cache last known drawable size that is used by GL context. Can be used to detect resize
     // event. We don't use mMetalLayer.drawableSize directly since it might be changed internally by
@@ -192,6 +199,9 @@ class OffscreenSurfaceMtl : public SurfaceMtl
     ~OffscreenSurfaceMtl() override;
 
     void destroy(const egl::Display *display) override;
+
+    EGLint getWidth() const override;
+    EGLint getHeight() const override;
 
     egl::Error swap(const gl::Context *context) override;
 

@@ -28,11 +28,22 @@
 #if ENABLE(DEVICE_ORIENTATION)
 
 #include "DeviceOrientationOrMotionPermissionState.h"
+#include "EventTarget.h"
 #include "ExceptionOr.h"
 #include "SecurityOriginData.h"
 #include <wtf/Function.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/Vector.h>
 #include <wtf/WeakPtr.h>
+
+namespace WebCore {
+class DeviceOrientationAndMotionAccessController;
+}
+
+namespace WTF {
+template<typename T> struct IsDeprecatedWeakRefSmartPointerException;
+template<> struct IsDeprecatedWeakRefSmartPointerException<WebCore::DeviceOrientationAndMotionAccessController> : std::true_type { };
+}
 
 namespace WebCore {
 
@@ -40,7 +51,7 @@ class Document;
 class Page;
 
 class DeviceOrientationAndMotionAccessController : public CanMakeWeakPtr<DeviceOrientationAndMotionAccessController> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(DeviceOrientationAndMotionAccessController);
 public:
     explicit DeviceOrientationAndMotionAccessController(Document& topDocument);
 
@@ -48,8 +59,8 @@ public:
     void shouldAllowAccess(const Document&, Function<void(DeviceOrientationOrMotionPermissionState)>&&);
 
 private:
-    Document& m_topDocument;
-    HashMap<SecurityOriginData, DeviceOrientationOrMotionPermissionState> m_accessStatePerOrigin;
+    WeakRef<Document, WeakPtrImplWithEventTargetData> m_topDocument;
+    UncheckedKeyHashMap<SecurityOriginData, DeviceOrientationOrMotionPermissionState> m_accessStatePerOrigin;
 };
 
 } // namespace WebCore

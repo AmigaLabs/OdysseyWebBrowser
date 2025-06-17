@@ -40,8 +40,12 @@ public:
 
     id <WKURLSchemeHandler> apiHandler() const { return m_apiHandler.get(); }
 
+    bool isAPIHandler() final { return true; }
+
 private:
     WebURLSchemeHandlerCocoa(id <WKURLSchemeHandler>);
+
+    bool isWebURLSchemeHandlerCocoa() const final { return true; }
 
     void platformStartTask(WebPageProxy&, WebURLSchemeTask&) final;
     void platformStopTask(WebPageProxy&, WebURLSchemeTask&) final;
@@ -51,3 +55,7 @@ private:
 }; // class WebURLSchemeHandler
 
 } // namespace WebKit
+
+SPECIALIZE_TYPE_TRAITS_BEGIN(WebKit::WebURLSchemeHandlerCocoa) \
+    static bool isType(const WebKit::WebURLSchemeHandler& handler) { return handler.isWebURLSchemeHandlerCocoa(); } \
+SPECIALIZE_TYPE_TRAITS_END()

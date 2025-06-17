@@ -26,8 +26,6 @@
 #include "config.h"
 #include "CryptoKeyEC.h"
 
-#if ENABLE(WEB_CRYPTO)
-
 #include "JsonWebKey.h"
 #include "OpenSSLUtilities.h"
 #include <wtf/text/Base64.h>
@@ -169,7 +167,7 @@ RefPtr<CryptoKeyEC> CryptoKeyEC::platformImportJWKPublic(CryptoAlgorithmIdentifi
     auto point = ECPointPtr(EC_POINT_new(group));
 
     // Currently we only support elliptic curves over GF(p).   
-    if (EC_POINT_set_affine_coordinates_GFp(group, point.get(), BIGNUMPtr(convertToBigNumber(nullptr, x)).get(), BIGNUMPtr(convertToBigNumber(nullptr, y)).get(), nullptr) <= 0)
+    if (EC_POINT_set_affine_coordinates_GFp(group, point.get(), convertToBigNumber(x).get(), convertToBigNumber(y).get(), nullptr) <= 0)
         return nullptr;
 
     if (EC_KEY_set_public_key(key.get(), point.get()) <= 0)
@@ -195,13 +193,13 @@ RefPtr<CryptoKeyEC> CryptoKeyEC::platformImportJWKPrivate(CryptoAlgorithmIdentif
     auto point = ECPointPtr(EC_POINT_new(group));
 
     // Currently we only support elliptic curves over GF(p).   
-    if (EC_POINT_set_affine_coordinates_GFp(group, point.get(), BIGNUMPtr(convertToBigNumber(nullptr, x)).get(), BIGNUMPtr(convertToBigNumber(nullptr, y)).get(), nullptr) <= 0)
+    if (EC_POINT_set_affine_coordinates_GFp(group, point.get(), convertToBigNumber(x).get(), convertToBigNumber(y).get(), nullptr) <= 0)
         return nullptr;
 
     if (EC_KEY_set_public_key(key.get(), point.get()) <= 0)
         return nullptr;
 
-    if (EC_KEY_set_private_key(key.get(), BIGNUMPtr(convertToBigNumber(nullptr, d)).get()) <= 0)
+    if (EC_KEY_set_private_key(key.get(), convertToBigNumber(d).get()) <= 0)
         return nullptr;
 
     if (EC_KEY_check_key(key.get()) <= 0)
@@ -357,7 +355,7 @@ RefPtr<CryptoKeyEC> CryptoKeyEC::platformImportPkcs8(CryptoAlgorithmIdentifier i
         return nullptr;
 
     auto pkey = EvpPKeyPtr(EVP_PKCS82PKEY(p8inf.get()));
-    if (!pkey || EVP_PKEY_type(pkey->type) != EVP_PKEY_EC)
+    if (!pkey || EVP_PKEY_base_id(pkey.get()) != EVP_PKEY_EC)
         return nullptr;
 
     auto ecKey = EVP_PKEY_get0_EC_KEY(pkey.get());
@@ -377,7 +375,7 @@ RefPtr<CryptoKeyEC> CryptoKeyEC::platformImportPkcs8(CryptoAlgorithmIdentifier i
 
 Vector<uint8_t> CryptoKeyEC::platformExportRaw() const
 {
-    EC_KEY* key = EVP_PKEY_get0_EC_KEY(platformKey());
+    EC_KEY* key = EVP_PKEY_get0_EC_KEY(platformKey().get());
     if (!key)
         return { };
     
@@ -398,7 +396,7 @@ bool CryptoKeyEC::platformAddFieldElements(JsonWebKey& jwk) const
 {
     size_t keySizeInBytes = (keySizeInBits() + 7) / 8;
 
-    EC_KEY* key = EVP_PKEY_get0_EC_KEY(platformKey());
+    EC_KEY* key = EVP_PKEY_get0_EC_KEY(platformKey().get());
     if (!key)
         return false;
 
@@ -426,13 +424,13 @@ Vector<uint8_t> CryptoKeyEC::platformExportSpki() const
     if (type() != CryptoKeyType::Public)
         return { };
 
-    int len = i2d_PUBKEY(platformKey(), nullptr);
+    int len = i2d_PUBKEY(platformKey().get(), nullptr);
     if (len < 0)
         return { };
 
     Vector<uint8_t> keyData(len);
     auto ptr = keyData.data();
-    if (i2d_PUBKEY(platformKey(), &ptr) < 0)
+    if (i2d_PUBKEY(platformKey().get(), &ptr) < 0)
         return { };
 
     return keyData;
@@ -443,7 +441,7 @@ Vector<uint8_t> CryptoKeyEC::platformExportPkcs8() const
     if (type() != CryptoKeyType::Private)
         return { };
 
-    auto p8inf = PKCS8PrivKeyInfoPtr(EVP_PKEY2PKCS8(platformKey()));
+    auto p8inf = PKCS8PrivKeyInfoPtr(EVP_PKEY2PKCS8(platformKey().get()));
     if (!p8inf)
         return { };
 
@@ -460,5 +458,3 @@ Vector<uint8_t> CryptoKeyEC::platformExportPkcs8() const
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(WEB_CRYPTO)

@@ -21,9 +21,10 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import sys
+import time
 import unittest
 
-from webkitcorepy import OutputCapture, run, TimeoutExpired, Timeout
+from webkitcorepy import OutputCapture, run, TimeoutExpired, Timeout, Thread
 
 
 class SubprocessUtils(unittest.TestCase):
@@ -40,13 +41,43 @@ class SubprocessUtils(unittest.TestCase):
         self.assertEqual(result.stdout, None)
         self.assertEqual(result.stderr, None)
 
-    # Without signal.alarm, the timeout argument will not work in Python 2
-    if Timeout.SIGALRM or sys.version_info > (3, 0):
-        def test_run_timeout(self):
-            with OutputCapture(), self.assertRaises(TimeoutExpired):
-                run([sys.executable, '-c', 'import time;time.sleep(2)'], timeout=1)
+    def test_thread(self):
+        data = dict()
 
-        def test_run_timeout_context(self):
-            with OutputCapture(), self.assertRaises(TimeoutExpired):
-                with Timeout(1):
-                    run([sys.executable, '-c', 'import time;time.sleep(2)'])
+        def f():
+            data['finished'] = True
+
+        t = Thread(target=f)
+        with t:
+            pass
+
+        self.assertEqual(t.poll(), 0)
+        self.assertTrue(data.get('finished', False))
+
+    def test_killed_thread(self):
+        data = dict()
+
+        def f():
+            data['iteration'] = 0
+            for x in range(10):
+                if Thread.terminated():
+                    break
+                data['iteration'] = x
+                time.sleep(.1)
+
+        t = Thread(target=f)
+        with t:
+            self.assertIsNone(t.poll())
+            t.kill()
+
+        self.assertEqual(t.poll(), 1)
+        self.assertNotEqual(data.get('iteration', 9), 9)
+
+    def test_run_timeout(self):
+        with OutputCapture(), self.assertRaises(TimeoutExpired):
+            run([sys.executable, '-c', 'import time;time.sleep(2)'], timeout=1)
+
+    def test_run_timeout_context(self):
+        with OutputCapture(), self.assertRaises(TimeoutExpired):
+            with Timeout(1):
+                run([sys.executable, '-c', 'import time;time.sleep(2)'])

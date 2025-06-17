@@ -21,8 +21,7 @@
 
 #if USE(GLIB)
 
-#include <glib-object.h>
-#include <glib.h>
+#include <gio/gio.h>
 
 namespace WTF {
 
@@ -195,7 +194,19 @@ template <> void derefGPtr(GDateTime* ptr)
         g_date_time_unref(ptr);
 }
 
-#if HAVE(GURI)
+template <> GDBusNodeInfo* refGPtr(GDBusNodeInfo* ptr)
+{
+    if (ptr)
+        g_dbus_node_info_ref(ptr);
+    return ptr;
+}
+
+template <> void derefGPtr(GDBusNodeInfo* ptr)
+{
+    if (ptr)
+        g_dbus_node_info_unref(ptr);
+}
+
 template <> GUri* refGPtr(GUri* ptr)
 {
     if (ptr)
@@ -208,7 +219,37 @@ template <> void derefGPtr(GUri* ptr)
     if (ptr)
         g_uri_unref(ptr);
 }
-#endif
+
+template <>
+GArray* refGPtr(GArray* ptr)
+{
+    if (ptr)
+        g_array_ref(ptr);
+
+    return ptr;
+}
+
+template <>
+void derefGPtr(GArray* ptr)
+{
+    if (ptr)
+        g_array_unref(ptr);
+}
+
+template <>
+GResource* refGPtr(GResource* ptr)
+{
+    if (ptr)
+        g_resource_ref(ptr);
+    return ptr;
+}
+
+template <>
+void derefGPtr(GResource* ptr)
+{
+    if (ptr)
+        g_resource_unref(ptr);
+}
 
 } // namespace WTF
 

@@ -24,9 +24,12 @@
 
 #pragma once
 
+#include "EventTarget.h"
 #include "ExceptionOr.h"
+#include "MouseEventTypes.h"
 #include "PointerID.h"
 #include <wtf/HashMap.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 
@@ -42,7 +45,7 @@ class WindowProxy;
 
 class PointerCaptureController {
     WTF_MAKE_NONCOPYABLE(PointerCaptureController);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(PointerCaptureController);
 public:
     explicit PointerCaptureController(Page&);
 
@@ -57,15 +60,15 @@ public:
 
     RefPtr<PointerEvent> pointerEventForMouseEvent(const MouseEvent&, PointerID, const String& pointerType);
 
-#if ENABLE(TOUCH_EVENTS) && PLATFORM(IOS_FAMILY)
-    void dispatchEventForTouchAtIndex(EventTarget&, const PlatformTouchEvent&, unsigned, bool isPrimary, WindowProxy&);
+#if ENABLE(TOUCH_EVENTS) && (PLATFORM(IOS_FAMILY) || PLATFORM(WPE))
+    void dispatchEventForTouchAtIndex(EventTarget&, const PlatformTouchEvent&, unsigned, bool isPrimary, WindowProxy&, const IntPoint&);
 #endif
 
     WEBCORE_EXPORT void touchWithIdentifierWasRemoved(PointerID);
     bool hasCancelledPointerEventForIdentifier(PointerID) const;
     bool preventsCompatibilityMouseEventsForIdentifier(PointerID) const;
     void dispatchEvent(PointerEvent&, EventTarget*);
-    WEBCORE_EXPORT void cancelPointer(PointerID, const IntPoint&);
+    WEBCORE_EXPORT void cancelPointer(PointerID, const IntPoint&, PointerEvent* existingCancelEvent = nullptr);
     void processPendingPointerCapture(PointerID);
 
 private:
@@ -75,14 +78,15 @@ private:
             return adoptRef(*new CapturingData(pointerType));
         }
 
+        WeakPtr<Document, WeakPtrImplWithEventTargetData> activeDocument;
         RefPtr<Element> pendingTargetOverride;
         RefPtr<Element> targetOverride;
-#if ENABLE(TOUCH_EVENTS) && PLATFORM(IOS_FAMILY)
+#if ENABLE(TOUCH_EVENTS) && (PLATFORM(IOS_FAMILY) || PLATFORM(WPE))
         RefPtr<Element> previousTarget;
 #endif
         bool hasAnyElement() const {
             return pendingTargetOverride || targetOverride
-#if ENABLE(TOUCH_EVENTS) && PLATFORM(IOS_FAMILY)
+#if ENABLE(TOUCH_EVENTS) && (PLATFORM(IOS_FAMILY) || PLATFORM(WPE))
                 || previousTarget
 #endif
                 ;
@@ -97,7 +101,7 @@ private:
         bool isPrimary { false };
         bool preventsCompatibilityMouseEvents { false };
         bool pointerIsPressed { false };
-        short previousMouseButton { -1 };
+        MouseButton previousMouseButton { MouseButton::PointerHasNotChanged };
 
     private:
         CapturingData(const String& pointerType)
@@ -110,14 +114,24 @@ private:
     void pointerEventWasDispatched(const PointerEvent&);
 
     void updateHaveAnyCapturingElement();
+    void elementWasRemovedSlow(Element&);
 
-    Page& m_page;
+    void dispatchOverOrOutEvent(const AtomString&, EventTarget*, const PlatformTouchEvent&, unsigned index, bool isPrimary, WindowProxy&, IntPoint);
+    void dispatchEnterOrLeaveEvent(const AtomString&, Element&, const PlatformTouchEvent&, unsigned index, bool isPrimary, WindowProxy&, IntPoint);
+
+    WeakPtr<Page> m_page;
     // While PointerID is defined as int32_t, we use int64_t here so that we may use a value outside of the int32_t range to have safe
     // empty and removed values, allowing any int32_t to be provided through the API for lookup in this hashmap.
-    using PointerIdToCapturingDataMap = HashMap<int64_t, Ref<CapturingData>, WTF::IntHash<int64_t>, WTF::SignedWithZeroKeyHashTraits<int64_t>>;
+    using PointerIdToCapturingDataMap = UncheckedKeyHashMap<int64_t, Ref<CapturingData>, IntHash<int64_t>, WTF::SignedWithZeroKeyHashTraits<int64_t>>;
     PointerIdToCapturingDataMap m_activePointerIdsToCapturingData;
     bool m_processingPendingPointerCapture { false };
     bool m_haveAnyCapturingElement { false };
 };
+
+inline void PointerCaptureController::elementWasRemoved(Element& element)
+{
+    if (m_haveAnyCapturingElement)
+        elementWasRemovedSlow(element);
+}
 
 } // namespace WebCore

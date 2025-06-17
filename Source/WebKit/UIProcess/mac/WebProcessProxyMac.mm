@@ -29,8 +29,10 @@
 
 #if PLATFORM(MAC)
 
+#import "AuxiliaryProcess.h"
 #import "CodeSigning.h"
 #import "WKFullKeyboardAccessWatcher.h"
+#import "WebProcessMessages.h"
 #import <signal.h>
 #import <wtf/ProcessPrivilege.h>
 
@@ -43,12 +45,7 @@ bool WebProcessProxy::fullKeyboardAccessEnabled()
 
 bool WebProcessProxy::shouldAllowNonValidInjectedCode() const
 {
-    static bool isSystemWebKit = [] {
-        NSBundle *webkit2Bundle = [NSBundle bundleForClass:NSClassFromString(@"WKWebView")];
-        return [webkit2Bundle.bundlePath hasPrefix:@"/System/"];
-    }();
-
-    if (!isSystemWebKit)
+    if (!AuxiliaryProcess::isSystemWebKit())
         return false;
 
     static bool isPlatformBinary = currentProcessIsPlatformBinary();
@@ -56,44 +53,21 @@ bool WebProcessProxy::shouldAllowNonValidInjectedCode() const
         return false;
 
     const String& path = m_processPool->configuration().injectedBundlePath();
-    return !path.isEmpty() && !path.startsWith("/System/");
-}
-
-void WebProcessProxy::startDisplayLink(DisplayLinkObserverID observerID, WebCore::PlatformDisplayID displayID, WebCore::FramesPerSecond preferredFramesPerSecond)
-{
-    ASSERT(hasProcessPrivilege(ProcessPrivilege::CanCommunicateWithWindowServer));
-    ASSERT(connection());
-    processPool().startDisplayLink(*connection(), observerID, displayID, preferredFramesPerSecond);
-}
-
-void WebProcessProxy::stopDisplayLink(DisplayLinkObserverID observerID, WebCore::PlatformDisplayID displayID)
-{
-    ASSERT(connection());
-    processPool().stopDisplayLink(*connection(), observerID, displayID);
-}
-
-void WebProcessProxy::setDisplayLinkPreferredFramesPerSecond(DisplayLinkObserverID observerID, WebCore::PlatformDisplayID displayID, WebCore::FramesPerSecond preferredFramesPerSecond)
-{
-    ASSERT(connection());
-    processPool().setDisplayLinkPreferredFramesPerSecond(*connection(), observerID, displayID, preferredFramesPerSecond);
+    return !path.isEmpty() && !path.startsWith("/System/"_s);
 }
 
 void WebProcessProxy::platformSuspendProcess()
 {
-    RELEASE_LOG(Process, "%p - [PID=%i] WebProcessProxy::platformSuspendProcess", this, processIdentifier());
-    ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-    if (auto* connection = this->connection())
-        xpc_connection_kill(connection->xpcConnection(), SIGSTOP);
-    ALLOW_DEPRECATED_DECLARATIONS_END
+    m_platformSuspendDidReleaseNearSuspendedAssertion = throttler().isHoldingNearSuspendedAssertion();
+    protectedThrottler()->setShouldTakeNearSuspendedAssertion(false);
 }
 
 void WebProcessProxy::platformResumeProcess()
 {
-    RELEASE_LOG(Process, "%p - [PID=%i] WebProcessProxy::platformResumeProcess", this, processIdentifier());
-    ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-    if (auto* connection = this->connection())
-        xpc_connection_kill(connection->xpcConnection(), SIGCONT);
-    ALLOW_DEPRECATED_DECLARATIONS_END
+    if (m_platformSuspendDidReleaseNearSuspendedAssertion) {
+        m_platformSuspendDidReleaseNearSuspendedAssertion = false;
+        protectedThrottler()->setShouldTakeNearSuspendedAssertion(true);
+    }
 }
 
 } // namespace WebKit

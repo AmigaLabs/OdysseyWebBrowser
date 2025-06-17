@@ -28,58 +28,58 @@
 
 #if ENABLE(MEDIA_STREAM)
 
+#include "MessageSenderInlines.h"
 #include "SpeechRecognitionRealtimeMediaSourceManagerMessages.h"
 #include "SpeechRecognitionRemoteRealtimeMediaSourceManager.h"
 
 #if PLATFORM(COCOA)
-#include "SharedRingBufferStorage.h"
+#include "SharedCARingBuffer.h"
 #include <WebCore/CARingBuffer.h>
 #include <WebCore/WebAudioBufferList.h>
 #endif
 
 namespace WebKit {
 
-Ref<WebCore::RealtimeMediaSource> SpeechRecognitionRemoteRealtimeMediaSource::create(SpeechRecognitionRemoteRealtimeMediaSourceManager& manager, const WebCore::CaptureDevice& captureDevice)
+Ref<WebCore::RealtimeMediaSource> SpeechRecognitionRemoteRealtimeMediaSource::create(SpeechRecognitionRemoteRealtimeMediaSourceManager& manager, const WebCore::CaptureDevice& captureDevice, WebCore::PageIdentifier pageIdentifier)
 {
-    return adoptRef(*new SpeechRecognitionRemoteRealtimeMediaSource(WebCore::RealtimeMediaSourceIdentifier::generate(), manager, captureDevice));
+    return adoptRef(*new SpeechRecognitionRemoteRealtimeMediaSource(WebCore::RealtimeMediaSourceIdentifier::generate(), manager, captureDevice, pageIdentifier));
 }
 
-SpeechRecognitionRemoteRealtimeMediaSource::SpeechRecognitionRemoteRealtimeMediaSource(WebCore::RealtimeMediaSourceIdentifier identifier, SpeechRecognitionRemoteRealtimeMediaSourceManager& manager, const WebCore::CaptureDevice& captureDevice)
-    : WebCore::RealtimeMediaSource(WebCore::RealtimeMediaSource::Type::Audio, String { captureDevice.label() }, String { captureDevice.persistentId() })
+SpeechRecognitionRemoteRealtimeMediaSource::SpeechRecognitionRemoteRealtimeMediaSource(WebCore::RealtimeMediaSourceIdentifier identifier, SpeechRecognitionRemoteRealtimeMediaSourceManager& manager, const WebCore::CaptureDevice& captureDevice, WebCore::PageIdentifier pageIdentifier)
+    : WebCore::RealtimeMediaSource(captureDevice, { }, pageIdentifier)
     , m_identifier(identifier)
-    , m_manager(makeWeakPtr(manager))
-#if PLATFORM(COCOA)
-    , m_ringBuffer(makeUnique<WebCore::CARingBuffer>())
-#endif
+    , m_manager(manager)
 {
-    m_manager->addSource(*this, captureDevice);
+    manager.addSource(*this, captureDevice);
 }
 
 SpeechRecognitionRemoteRealtimeMediaSource::~SpeechRecognitionRemoteRealtimeMediaSource()
 {
-    if (m_manager)
-        m_manager->removeSource(*this);
+    if (RefPtr manager = m_manager.get())
+        manager->removeSource(*this);
 }
 
 void SpeechRecognitionRemoteRealtimeMediaSource::startProducingData()
 {
-    if (m_manager)
-        m_manager->send(Messages::SpeechRecognitionRealtimeMediaSourceManager::Start { m_identifier });
+    if (RefPtr manager = m_manager.get())
+        manager->send(Messages::SpeechRecognitionRealtimeMediaSourceManager::Start { m_identifier });
 }
 
 void SpeechRecognitionRemoteRealtimeMediaSource::stopProducingData()
 {
-    if (m_manager)
-        m_manager->send(Messages::SpeechRecognitionRealtimeMediaSourceManager::Stop { m_identifier });
+    if (RefPtr manager = m_manager.get())
+        manager->send(Messages::SpeechRecognitionRealtimeMediaSourceManager::Stop { m_identifier });
 }
 
 #if PLATFORM(COCOA)
 
-void SpeechRecognitionRemoteRealtimeMediaSource::setStorage(const SharedMemory::Handle& handle, const WebCore::CAAudioStreamDescription& description, uint64_t numberOfFrames)
+void SpeechRecognitionRemoteRealtimeMediaSource::setStorage(ConsumerSharedCARingBuffer::Handle&& handle, const WebCore::CAAudioStreamDescription& description)
 {
+    m_buffer = nullptr;
+    m_ringBuffer = ConsumerSharedCARingBuffer::map(description, WTFMove(handle));
+    if (!m_ringBuffer)
+        return;
     m_description = description;
-
-    m_ringBuffer = WebCore::CARingBuffer::adoptStorage(makeUniqueRef<ReadOnlySharedRingBufferStorage>(handle), description, numberOfFrames).moveToUniquePtr();
     m_buffer = makeUnique<WebCore::WebAudioBufferList>(description);
 }
 
@@ -96,7 +96,7 @@ void SpeechRecognitionRemoteRealtimeMediaSource::remoteAudioSamplesAvailable(Med
 
     m_buffer->setSampleCount(numberOfFrames);
     m_ringBuffer->fetch(m_buffer->list(), numberOfFrames, time.timeValue());
-    audioSamplesAvailable(time, *m_buffer, m_description, numberOfFrames);
+    audioSamplesAvailable(time, *m_buffer, *m_description, numberOfFrames);
 #else
     UNUSED_PARAM(time);
     UNUSED_PARAM(numberOfFrames);

@@ -38,8 +38,9 @@ namespace WebCore {
 // which are not containing block descendants (i.e. position:absolute). These layers must have their position inside their ancestor clipping
 // layer adjusted on the scrolling thread.
 class ScrollingStatePositionedNode final : public ScrollingStateNode {
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(ScrollingStatePositionedNode, WEBCORE_EXPORT);
 public:
-    static Ref<ScrollingStatePositionedNode> create(ScrollingStateTree&, ScrollingNodeID);
+    template<typename... Args> static Ref<ScrollingStatePositionedNode> create(Args&&... args) { return adoptRef(*new ScrollingStatePositionedNode(std::forward<Args>(args)...)); }
 
     Ref<ScrollingStateNode> clone(ScrollingStateTree&) override;
 
@@ -53,10 +54,11 @@ public:
     const AbsolutePositionConstraints& layoutConstraints() const { return m_constraints; }
 
 private:
+    WEBCORE_EXPORT ScrollingStatePositionedNode(ScrollingNodeID, Vector<Ref<ScrollingStateNode>>&&, OptionSet<ScrollingStateNodeProperty>, std::optional<PlatformLayerIdentifier>, Vector<ScrollingNodeID>&&, AbsolutePositionConstraints&&);
     ScrollingStatePositionedNode(ScrollingStateTree&, ScrollingNodeID);
     ScrollingStatePositionedNode(const ScrollingStatePositionedNode&, ScrollingStateTree&);
 
-    void dumpProperties(WTF::TextStream&, ScrollingStateTreeAsTextBehavior) const final;
+    void dumpProperties(WTF::TextStream&, OptionSet<ScrollingStateTreeAsTextBehavior>) const final;
     OptionSet<ScrollingStateNode::Property> applicableProperties() const final;
 
     Vector<ScrollingNodeID> m_relatedOverflowScrollingNodes;

@@ -26,16 +26,10 @@
 #pragma once
 
 #include <atomic>
+#include <wtf/FastMalloc.h>
 #include <wtf/StdLibExtras.h>
 
-#if OS(WINDOWS)
-#if !COMPILER(GCC_COMPATIBLE)
-extern "C" void _ReadWriteBarrier(void);
-#pragma intrinsic(_ReadWriteBarrier)
-#endif
-#include <windows.h>
-#include <intrin.h>
-#endif
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 
 namespace WTF {
 
@@ -132,8 +126,9 @@ struct Atomic {
     
     ALWAYS_INLINE T exchange(T newValue, std::memory_order order = std::memory_order_seq_cst) { return value.exchange(newValue, order); }
 
-    template<typename Func>
-    ALWAYS_INLINE bool transaction(const Func& func, std::memory_order order = std::memory_order_seq_cst)
+    // func is supposed to return false if the value is already in the desired state.
+    // Returns true if the value was changed. Else returns false.
+    ALWAYS_INLINE bool transaction(const Invocable<bool(T&)> auto& func, std::memory_order order = std::memory_order_seq_cst)
     {
         for (;;) {
             T oldValue = load(std::memory_order_relaxed);
@@ -145,6 +140,8 @@ struct Atomic {
         }
     }
 
+    // func is supposed to return false if the value is already in the desired state.
+    // Returns true if the value was changed. Else returns false.
     template<typename Func>
     ALWAYS_INLINE bool transactionRelaxed(const Func& func)
     {
@@ -163,79 +160,79 @@ struct Atomic {
 template<typename T>
 inline T atomicLoad(T* location, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->load(order);
+    return std::bit_cast<Atomic<T>*>(location)->load(order);
 }
 
 template<typename T>
 inline T atomicLoadFullyFenced(T* location)
 {
-    return bitwise_cast<Atomic<T>*>(location)->loadFullyFenced();
+    return std::bit_cast<Atomic<T>*>(location)->loadFullyFenced();
 }
 
 template<typename T>
 inline void atomicStore(T* location, T newValue, std::memory_order order = std::memory_order_seq_cst)
 {
-    bitwise_cast<Atomic<T>*>(location)->store(newValue, order);
+    std::bit_cast<Atomic<T>*>(location)->store(newValue, order);
 }
 
 template<typename T>
 inline void atomicStoreFullyFenced(T* location, T newValue)
 {
-    bitwise_cast<Atomic<T>*>(location)->storeFullyFenced(newValue);
+    std::bit_cast<Atomic<T>*>(location)->storeFullyFenced(newValue);
 }
 
 template<typename T>
 inline bool atomicCompareExchangeWeak(T* location, T expected, T newValue, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->compareExchangeWeak(expected, newValue, order);
+    return std::bit_cast<Atomic<T>*>(location)->compareExchangeWeak(expected, newValue, order);
 }
 
 template<typename T>
 inline bool atomicCompareExchangeWeakRelaxed(T* location, T expected, T newValue)
 {
-    return bitwise_cast<Atomic<T>*>(location)->compareExchangeWeakRelaxed(expected, newValue);
+    return std::bit_cast<Atomic<T>*>(location)->compareExchangeWeakRelaxed(expected, newValue);
 }
 
 template<typename T>
 inline T atomicCompareExchangeStrong(T* location, T expected, T newValue, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->compareExchangeStrong(expected, newValue, order);
+    return std::bit_cast<Atomic<T>*>(location)->compareExchangeStrong(expected, newValue, order);
 }
 
 template<typename T, typename U>
 inline T atomicExchangeAdd(T* location, U operand, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->exchangeAdd(operand, order);
+    return std::bit_cast<Atomic<T>*>(location)->exchangeAdd(operand, order);
 }
 
 template<typename T, typename U>
 inline T atomicExchangeAnd(T* location, U operand, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->exchangeAnd(operand, order);
+    return std::bit_cast<Atomic<T>*>(location)->exchangeAnd(operand, order);
 }
 
 template<typename T, typename U>
 inline T atomicExchangeOr(T* location, U operand, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->exchangeOr(operand, order);
+    return std::bit_cast<Atomic<T>*>(location)->exchangeOr(operand, order);
 }
 
 template<typename T, typename U>
 inline T atomicExchangeSub(T* location, U operand, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->exchangeSub(operand, order);
+    return std::bit_cast<Atomic<T>*>(location)->exchangeSub(operand, order);
 }
 
 template<typename T, typename U>
 inline T atomicExchangeXor(T* location, U operand, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->exchangeXor(operand, order);
+    return std::bit_cast<Atomic<T>*>(location)->exchangeXor(operand, order);
 }
 
 template<typename T>
 inline T atomicExchange(T* location, T newValue, std::memory_order order = std::memory_order_seq_cst)
 {
-    return bitwise_cast<Atomic<T>*>(location)->exchange(newValue, order);
+    return std::bit_cast<Atomic<T>*>(location)->exchange(newValue, order);
 }
 
 // Just a compiler fence. Has no effect on the hardware, but tells the compiler
@@ -243,11 +240,7 @@ inline T atomicExchange(T* location, T newValue, std::memory_order order = std::
 // to do things like register allocation and code motion over pure operations.
 inline void compilerFence()
 {
-#if OS(WINDOWS) && !COMPILER(GCC_COMPATIBLE)
-    _ReadWriteBarrier();
-#else
     asm volatile("" ::: "memory");
-#endif
 }
 
 #if CPU(ARM_THUMB2) || CPU(ARM64)
@@ -280,9 +273,7 @@ inline void crossModifyingCodeFence() { arm_isb(); }
 
 inline void x86_ortop()
 {
-#if OS(WINDOWS)
-    MemoryBarrier();
-#elif CPU(X86_64)
+#if CPU(X86_64)
     // This has acqrel semantics and is much cheaper than mfence. For exampe, in the JSC GC, using
     // mfence as a store-load fence was a 9% slow-down on Octane/splay while using this was neutral.
     asm volatile("lock; orl $0, (%%rsp)" ::: "memory");
@@ -293,17 +284,12 @@ inline void x86_ortop()
 
 inline void x86_cpuid()
 {
-#if OS(WINDOWS)
-    int info[4];
-    __cpuid(info, 0);
-#else
     intptr_t a = 0, b, c, d;
     asm volatile(
         "cpuid"
         : "+a"(a), "=b"(b), "=c"(c), "=d"(d)
         :
         : "memory");
-#endif
 }
 
 inline void loadLoadFence() { compilerFence(); }
@@ -332,9 +318,7 @@ inline void dependentLoadLoadFence() { loadLoadFence(); }
 template<typename T>
 T opaque(T pointer)
 {
-#if !OS(WINDOWS)
     asm volatile("" : "+r"(pointer) ::);
-#endif
     return pointer;
 }
 
@@ -360,7 +344,7 @@ inline InternalDependencyType opaqueMixture(T value, Arguments... arguments)
 class Dependency {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    Dependency()
+    constexpr Dependency()
         : m_value(0)
     {
     }
@@ -457,7 +441,7 @@ public:
     T* consume(T* pointer)
     {
 #if CPU(ARM64) || CPU(ARM)
-        return bitwise_cast<T*>(bitwise_cast<char*>(pointer) + m_value);
+        return std::bit_cast<T*>(std::bit_cast<char*>(pointer) + m_value);
 #else
         UNUSED_PARAM(m_value);
         return pointer;
@@ -515,3 +499,5 @@ using WTF::InputAndValue;
 using WTF::inputAndValue;
 using WTF::ensurePointer;
 using WTF::opaqueMixture;
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

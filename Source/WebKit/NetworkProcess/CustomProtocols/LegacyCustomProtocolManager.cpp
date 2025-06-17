@@ -31,20 +31,38 @@
 #include "LegacyCustomProtocolManagerProxyMessages.h"
 #include "NetworkProcess.h"
 #include "NetworkProcessCreationParameters.h"
-#include "WebCoreArgumentCoders.h"
 #include <WebCore/ResourceRequest.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebKit {
 
-const char* LegacyCustomProtocolManager::supplementName()
+WTF_MAKE_TZONE_ALLOCATED_IMPL(LegacyCustomProtocolManager);
+
+ASCIILiteral LegacyCustomProtocolManager::supplementName()
 {
-    return "LegacyCustomProtocolManager";
+    return "LegacyCustomProtocolManager"_s;
 }
 
 LegacyCustomProtocolManager::LegacyCustomProtocolManager(NetworkProcess& networkProcess)
     : m_networkProcess(networkProcess)
 {
-    m_networkProcess.addMessageReceiver(Messages::LegacyCustomProtocolManager::messageReceiverName(), *this);
+    m_networkProcess->addMessageReceiver(Messages::LegacyCustomProtocolManager::messageReceiverName(), *this);
+}
+
+void LegacyCustomProtocolManager::ref() const
+{
+    m_networkProcess->ref();
+}
+
+void LegacyCustomProtocolManager::deref() const
+{
+    m_networkProcess->deref();
+}
+
+Ref<NetworkProcess> LegacyCustomProtocolManager::protectedNetworkProcess() const
+{
+    ASSERT(RunLoop::isMain());
+    return m_networkProcess.get();
 }
 
 void LegacyCustomProtocolManager::initialize(const NetworkProcessCreationParameters& parameters)
@@ -71,12 +89,12 @@ void LegacyCustomProtocolManager::removeCustomProtocol(LegacyCustomProtocolID cu
 
 void LegacyCustomProtocolManager::startLoading(LegacyCustomProtocolID customProtocolID, const WebCore::ResourceRequest& request)
 {
-    m_networkProcess.send(Messages::LegacyCustomProtocolManagerProxy::StartLoading(customProtocolID, request));
+    protectedNetworkProcess()->send(Messages::LegacyCustomProtocolManagerProxy::StartLoading(customProtocolID, request));
 }
 
 void LegacyCustomProtocolManager::stopLoading(LegacyCustomProtocolID customProtocolID)
 {
-    m_networkProcess.send(Messages::LegacyCustomProtocolManagerProxy::StopLoading(customProtocolID), 0);
+    protectedNetworkProcess()->send(Messages::LegacyCustomProtocolManagerProxy::StopLoading(customProtocolID), 0);
 }
 
 } // namespace WebKit

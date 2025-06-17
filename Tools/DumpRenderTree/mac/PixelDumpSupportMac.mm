@@ -30,21 +30,21 @@
 
 #import "config.h"
 #import "PixelDumpSupport.h"
-#import "PixelDumpSupportCG.h"
 
-#import "DumpRenderTree.h" 
+#import "DumpRenderTree.h"
+#import "PixelDumpSupportCG.h"
 #import "TestRunner.h"
 #import <CoreGraphics/CGBitmapContext.h>
 #import <QuartzCore/QuartzCore.h>
-#import <pal/spi/cg/CoreGraphicsSPI.h>
-#import <pal/spi/cocoa/QuartzCoreSPI.h>
-#import <wtf/Assertions.h>
-#import <wtf/RefPtr.h>
-
+#import <WebCore/CGWindowUtilities.h>
 #import <WebKit/WebCoreStatistics.h>
 #import <WebKit/WebDocumentPrivate.h>
 #import <WebKit/WebHTMLViewPrivate.h>
 #import <WebKit/WebViewPrivate.h>
+#import <pal/spi/cg/CoreGraphicsSPI.h>
+#import <pal/spi/cocoa/QuartzCoreSPI.h>
+#import <wtf/Assertions.h>
+#import <wtf/RefPtr.h>
 
 @interface WebView ()
 - (BOOL)_flushCompositingChanges;
@@ -82,7 +82,7 @@ static void paintRepaintRectOverlay(WebView* webView, CGContextRef context)
 static RetainPtr<CGImageRef> takeWindowSnapshot(CGSWindowID windowID, CGWindowImageOption imageOptions)
 {
     imageOptions |= kCGWindowImageBoundsIgnoreFraming | kCGWindowImageShouldBeOpaque;
-    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions));
+    return WebCore::cgWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions);
 }
 
 RefPtr<BitmapContext> createBitmapContextFromWebView(bool onscreen, bool incrementalRepaint, bool sweepHorizontally, bool drawSelectionRect)
@@ -99,10 +99,12 @@ RefPtr<BitmapContext> createBitmapContextFromWebView(bool onscreen, bool increme
     size_t pixelsWide = static_cast<size_t>(webViewSize.width * deviceScaleFactor);
     size_t pixelsHigh = static_cast<size_t>(webViewSize.height * deviceScaleFactor);
     size_t rowBytes = 0;
-    void* buffer = nullptr;
-    auto bitmapContext = createBitmapContext(pixelsWide, pixelsHigh, rowBytes, buffer);
+    auto bitmapContext = createBitmapContext(pixelsWide, pixelsHigh, rowBytes);
     if (!bitmapContext)
         return nullptr;
+
+    bitmapContext->setScaleFactor(deviceScaleFactor);
+
     CGContextRef context = bitmapContext->cgContext();
     // The final scaling gets doubled on the screen capture surface when we use the hidpi backingScaleFactor value for CTM.
     // This is a workaround to push the scaling back.
@@ -177,11 +179,10 @@ RefPtr<BitmapContext> createPagedBitmapContext()
     int pageHeightInPixels = TestRunner::viewHeight;
     int numberOfPages = [mainFrame numberOfPagesWithPageWidth:pageWidthInPixels pageHeight:pageHeightInPixels];
     size_t rowBytes = 0;
-    void* buffer = nullptr;
 
     int totalHeight = numberOfPages * (pageHeightInPixels + 1) - 1;
 
-    auto bitmapContext = createBitmapContext(pageWidthInPixels, totalHeight, rowBytes, buffer);
+    auto bitmapContext = createBitmapContext(pageWidthInPixels, totalHeight, rowBytes);
     CGContextRef context = bitmapContext->cgContext();
     CGContextTranslateCTM(context, 0, totalHeight);
     CGContextScaleCTM(context, 1, -1);

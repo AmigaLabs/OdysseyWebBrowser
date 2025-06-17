@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,15 +25,20 @@
 
 #pragma once
 
-#include <wtf/Assertions.h>
+#include <mutex>
 #include <stdint.h>
+#include <wtf/Assertions.h>
+#include <wtf/DataLog.h>
+#include <wtf/TZoneMalloc.h>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 
 namespace JSC { namespace ARM64Disassembler {
 
 class A64DOpcode {
 private:
     class OpcodeGroup {
-        WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_TZONE_ALLOCATED(OpcodeGroup);
     public:
         OpcodeGroup(uint32_t opcodeMask, uint32_t opcodePattern, const char* (*format)(A64DOpcode*))
             : m_opcodeMask(opcodeMask)
@@ -73,11 +78,14 @@ private:
 public:
     static void init();
 
-    A64DOpcode()
-        : m_opcode(0)
+    A64DOpcode(uint32_t* startPC = nullptr, uint32_t* endPC = nullptr)
+        : m_startPC(startPC)
+        , m_endPC(endPC)
+        , m_opcode(0)
         , m_bufferOffset(0)
     {
-        init();
+        static std::once_flag once;
+        std::call_once(once, init);
         m_formatBuffer[0] = '\0';
     }
 
@@ -139,6 +147,7 @@ protected:
     }
 
     void appendFPRegisterName(unsigned registerNumber, unsigned registerSize);
+    void appendVectorRegisterName(unsigned registerNumber);
 
     void appendSeparator()
     {
@@ -185,27 +194,69 @@ protected:
         bufferPrintf("#0x%" PRIx64, immediate);
     }
 
-    void appendPCRelativeOffset(uint32_t* pc, int32_t immediate)
-    {
-        bufferPrintf("0x%" PRIxPTR, bitwise_cast<uintptr_t>(pc + immediate));
-    }
+    void appendPCRelativeOffset(uint32_t* pc, int32_t immediate);
 
     void appendShiftAmount(unsigned amount)
     {
         bufferPrintf("lsl #%u", 16 * amount);
     }
+    
+    void appendSIMDLaneIndexAndType(unsigned imm6)
+    {
+        unsigned q = imm6 >> 5;
+        unsigned imm5 = imm6 & 0x1F;
 
-    static constexpr int bufferSize = 81;
+        appendSIMDLaneType(q, size());
+
+        unsigned lane = (imm5 & 0xF) >> 1;
+        bufferPrintf("[#%u]", lane);
+    }
+
+    void appendSIMDLaneType(unsigned q, unsigned size)
+    {
+        switch (size) {
+        case 0:
+            if (q)
+                bufferPrintf(".16B");
+            else
+                bufferPrintf(".8B");
+            break;
+        case 1:
+            if (q)
+                bufferPrintf(".8H");
+            else
+                bufferPrintf(".4H");
+            break;
+        case 2:
+            if (q)
+                bufferPrintf(".4S");
+            else
+                bufferPrintf(".2S");
+            break;
+        case 3:
+            if (q)
+                bufferPrintf(".2D");
+            else
+                bufferPrintf(".1D");
+            break;
+        default:
+            bufferPrintf(".UNKNOWN");
+            break;
+        }
+    }
+
+    static constexpr int bufferSize = 101;
 
     char m_formatBuffer[bufferSize];
+    uint32_t* m_startPC;
+    uint32_t* m_endPC;
     uint32_t* m_currentPC;
     uint32_t m_opcode;
     int m_bufferOffset;
+    uintptr_t m_builtConstant { 0 };
 
 private:
     static OpcodeGroup* opcodeTable[32];
-
-    static bool s_initialized;
 };
 
 #define DEFINE_STATIC_FORMAT(klass, thisObj) \
@@ -499,6 +550,23 @@ public:
     const char* opName() { return s_opNames[opNum()]; }
 
     unsigned opNum() { return (m_opcode >> 12) & 0xf; }
+};
+
+class A64DOpcodeFloatingPointDataProcessing4Source : public A64DOpcodeFloatingPointOps {
+private:
+    static const char* const s_opNames[4];
+
+public:
+    static constexpr uint32_t mask    = 0b1'1'1'11111'10'1'1111'00'11111'00000'00000;
+    static constexpr uint32_t pattern = 0b0'0'0'11110'00'1'0100'00'10000'00000'00000;
+
+    DEFINE_STATIC_FORMAT(A64DOpcodeFloatingPointDataProcessing4Source, thisObj);
+
+    const char* format();
+
+    const char* opName() { return s_opNames[opNum()]; }
+
+    unsigned opNum() { return (m_opcode >> 15) & 0b11; }
 };
 
 class A64DOpcodeFloatingFixedPointConversions : public A64DOpcodeFloatingPointOps {
@@ -871,11 +939,24 @@ public:
     DEFINE_STATIC_FORMAT(A64DOpcodeMoveWide, thisObj);
 
     const char* format();
+    bool isValid();
 
     const char* opName() { return s_opNames[opc()]; }
     unsigned opc() { return (m_opcode >> 29) & 0x3; }
     unsigned hw() { return (m_opcode >> 21) & 0x3; }
     unsigned immediate16() { return (m_opcode >> 5) & 0xffff; }
+
+private:
+    template<typename Trait> typename Trait::ResultType parse();
+    bool handlePotentialDataPointer(void*);
+    bool handlePotentialPtrTag(uintptr_t);
+
+    // These forwarding functions are needed for MoveWideFormatTrait only.
+    const char* baseFormat() { return A64DOpcode::format(); }
+    const char* formatBuffer() { return m_formatBuffer; }
+
+    friend class MoveWideFormatTrait;
+    friend class MoveWideIsValidTrait;
 };
 
 class A64DOpcodeTestAndBranchImmediate : public A64DOpcode {
@@ -929,6 +1010,44 @@ public:
     unsigned rm() { return rd(); }
 };
 
+class A64DOpcodeVectorDataProcessingLogical1Source : public A64DOpcode {
+public:
+    static constexpr uint32_t mask    = 0b101'11111'11'1'000000000000000000000;
+    static constexpr uint32_t pattern = 0b000'01110'00'0'000000000000000000000;
+
+    DEFINE_STATIC_FORMAT(A64DOpcodeVectorDataProcessingLogical1Source, thisObj);
+
+    const char* format();
+    const char* opName();
+    
+    unsigned rd() { return (m_opcode >> 0) & 0b11111; }
+    unsigned rt() { return (m_opcode >> 5) & 0b11111; }
+    unsigned op10_15() { return (m_opcode >> 10) & 0b11111; }
+    unsigned imm5() { return (m_opcode >> 16) & 0b11111; }
+    unsigned q() { return (m_opcode >> 30) & 0b1; }
+};
+
+class A64DOpcodeVectorDataProcessingLogical2Source : public A64DOpcode {
+public:
+    static constexpr uint32_t mask    = 0b101'11111'11'1'000000000000000000000;
+    static constexpr uint32_t pattern = 0b000'01110'10'1'000000000000000000000;
+
+    DEFINE_STATIC_FORMAT(A64DOpcodeVectorDataProcessingLogical2Source, thisObj);
+
+    const char* format();
+    const char* opName();
+    
+    unsigned rd() { return (m_opcode >> 0) & 0b11111; }
+    unsigned rn() { return (m_opcode >> 5) & 0b11111; }
+    unsigned op10_15() { return (m_opcode >> 10) & 0b11111; }
+    unsigned rm() { return (m_opcode >> 16) & 0b11111; }
+    unsigned q() { return (m_opcode >> 30) & 0b1; }
+};
+
+
+
 } } // namespace JSC::ARM64Disassembler
 
 using JSC::ARM64Disassembler::A64DOpcode;
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

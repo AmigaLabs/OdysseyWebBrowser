@@ -33,6 +33,7 @@
 #include <wtf/WorkQueue.h>
 
 OBJC_CLASS AVAudioSession;
+OBJC_CLASS AVAudioSessionPortDescription;
 OBJC_CLASS WebAVAudioSessionAvailableInputsListener;
 
 namespace WebCore {
@@ -43,7 +44,7 @@ class CaptureDevice;
 class AVAudioSessionCaptureDeviceManager final : public CaptureDeviceManager {
     friend class NeverDestroyed<AVAudioSessionCaptureDeviceManager>;
 public:
-    static AVAudioSessionCaptureDeviceManager& singleton();
+    WEBCORE_EXPORT static AVAudioSessionCaptureDeviceManager& singleton();
 
     const Vector<CaptureDevice>& captureDevices() final;
     void computeCaptureDevices(CompletionHandler<void()>&&) final;
@@ -57,28 +58,37 @@ public:
     void enableAllDevicesQuery();
     void disableAllDevicesQuery();
 
-    void setPreferredAudioSessionDeviceUID(const String&);
+    void setPreferredMicrophoneID(const String&);
+    const String& preferredMicrophoneID() const { return m_preferredMicrophoneID; }
+    void configurePreferredMicrophone();
+
+    WEBCORE_EXPORT void setPreferredSpeakerID(const String&);
+    bool isReceiverPreferredSpeaker() const { return m_isReceiverPreferredSpeaker; }
 
 private:
     AVAudioSessionCaptureDeviceManager();
     ~AVAudioSessionCaptureDeviceManager();
 
     void createAudioSession();
-    void activateAudioSession();
     void refreshAudioCaptureDevices();
     Vector<AVAudioSessionCaptureDevice> retrieveAudioSessionCaptureDevices() const;
     void setAudioCaptureDevices(Vector<AVAudioSessionCaptureDevice>&&);
+    bool setPreferredAudioSessionDeviceIDs();
+    void notifyNewCurrentMicrophoneDevice(CaptureDevice&&);
 
     enum class AudioSessionState { NotNeeded, Inactive, Active };
 
-    std::optional<Vector<CaptureDevice>> m_devices;
+    std::optional<Vector<CaptureDevice>> m_captureDevices;
     Vector<CaptureDevice> m_speakerDevices;
     std::optional<Vector<AVAudioSessionCaptureDevice>> m_audioSessionCaptureDevices;
     RetainPtr<WebAVAudioSessionAvailableInputsListener> m_listener;
     RetainPtr<AVAudioSession> m_audioSession;
     Ref<WorkQueue> m_dispatchQueue;
-    AudioSessionState m_audioSessionState { AudioSessionState::NotNeeded };
+    String m_preferredMicrophoneID;
+    String m_preferredSpeakerID;
+    bool m_isReceiverPreferredSpeaker { false };
     bool m_recomputeDevices { true };
+    mutable RetainPtr<AVAudioSessionPortDescription> m_lastDefaultMicrophone;
 };
 
 } // namespace WebCore

@@ -41,7 +41,7 @@ from webkitpy.common.system.filesystem import FileSystem
 from webkitpy.common.host import Host
 from webkitpy.test.finder import Finder
 from webkitpy.test.printer import Printer
-from webkitpy.test.runner import Runner, unit_test_name
+from webkitpy.test.runner import Runner
 from webkitpy.results.upload import Upload
 from webkitpy.results.options import upload_options
 
@@ -63,17 +63,22 @@ def main():
     tester = Tester()
     tester.add_tree(os.path.join(_webkit_root, 'Tools', 'Scripts'), 'webkitpy')
     tester.add_tree(os.path.join(_webkit_root, 'Tools', 'Scripts', 'libraries', 'webkitcorepy'), 'webkitcorepy')
+    tester.add_tree(os.path.join(_webkit_root, 'Tools', 'Scripts', 'libraries', 'webkitbugspy'), 'webkitbugspy')
     tester.add_tree(os.path.join(_webkit_root, 'Tools', 'Scripts', 'libraries', 'webkitscmpy'), 'webkitscmpy')
     tester.add_tree(os.path.join(_webkit_root, 'Tools', 'Scripts', 'libraries', 'webkitflaskpy'), 'webkitflaskpy')
-
-    # AppleWin is the only platform that does not support Modern WebKit
-    # FIXME: Find a better way to detect this currently assuming cygwin means AppleWin
-    if sys.platform != 'cygwin':
-        tester.add_tree(os.path.join(_webkit_root, 'Source', 'WebKit', 'Scripts'), 'webkit')
+    tester.add_tree(os.path.join(_webkit_root, 'Tools', 'Scripts', 'libraries', 'reporelaypy'), 'reporelaypy')
+    tester.add_tree(os.path.join(_webkit_root, 'Source', 'WebKit', 'Scripts'), 'webkit')
 
     tester.skip(('webkitpy.common.checkout.scm.scm_unittest',), 'are really, really, slow', 31818)
     if sys.platform.startswith('win'):
         tester.skip(('webkitpy.common.checkout', 'webkitpy.tool'), 'fail horribly on win32', 54526)
+        tester.skip(('reporelaypy',), 'fail to install lupa and don\'t have to test on win32', 243316)
+        tester.skip(('webkitflaskpy',), 'fail to install lupa and don\'t have to test on win32', 253419)
+
+    if sys.version_info >= (3, 13):
+        tester.skip(('reporelaypy',), 'lupa wheel is not yet available for python 3.13', 285315)
+        tester.skip(('resultsdbpy',), 'lupa wheel is not yet available for python 3.13', 285315)
+        tester.skip(('webkitflaskpy',), 'lupa wheel is not yet available for python 3.13', 285315)
 
     # Tests that are platform specific
     mac_only_tests = (
@@ -129,12 +134,17 @@ class Tester(object):
         self.printer = Printer(sys.stderr)
         self._options = None
         self.upload_style = 'release'
+        self._expect_error_on_import_tests = []
 
-    def add_tree(self, top_directory, starting_subdirectory=None):
+    def add_tree(self, top_directory, starting_subdirectory):
         self.finder.add_tree(top_directory, starting_subdirectory)
 
     def skip(self, names, reason, bugid):
         self.finder.skip(names, reason, bugid)
+
+    def expect_error_on_import(self, names, reason, bugid):
+        self.finder.skip(names, reason, bugid)
+        self._expect_error_on_import_tests.extend(names)
 
     def _parse_args(self, argv=None):
         parser = optparse.OptionParser(usage='usage: %prog [options] [args...]')
@@ -188,6 +198,13 @@ class Tester(object):
         sys.path = self.finder.additional_paths(sys.path) + sys.path
 
         from webkitcorepy import AutoInstall
+
+        # Force registration of all autoinstalled packages.
+        if any([n.startswith('reporelaypy') for n in names]):
+            import reporelaypy
+        if any([n.startswith('webkitflaskpy') for n in names]):
+            import webkitflaskpy
+
         AutoInstall.install_everything()
 
         start_time = time.time()
@@ -204,7 +221,7 @@ class Tester(object):
             cov.start()
 
         self.printer.write_update("Checking imports ...")
-        if not self._check_imports(names):
+        if not self._check_imports(names, self._expect_error_on_import_tests):
             return False
 
         self.printer.write_update("Finding the individual test methods ...")
@@ -280,7 +297,7 @@ class Tester(object):
 
         return not self.printer.num_errors and not self.printer.num_failures and not failed_uploads
 
-    def _check_imports(self, names):
+    def _check_imports(self, names, non_importable_names):
         for name in names:
             if self.finder.is_module(name):
                 # if we failed to load a name and it looks like a module,
@@ -292,6 +309,26 @@ class Tester(object):
                     _log.fatal('Failed to import %s:' % name)
                     self._log_exception()
                     return False
+
+        for name in non_importable_names:
+            try:
+                __import__(name)
+            except (ImportError, SyntaxError):
+                pass
+            except Exception as e:
+                _log.fatal(
+                    "Importing %s expected to fail with (ImportError, SyntaxError)"
+                    % name
+                )
+                self._log_exception()
+                return False
+            else:
+                _log.fatal(
+                    "Importing %s expected to fail with (ImportError, SyntaxError), but did not raise"
+                    % name
+                )
+                return False
+
         return True
 
     def _test_names(self, loader, names):
@@ -324,7 +361,7 @@ class Tester(object):
             for t in suite._tests:
                 names.extend(self._all_test_names(t))
         else:
-            names.append(unit_test_name(suite))
+            names.append(suite.id())
         return names
 
     def _log_exception(self):

@@ -38,7 +38,7 @@
 
 bool pas_large_utility_free_heap_talks_to_large_sharing_pool = true;
 
-static const bool verbose = false;
+static const bool verbose = PAS_SHOULD_LOG(PAS_LOG_LARGE_HEAPS);
 
 static pas_aligned_allocation_result large_utility_aligned_allocator(size_t size,
                                                                      pas_alignment alignment,
@@ -84,7 +84,8 @@ static pas_aligned_allocation_result large_utility_aligned_allocator(size_t size
         
         pas_large_sharing_pool_boot_free(
             pas_range_create(allocation_result.begin, allocation_result.begin + aligned_size),
-            pas_physical_memory_is_locked_by_heap_lock);
+            pas_physical_memory_is_locked_by_heap_lock,
+            pas_may_mmap);
     }
 
     result.result = (void*)allocation_result.begin;
@@ -137,7 +138,8 @@ void* pas_large_free_heap_helpers_try_allocate_with_alignment(
             commit_result = pas_large_sharing_pool_allocate_and_commit(
                 pas_range_create(result.begin, result.begin + size),
                 NULL,
-                pas_physical_memory_is_locked_by_heap_lock);
+                pas_physical_memory_is_locked_by_heap_lock,
+                pas_may_mmap);
             PAS_ASSERT(commit_result);
         }
         (*num_allocated_object_bytes_ptr) += size;
@@ -162,13 +164,14 @@ void pas_large_free_heap_helpers_deallocate(
     pas_will_deallocate(ptr, size, pas_large_utility_free_heap_kind, pas_object_allocation);
     if (pas_large_utility_free_heap_talks_to_large_sharing_pool) {
         if (verbose) {
-            pas_log("freeing %p...%p.\n",
+            pas_log("large free heap freeing %p...%p.\n",
                     (void*)ptr,
                     (char*)ptr + size);
         }
         pas_large_sharing_pool_free(
             pas_range_create((uintptr_t)ptr, (uintptr_t)ptr + size),
-            pas_physical_memory_is_locked_by_heap_lock);
+            pas_physical_memory_is_locked_by_heap_lock,
+            pas_may_mmap);
     }
     pas_fast_large_free_heap_deallocate(heap,
                                         (uintptr_t)ptr, (uintptr_t)ptr + size,

@@ -27,9 +27,11 @@
 
 #include "APIObject.h"
 #include "Connection.h"
-#include "DataReference.h"
 #include "DownloadID.h"
+#include "IdentifierTypes.h"
 #include "SandboxExtension.h"
+#include "UseDownloadPlaceholder.h"
+#include "WebsiteDataStore.h"
 #include <WebCore/ResourceRequest.h>
 #include <wtf/Forward.h>
 #include <wtf/Ref.h>
@@ -54,8 +56,8 @@ class ResourceResponse;
 namespace WebKit {
 
 class DownloadProxyMap;
+class ProcessAssertion;
 class WebPageProxy;
-class WebsiteDataStore;
 
 enum class AllowOverwrite : bool;
 
@@ -63,12 +65,16 @@ struct FrameInfoData;
 
 class DownloadProxy : public API::ObjectImpl<API::Object::Type::Download>, public IPC::MessageReceiver {
 public:
+    using DecideDestinationCallback = CompletionHandler<void(String, SandboxExtension::Handle, AllowOverwrite, WebKit::UseDownloadPlaceholder, const URL&, SandboxExtension::Handle, std::span<const uint8_t>, std::span<const uint8_t>)>;
 
     template<typename... Args> static Ref<DownloadProxy> create(Args&&... args)
     {
         return adoptRef(*new DownloadProxy(std::forward<Args>(args)...));
     }
     ~DownloadProxy();
+
+    void ref() const final { API::ObjectImpl<API::Object::Type::Download>::ref(); }
+    void deref() const final { API::ObjectImpl<API::Object::Type::Download>::deref(); }
 
     DownloadID downloadID() const { return m_downloadID; }
     const WebCore::ResourceRequest& request() const { return m_request; }
@@ -93,17 +99,14 @@ public:
     const String& destinationFilename() const { return m_destinationFilename; }
     void setDestinationFilename(const String& d) { m_destinationFilename = d; }
 
-#if USE(SYSTEM_PREVIEW)
-    bool isSystemPreviewDownload() const { return request().isSystemPreview(); }
-    WebCore::SystemPreviewInfo systemPreviewDownloadInfo() const { return request().systemPreviewInfo(); }
-#endif
-
 #if PLATFORM(COCOA)
     void publishProgress(const URL&);
     void setProgress(NSProgress *progress) { m_progress = progress; }
     NSProgress *progress() const { return m_progress.get(); }
 #endif
-
+#if PLATFORM(MAC)
+    void updateQuarantinePropertiesIfPossible();
+#endif
     API::FrameInfo& frameInfo() { return m_frameInfo.get(); }
 
     API::DownloadClient& client() { return m_client.get(); }
@@ -113,22 +116,35 @@ public:
 
     // Message handlers.
     void didStart(const WebCore::ResourceRequest&, const String& suggestedFilename);
-    void didReceiveAuthenticationChallenge(WebCore::AuthenticationChallenge&&, uint64_t challengeID);
+    void didReceiveAuthenticationChallenge(WebCore::AuthenticationChallenge&&, AuthenticationChallengeIdentifier);
     void didReceiveData(uint64_t bytesWritten, uint64_t totalBytesWritten, uint64_t totalBytesExpectedToWrite);
     void shouldDecodeSourceDataOfMIMEType(const String& mimeType, bool& result);
     void didCreateDestination(const String& path);
     void didFinish();
-    void didFail(const WebCore::ResourceError&, const IPC::DataReference& resumeData);
-    void willSendRequest(WebCore::ResourceRequest&& redirectRequest, const WebCore::ResourceResponse& redirectResponse);
-    void decideDestinationWithSuggestedFilename(const WebCore::ResourceResponse&, String&& suggestedFilename, CompletionHandler<void(String, SandboxExtension::Handle, AllowOverwrite)>&&);
+    void didFail(const WebCore::ResourceError&, std::span<const uint8_t> resumeData);
+#if HAVE(MODERN_DOWNLOADPROGRESS)
+    void didReceivePlaceholderURL(const URL&, std::span<const uint8_t> bookmarkData, WebKit::SandboxExtensionHandle&&, CompletionHandler<void()>&&);
+    void didReceiveFinalURL(const URL&, std::span<const uint8_t> bookmarkData, WebKit::SandboxExtensionHandle&&);
+    void didStartUpdatingProgress();
+#endif
+    void willSendRequest(WebCore::ResourceRequest&& redirectRequest, const WebCore::ResourceResponse& redirectResponse, CompletionHandler<void(WebCore::ResourceRequest&&)>&&);
+    void decideDestinationWithSuggestedFilename(const WebCore::ResourceResponse&, String&& suggestedFilename, DecideDestinationCallback&&);
 
 private:
-    explicit DownloadProxy(DownloadProxyMap&, WebsiteDataStore&, API::DownloadClient&, const WebCore::ResourceRequest&, const FrameInfoData&, WebPageProxy*);
+    explicit DownloadProxy(DownloadProxyMap&, WebsiteDataStore&, API::DownloadClient&, const WebCore::ResourceRequest&, const std::optional<FrameInfoData>&, WebPageProxy*);
+
+    Ref<API::DownloadClient> protectedClient() const;
+    RefPtr<WebsiteDataStore> protectedDataStore() { return m_dataStore; }
 
     // IPC::MessageReceiver
     void didReceiveMessage(IPC::Connection&, IPC::Decoder&) override;
 
-    DownloadProxyMap& m_downloadProxyMap;
+#if HAVE(MODERN_DOWNLOADPROGRESS)
+    static Vector<uint8_t> bookmarkDataForURL(const URL&);
+    static Vector<uint8_t> activityAccessToken();
+#endif
+
+    WeakPtr<DownloadProxyMap> m_downloadProxyMap;
     RefPtr<WebsiteDataStore> m_dataStore;
     Ref<API::DownloadClient> m_client;
     DownloadID m_downloadID;
@@ -141,10 +157,14 @@ private:
     WeakPtr<WebPageProxy> m_originatingPage;
     Vector<URL> m_redirectChain;
     bool m_wasUserInitiated { true };
+    bool m_downloadIsCancelled { false };
     Ref<API::FrameInfo> m_frameInfo;
     CompletionHandler<void(DownloadProxy*)> m_didStartCallback;
 #if PLATFORM(COCOA)
     RetainPtr<NSProgress> m_progress;
+#endif
+#if HAVE(MODERN_DOWNLOADPROGRESS)
+    RefPtr<ProcessAssertion> m_assertion;
 #endif
 };
 

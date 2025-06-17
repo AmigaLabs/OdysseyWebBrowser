@@ -26,10 +26,12 @@
 #pragma once
 
 #import "TextIndicator.h"
+#import <wtf/CheckedPtr.h>
 #import <wtf/Noncopyable.h>
 #import <wtf/RefPtr.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/RunLoop.h>
+#import <wtf/TZoneMalloc.h>
 
 OBJC_CLASS NSView;
 OBJC_CLASS WebTextIndicatorLayer;
@@ -38,10 +40,10 @@ namespace WebCore {
 
 #if PLATFORM(MAC)
 
-class TextIndicatorWindow {
-    WTF_MAKE_FAST_ALLOCATED;
+class TextIndicatorWindow final : public CanMakeCheckedPtr<TextIndicatorWindow> {
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(TextIndicatorWindow, WEBCORE_EXPORT);
     WTF_MAKE_NONCOPYABLE(TextIndicatorWindow);
-
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(TextIndicatorWindow);
 public:
     WEBCORE_EXPORT explicit TextIndicatorWindow(NSView *);
     WEBCORE_EXPORT ~TextIndicatorWindow();
@@ -62,7 +64,7 @@ private:
     RetainPtr<NSView> m_textIndicatorView;
     RetainPtr<WebTextIndicatorLayer> m_textIndicatorLayer;
 
-    RunLoop::Timer<TextIndicatorWindow> m_temporaryTextIndicatorTimer;
+    RunLoop::Timer m_temporaryTextIndicatorTimer;
 };
 
 #endif // PLATFORM(MAC)

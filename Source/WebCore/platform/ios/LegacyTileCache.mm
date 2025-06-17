@@ -28,6 +28,7 @@
 
 #if PLATFORM(IOS_FAMILY)
 
+#import "Color.h"
 #import "FontAntialiasingStateSaver.h"
 #import "LegacyTileGrid.h"
 #import "LegacyTileGridTile.h"
@@ -63,6 +64,16 @@
 
 namespace WebCore {
 
+void LegacyTileCache::ref() const
+{
+    [m_window retain];
+}
+
+void LegacyTileCache::deref() const
+{
+    [m_window release];
+}
+
 LegacyTileCache::LegacyTileCache(WAKWindow* window)
     : m_window(window)
     , m_tombstone(adoptNS([[LegacyTileCacheTombstone alloc] init]))
@@ -75,7 +86,7 @@ LegacyTileCache::LegacyTileCache(WAKWindow* window)
 
 LegacyTileCache::~LegacyTileCache()
 {
-    [m_tombstone.get() setDead:true];
+    [m_tombstone setDead:true];
 }
 
 CGFloat LegacyTileCache::screenScale() const
@@ -103,11 +114,6 @@ bool LegacyTileCache::setOverrideVisibleRect(const FloatRect& rect)
     if (activeTileGrid())
         coveredByExistingTiles = activeTileGrid()->tilesCover(enclosingIntRect(m_overrideVisibleRect.value()));
     return coveredByExistingTiles;
-}
-
-bool LegacyTileCache::tilesOpaque() const
-{
-    return m_tilesOpaque;
 }
     
 LegacyTileGrid* LegacyTileCache::activeTileGrid() const
@@ -562,16 +568,15 @@ void LegacyTileCache::drawLayer(LegacyTileLayer* layer, CGContextRef context, Dr
 
     ++layer.paintCount;
     if (m_tilePaintCountersVisible) {
-        char text[16];
-        snprintf(text, sizeof(text), "%d", layer.paintCount);
+        auto string = adoptCF(CFStringCreateWithFormat(0, 0, CFSTR("%d"), layer.paintCount));
 
         CGContextSaveGState(context);
 
         CGContextTranslateCTM(context, frame.origin.x, frame.origin.y);
-        CGContextSetFillColorWithColor(context, cachedCGColor(colorForGridTileBorder([layer tileGrid])));
+        CGContextSetFillColorWithColor(context, cachedCGColor(colorForGridTileBorder([layer tileGrid])).get());
         
         CGRect labelBounds = [layer bounds];
-        labelBounds.size.width = 10 + 12 * strlen(text);
+        labelBounds.size.width = 10 + 12 * CFStringGetLength(string.get());
         labelBounds.size.height = 25;
         CGContextFillRect(context, labelBounds);
 
@@ -584,8 +589,7 @@ void LegacyTileCache::drawLayer(LegacyTileLayer* layer, CGContextRef context, Dr
         auto font = adoptCF(CTFontCreateWithName(CFSTR("Helvetica"), 25, &matrix));
         CFTypeRef keys[] = { kCTFontAttributeName, kCTForegroundColorFromContextAttributeName };
         CFTypeRef values[] = { font.get(), kCFBooleanTrue };
-        auto attributes = adoptCF(CFDictionaryCreate(kCFAllocatorDefault, keys, values, WTF_ARRAY_LENGTH(keys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
-        auto string = adoptCF(CFStringCreateWithBytesNoCopy(kCFAllocatorDefault, reinterpret_cast<const UInt8*>(text), strlen(text), kCFStringEncodingUTF8, false, kCFAllocatorNull));
+        auto attributes = adoptCF(CFDictionaryCreate(kCFAllocatorDefault, keys, values, std::size(keys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
         auto attributedString = adoptCF(CFAttributedStringCreate(kCFAllocatorDefault, string.get(), attributes.get()));
         auto line = adoptCF(CTLineCreateWithAttributedString(attributedString.get()));
         CGContextSetTextPosition(context, labelBounds.origin.x + 3, labelBounds.origin.y + 20);
@@ -716,16 +720,6 @@ void LegacyTileCache::setTilingMode(TilingMode tilingMode)
         m_hasPendingUpdateTilingMode = false;
         updateTilingMode();
     });
-}
-
-void LegacyTileCache::setTilingDirection(TilingDirection tilingDirection)
-{
-    m_tilingDirection = tilingDirection;
-}
-
-LegacyTileCache::TilingDirection LegacyTileCache::tilingDirection() const
-{
-    return m_tilingDirection;
 }
     
 float LegacyTileCache::zoomedOutScale() const

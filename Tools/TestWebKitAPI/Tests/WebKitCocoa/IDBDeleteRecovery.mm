@@ -25,6 +25,7 @@
 
 #import "config.h"
 
+#import "DeprecatedGlobalValues.h"
 #import "PlatformUtilities.h"
 #import "Test.h"
 #import <WebKit/WKProcessPoolPrivate.h>
@@ -35,9 +36,6 @@
 #import <WebKit/_WKProcessPoolConfiguration.h>
 #import <WebKit/_WKUserStyleSheet.h>
 #import <wtf/RetainPtr.h>
-
-static bool receivedScriptMessage;
-static RetainPtr<WKScriptMessage> lastScriptMessage;
 
 @interface IDBDeleteRecoveryMessageHandler : NSObject <WKScriptMessageHandler>
 @end
@@ -61,9 +59,9 @@ TEST(IndexedDB, DeleteRecovery)
     [configuration.get().websiteDataStore _terminateNetworkProcess];
 
     // Copy the inconsistent database files to the database directory
-    NSURL *url1 = [[NSBundle mainBundle] URLForResource:@"IDBDeleteRecovery" withExtension:@"sqlite3" subdirectory:@"TestWebKitAPI.resources"];
-    NSURL *url2 = [[NSBundle mainBundle] URLForResource:@"IDBDeleteRecovery" withExtension:@"sqlite3-shm" subdirectory:@"TestWebKitAPI.resources"];
-    NSURL *url3 = [[NSBundle mainBundle] URLForResource:@"IDBDeleteRecovery" withExtension:@"sqlite3-wal" subdirectory:@"TestWebKitAPI.resources"];
+    NSURL *url1 = [NSBundle.test_resourcesBundle URLForResource:@"IDBDeleteRecovery" withExtension:@"sqlite3"];
+    NSURL *url2 = [NSBundle.test_resourcesBundle URLForResource:@"IDBDeleteRecovery" withExtension:@"sqlite3-shm"];
+    NSURL *url3 = [NSBundle.test_resourcesBundle URLForResource:@"IDBDeleteRecovery" withExtension:@"sqlite3-wal"];
 
     NSURL *targetURL = [NSURL fileURLWithPath:[@"~/Library/WebKit/com.apple.WebKit.TestWebKitAPI/WebsiteData/IndexedDB/file__0/IDBDeleteRecovery" stringByExpandingTildeInPath]];
     [[NSFileManager defaultManager] createDirectoryAtURL:targetURL withIntermediateDirectories:YES attributes:nil error:nil];
@@ -74,7 +72,7 @@ TEST(IndexedDB, DeleteRecovery)
 
     RetainPtr<WKWebView> webView = adoptNS([[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 800, 600) configuration:configuration.get()]);
 
-    NSURLRequest *request = [NSURLRequest requestWithURL:[[NSBundle mainBundle] URLForResource:@"IDBDeleteRecovery" withExtension:@"html" subdirectory:@"TestWebKitAPI.resources"]];
+    NSURLRequest *request = [NSURLRequest requestWithURL:[NSBundle.test_resourcesBundle URLForResource:@"IDBDeleteRecovery" withExtension:@"html"]];
     [webView loadRequest:request];
 
     TestWebKitAPI::Util::run(&receivedScriptMessage);

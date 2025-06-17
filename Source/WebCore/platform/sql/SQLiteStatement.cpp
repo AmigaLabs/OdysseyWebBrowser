@@ -30,8 +30,10 @@
 #include "SQLValue.h"
 #include "SQLiteDatabaseTracker.h"
 #include <sqlite3.h>
+#include <variant>
 #include <wtf/Assertions.h>
-#include <wtf/Variant.h>
+#include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/text/StringView.h>
 
 // SQLite 3.6.16 makes sqlite3_prepare_v2 automatically retry preparing the statement
@@ -42,40 +44,42 @@
 
 namespace WebCore {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SQLiteStatement);
+
 SQLiteStatement::SQLiteStatement(SQLiteDatabase& db, sqlite3_stmt* statement)
     : m_database(db)
     , m_statement(statement)
 {
     ASSERT(statement);
-    m_database.incrementStatementCount();
+    m_database->incrementStatementCount();
 }
 
 SQLiteStatement::SQLiteStatement(SQLiteStatement&& other)
     : m_database(other.database())
     , m_statement(std::exchange(other.m_statement, nullptr))
 {
-    m_database.incrementStatementCount();
+    m_database->incrementStatementCount();
 }
 
 SQLiteStatement::~SQLiteStatement()
 {
     sqlite3_finalize(m_statement);
-    m_database.decrementStatementCount();
+    m_database->decrementStatementCount();
 }
 
 int SQLiteStatement::step()
 {
-    Locker databaseLock { m_database.databaseMutex() };
+    Locker databaseLock { m_database->databaseMutex() };
 
     // If we're not within a transaction and we call sqlite3_step(), SQLite will implicitly create a transaction for us.
     // In such case, we should bump our transaction count to reflect that.
     std::optional<SQLiteTransactionInProgressAutoCounter> transactionCounter;
-    if (!m_database.transactionInProgress() && !isReadOnly())
+    if (!m_database->transactionInProgress() && !isReadOnly())
         transactionCounter.emplace();
 
     int error = sqlite3_step(m_statement);
     if (error != SQLITE_DONE && error != SQLITE_ROW)
-        LOG(SQLDatabase, "sqlite3_step failed (%i)\nError - %s", error, sqlite3_errmsg(m_database.sqlite3Handle()));
+        LOG(SQLDatabase, "sqlite3_step failed (%i)\nError - %s", error, sqlite3_errmsg(m_database->sqlite3Handle()));
 
     return error;
 }
@@ -92,12 +96,11 @@ bool SQLiteStatement::executeCommand()
     return step() == SQLITE_DONE;
 }
 
-int SQLiteStatement::bindBlob(int index, Span<const uint8_t> blob)
+int SQLiteStatement::bindBlob(int index, std::span<const uint8_t> blob)
 {
     ASSERT(index > 0);
     ASSERT(static_cast<unsigned>(index) <= bindParameterCount());
     ASSERT(blob.data() || !blob.size());
-    ASSERT(blob.size() >= 0);
 
     return sqlite3_bind_blob(m_statement, index, blob.data(), blob.size(), SQLITE_TRANSIENT);
 }
@@ -108,13 +111,13 @@ int SQLiteStatement::bindBlob(int index, const String& text)
     // treats as a null, so we supply a non-null pointer for that case.
     auto upconvertedCharacters = StringView(text).upconvertedCharacters();
     UChar anyCharacter = 0;
-    const UChar* characters;
+    std::span<const UChar> characters;
     if (text.isEmpty() && !text.isNull())
-        characters = &anyCharacter;
+        characters = unsafeMakeSpan(&anyCharacter, 0);
     else
-        characters = upconvertedCharacters;
+        characters = upconvertedCharacters.span();
 
-    return bindBlob(index, Span { reinterpret_cast<const uint8_t*>(characters), text.length() * sizeof(UChar) });
+    return bindBlob(index, spanReinterpretCast<const uint8_t>(characters));
 }
 
 int SQLiteStatement::bindText(int index, StringView text)
@@ -123,9 +126,10 @@ int SQLiteStatement::bindText(int index, StringView text)
     ASSERT(static_cast<unsigned>(index) <= bindParameterCount());
 
     // Fast path when the input text is all ASCII.
-    if (text.is8Bit() && text.isAllASCII())
-        return sqlite3_bind_text(m_statement, index, text.length() ? reinterpret_cast<const char*>(text.characters8()) : "", text.length(), SQLITE_TRANSIENT);
-
+    if (text.is8Bit() && text.containsOnlyASCII()) {
+        auto characters = spanReinterpretCast<const char>(text.span8());
+        return sqlite3_bind_text(m_statement, index, characters.empty() ? "" : characters.data(), characters.size(), SQLITE_TRANSIENT);
+    }
     auto utf8Text = text.utf8();
     return sqlite3_bind_text(m_statement, index, utf8Text.data(), utf8Text.length(), SQLITE_TRANSIENT);
 }
@@ -184,7 +188,7 @@ int SQLiteStatement::columnCount()
 bool SQLiteStatement::isColumnDeclaredAsBlob(int col)
 {
     ASSERT(col >= 0);
-    return equalLettersIgnoringASCIICase(StringView(sqlite3_column_decltype(m_statement, col)), "blob");
+    return equalLettersIgnoringASCIICase(StringView::fromLatin1(sqlite3_column_decltype(m_statement, col)), "blob"_s);
 }
 
 String SQLiteStatement::columnName(int col)
@@ -214,7 +218,7 @@ SQLValue SQLiteStatement::columnValue(int col)
         return sqlite3_value_double(value);
     case SQLITE_BLOB: // SQLValue and JS don't represent blobs, so use TEXT -case
     case SQLITE_TEXT:
-        return String::fromUTF8(sqlite3_value_text(value), sqlite3_value_bytes(value));
+        return String::fromUTF8(unsafeMakeSpan(sqlite3_value_text(value), sqlite3_value_bytes(value)));
     case SQLITE_NULL:
         return nullptr;
     default:
@@ -232,7 +236,7 @@ String SQLiteStatement::columnText(int col)
         return String();
     if (columnCount() <= col)
         return String();
-    return String::fromUTF8(sqlite3_column_text(m_statement, col), sqlite3_column_bytes(m_statement, col));
+    return String::fromUTF8(unsafeMakeSpan(sqlite3_column_text(m_statement, col), sqlite3_column_bytes(m_statement, col)));
 }
     
 double SQLiteStatement::columnDouble(int col)
@@ -275,7 +279,7 @@ String SQLiteStatement::columnBlobAsString(int col)
     if (columnCount() <= col)
         return String();
 
-    const void* blob = sqlite3_column_blob(m_statement, col);
+    auto* blob = static_cast<const UChar*>(sqlite3_column_blob(m_statement, col));
     if (!blob)
         return emptyString();
 
@@ -284,16 +288,15 @@ String SQLiteStatement::columnBlobAsString(int col)
         return String();
 
     ASSERT(!(size % sizeof(UChar)));
-    return String(static_cast<const UChar*>(blob), size / sizeof(UChar));
+    return StringImpl::create8BitIfPossible(unsafeMakeSpan(blob, size / sizeof(UChar)));
 }
 
 Vector<uint8_t> SQLiteStatement::columnBlob(int col)
 {
-    auto span = columnBlobAsSpan(col);
-    return { span.data(), span.size() };
+    return { columnBlobAsSpan(col) };
 }
 
-Span<const uint8_t> SQLiteStatement::columnBlobAsSpan(int col)
+std::span<const uint8_t> SQLiteStatement::columnBlobAsSpan(int col)
 {
     ASSERT(col >= 0);
 
@@ -303,7 +306,7 @@ Span<const uint8_t> SQLiteStatement::columnBlobAsSpan(int col)
     if (columnCount() <= col)
         return { };
 
-    const void* blob = sqlite3_column_blob(m_statement, col);
+    auto* blob = static_cast<const uint8_t*>(sqlite3_column_blob(m_statement, col));
     if (!blob)
         return { };
 
@@ -311,7 +314,7 @@ Span<const uint8_t> SQLiteStatement::columnBlobAsSpan(int col)
     if (blobSize <= 0)
         return { };
 
-    return { static_cast<const uint8_t*>(blob), static_cast<size_t>(blobSize) };
+    return unsafeMakeSpan(blob, blobSize);
 }
 
 bool SQLiteStatement::hasStartedStepping()

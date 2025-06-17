@@ -32,32 +32,39 @@
 #pragma once
 
 #include "InputType.h"
+#include <wtf/TZoneMalloc.h>
 
 namespace WebCore {
 
 class SliderThumbElement;
 
 class RangeInputType final : public InputType {
-    template<typename DowncastedType> friend bool isInvalidInputType(const InputType&, const String&);
+    WTF_MAKE_TZONE_ALLOCATED(RangeInputType);
 public:
-    explicit RangeInputType(HTMLInputElement&);
+    static Ref<RangeInputType> create(HTMLInputElement& element)
+    {
+        return adoptRef(*new RangeInputType(element));
+    }
+
+    bool typeMismatchFor(const String&) const final;
 
 private:
+    explicit RangeInputType(HTMLInputElement&);
+
     const AtomString& formControlType() const final;
     double valueAsDouble() const final;
     ExceptionOr<void> setValueAsDecimal(const Decimal&, TextFieldEventBehavior) const final;
-    bool typeMismatchFor(const String&) const final;
     bool supportsRequired() const final;
     StepRange createStepRange(AnyStepHandling) const final;
     void handleMouseDownEvent(MouseEvent&) final;
     ShouldCallBaseEventHandler handleKeydownEvent(KeyboardEvent&) final;
     RenderPtr<RenderElement> createInputRenderer(RenderStyle&&) final;
-    void createShadowSubtreeAndUpdateInnerTextElementEditability(ContainerNode::ChildChange::Source, bool) final;
+    void createShadowSubtree() final;
     Decimal parseToNumber(const String&, const Decimal&) const final;
     String serialize(const Decimal&) const final;
     bool accessKeyAction(bool sendMouseEvents) final;
     void attributeChanged(const QualifiedName&) final;
-    void setValue(const String&, bool valueChanged, TextFieldEventBehavior) final;
+    void setValue(const String&, bool valueChanged, TextFieldEventBehavior, TextControlSetValueSelection) final;
     String fallbackValue() const final;
     String sanitizeValue(const String& proposedValue) const final;
     bool shouldRespectListAttribute() final;
@@ -66,24 +73,20 @@ private:
 
     SliderThumbElement& typedSliderThumbElement() const;
 
-#if ENABLE(DATALIST_ELEMENT)
     void dataListMayHaveChanged() final;
     void updateTickMarkValues();
     std::optional<Decimal> findClosestTickMarkValue(const Decimal&) final;
 
     bool m_tickMarkValuesDirty { true };
     Vector<Decimal> m_tickMarkValues;
-#endif
 
 #if ENABLE(TOUCH_EVENTS)
     void handleTouchEvent(TouchEvent&) final;
 #endif
 
     void disabledStateChanged() final;
-
-#if ENABLE(TOUCH_EVENTS) && !PLATFORM(IOS_FAMILY) && ENABLE(TOUCH_SLIDER)
-    bool hasTouchEventHandler() const final;
-#endif
 };
 
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_INPUT_TYPE(RangeInputType, Type::Range)

@@ -26,8 +26,6 @@
 #include "config.h"
 #include "CryptoAlgorithmECDH.h"
 
-#if ENABLE(WEB_CRYPTO)
-
 #include "CryptoKeyEC.h"
 #include "OpenSSLUtilities.h"
 
@@ -35,14 +33,14 @@ namespace WebCore {
 
 std::optional<Vector<uint8_t>> CryptoAlgorithmECDH::platformDeriveBits(const CryptoKeyEC& baseKey, const CryptoKeyEC& publicKey)
 {
-    auto ctx = EvpPKeyCtxPtr(EVP_PKEY_CTX_new(baseKey.platformKey(), nullptr));
+    auto ctx = EvpPKeyCtxPtr(EVP_PKEY_CTX_new(baseKey.platformKey().get(), nullptr));
     if (!ctx)
         return std::nullopt;
 
     if (EVP_PKEY_derive_init(ctx.get()) <= 0)
         return std::nullopt;
 
-    if (EVP_PKEY_derive_set_peer(ctx.get(), publicKey.platformKey()) <= 0)
+    if (EVP_PKEY_derive_set_peer(ctx.get(), publicKey.platformKey().get()) <= 0)
         return std::nullopt;
 
     // Call with a nullptr to get the required buffer size.
@@ -61,5 +59,3 @@ std::optional<Vector<uint8_t>> CryptoAlgorithmECDH::platformDeriveBits(const Cry
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(WEB_CRYPTO)

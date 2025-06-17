@@ -89,6 +89,8 @@ def main(argv, stdout, stderr):
         options.additional_env_var.append('__XPC_JSC_maxPerThreadStackUsage=' + str(stackSizeInBytes))
         options.additional_env_var.append('JSC_useSharedArrayBuffer=1')
         options.additional_env_var.append('__XPC_JSC_useSharedArrayBuffer=1')
+        options.additional_env_var.append('JSC_useRecursiveJSONParse=0')
+        options.additional_env_var.append('__XPC_JSC_useRecursiveJSONParse=0')
         run_details = run(port, options, args, stderr)
         if run_details.exit_code != -1 and run_details.skipped_all_tests:
             return run_details.exit_code
@@ -121,12 +123,16 @@ def parse_args(args):
             help="Use accelerated drawing (OS X only)"),
         optparse.make_option("--remote-layer-tree", action="store_true", default=False,
             help="Use the remote layer tree drawing model (OS X WebKit2 only)"),
+        optparse.make_option("--no-remote-layer-tree", action="store_true", default=False,
+            help="Disable the remote layer tree drawing model (OS X WebKit2 only)"),
+        optparse.make_option("--wpe-platform-api", action="store_true", default=False,
+            help="Use the WPE platform API (WPE only)"),
         optparse.make_option("--internal-feature", type="string", action="append", default=[],
             help="Enable (disable) an internal feature (--internal-feature FeatureName[=true|false])"),
         optparse.make_option("--experimental-feature", type="string", action="append", default=[],
             help="Enable (disable) an experimental feature (--experimental-feature FeatureName[=true|false])"),
         optparse.make_option("--no-enable-all-experimental-features", action="store_false", default=True, dest="enable_all_experimental_features",
-            help="Enables all experimental features in WebKitTestRunner"),
+            help="Don't enable all experimental features in WebKitTestRunner"),
     ]))
 
     option_group_definitions.append(("WebKit Options", [
@@ -139,7 +145,7 @@ def parse_args(args):
         optparse.make_option("--threaded", action="store_true", default=False,
             help="Run a concurrent JavaScript thread with each test"),
         optparse.make_option("--dump-render-tree", "-1", action="store_false", default=True, dest="webkit_test_runner",
-            help="Use DumpRenderTree rather than WebKitTestRunner."),
+            help="Use DumpRenderTree rather than WebKitTestRunner. This runs the wk1 single-process architecture."),
         # FIXME: We should merge this w/ --build-directory and only have one flag.
         optparse.make_option("--root", action="store",
             help="Path to a directory containing the executables needed to run tests."),
@@ -165,6 +171,11 @@ def parse_args(args):
             help="Path to the directory under which build files are kept (should not include configuration)"),
         optparse.make_option("--add-platform-exceptions", action="store_true", default=False,
             help="Save generated results into the *most-specific-platform* directory rather than the *generic-platform* directory"),
+        optparse.make_option("--add-baselines-to-platform", default=False,
+            help="Save generated results into a specified platform directory",
+            metavar="PLATFORM_DIR"),
+        optparse.make_option("--add-redundant-platform-results", action="store_true",
+            help="Save generated results the platform even if they're redundant"),
         optparse.make_option("--new-baseline", action="store_true",
             default=False, help="Save generated results as new baselines "
                  "into the *most-specific-platform* directory, overwriting whatever's "
@@ -189,6 +200,10 @@ def parse_args(args):
 
         optparse.make_option("--skip-failing-tests", action="store_true",
             default=False, help="Skip tests that are marked as failing or flaky. "
+                 "Note: When using this option, you might miss new crashes "
+                 "in these tests."),
+        optparse.make_option("--skip-flaky-tests", action="store_true",
+            default=False, help="Skip tests that are marked as flaky. "
                  "Note: When using this option, you might miss new crashes "
                  "in these tests."),
         optparse.make_option("--additional-drt-flag", action="append",
@@ -248,11 +263,12 @@ def parse_args(args):
             help="wrapper command to insert before invocations of "
                  "DumpRenderTree or WebKitTestRunner; option is split on whitespace before "
                  "running. (Example: --wrapper='valgrind --smc-check=all')"),
-        optparse.make_option("-i", "--ignore-tests", action="append", default=[],
+        optparse.make_option("-i", "--ignore-tests", "--exclude-tests", action="append", default=[],
             help="directories or test to ignore (may specify multiple times)"),
         optparse.make_option("--test-list", action="append",
             help="read list of tests to run from file", metavar="FILE"),
         optparse.make_option("--skipped", action="store", default="default",
+            choices=["default", "ignore", "only", "always"],
             help=("control how tests marked SKIP are run. "
                  "'default' == Skip tests unless explicitly listed on the command line, "
                  "'ignore' == Run them anyway, "
@@ -264,6 +280,7 @@ def parse_args(args):
         optparse.make_option("--time-out-ms", "--timeout",
             help="Set the timeout for each test in milliseconds"),
         optparse.make_option("--order", action="store", default="natural",
+            choices=["none", "natural", "random"],
             help=("determine the order in which the test cases will be run. "
                   "'none' == use the order in which the tests were listed either in arguments or test list, "
                   "'natural' == use the natural order (default), "
@@ -301,6 +318,7 @@ def parse_args(args):
             help="Set the maximum number of locked shards"),
         optparse.make_option("--additional-env-var", type="string", action="append", default=[],
             help="Passes that environment variable to the tests (--additional-env-var=NAME=VALUE)"),
+        optparse.make_option("--additional-header", help="Passes that webkit-test-runner header value to the tests (--additional-header='KEY=VALUE KEY=VALUE ...')"),
         optparse.make_option("--profile", action="store_true",
             help="Output per-test profile information."),
         optparse.make_option("--profiler", action="store",
@@ -309,9 +327,11 @@ def parse_args(args):
         optparse.make_option('--display-server', choices=['xvfb', 'xorg', 'weston', 'wayland'], default='xvfb',
             help='"xvfb": Use a virtualized X11 server. "xorg": Use the current X11 session. '
                  '"weston": Use a virtualized Weston server. "wayland": Use the current wayland session.'),
+        optparse.make_option('--enable-core-dumps-nolimit', action='store_true', default=False, help='Enable core dumps for the test run (runs the equivalent of "ulimit -c unlimited" before starting the tests).'),
         optparse.make_option("--world-leaks", action="store_true", default=False, help="Check for world leaks (currently, only documents). Differs from --leaks in that this uses internal instrumentation, rather than external tools."),
         optparse.make_option("--accessibility-isolated-tree", action="store_true", default=False, help="Runs tests in accessibility isolated tree mode."),
         optparse.make_option("--allowed-host", type="string", action="append", default=[], help="If specified, tests are allowed to make requests to the specified hostname."),
+        optparse.make_option("--disable-expected-crash-logs-gathering", action="store_false", default=True, dest="gather-expected-crash-logs", help="Disable crash logs gathering for tests expected to crash.")
     ]))
 
     option_group_definitions.append(("iOS Options", [
@@ -322,6 +342,7 @@ def parse_args(args):
         optparse.make_option('--dedicated-simulators', action="store_true", default=False,
             help="If set, dedicated iOS simulators will always be created.  If not set, the script will attempt to use any currently running simulator."),
         optparse.make_option('--show-touches', action="store_true", default=False, help="If set, a small dot will be shown where the generated touches are. Helpful for debugging touch tests."),
+        optparse.make_option('--udid', '--udids', dest='udids', action='store', help='Specify a device UDID to pick the connected device to run tests on. Specify multiple by separating with commas. If using --*-simulator and the specified UDIDs don\'t satisfy the request, simulators will be created to fulfill the remaining requests.'),
     ]))
 
     option_group_definitions.append(("Miscellaneous Options", [
@@ -330,7 +351,7 @@ def parse_args(args):
             help=("Makes sure the test files parse for all configurations. Does not run any tests.")),
         optparse.make_option(
             "--print-expectations", action="store_true", default=False,
-            help=("Print the expected outcome for the given test, or all tests listed in TestExpectations. Does not run any tests.")),
+            help=("Print the expected outcome for the given test, or all tests listed in TestExpectations. Does not run any tests. With --verbose, also show discarded TestExpectations lines.")),
         optparse.make_option(
             "--print-summary", action="store_true", default=False,
             help=("Print a summary of how tests are expected to run, grouped by directory. Does not run any tests.")),
@@ -341,12 +362,26 @@ def parse_args(args):
             "--use-gpu-process", action="store_true", default=False,
             help=("Enable all GPU process related features, also set additional expectations and the result report flavor.")),
         optparse.make_option(
+            "--site-isolation", action="store_true", default=False,
+            help=("Run each test in a cross origin iframe with and without site isolation enabled and compare the results. Uses site-isolation test expectations")),
+        optparse.make_option(
+            "--load-in-cross-origin-iframe", action="store_true", default=False,
+            help=("Run each test in a cross origin iframe.")),
+        optparse.make_option(
+            "--no-use-gpu-process", action="store_true", default=False,
+            help=("Disable GPU process for DOM rendering.")),
+        optparse.make_option(
+            "--no-use-async-uikit-interactions", action="store_true", default=False,
+            help=("Opt out of async UIKit interactions (iOS-family WebKit2 ports only)")),
+        optparse.make_option(
             "--prefer-integrated-gpu", action="store_true", default=False,
             help=("Prefer using the lower-power integrated GPU on a dual-GPU system. Note that other running applications and the tests themselves can override this request.")),
-        optparse.make_option('--show-window', action="store_true", default=False, help="Make the test runner window visible during testing."),
+        optparse.make_option("--show-window", action="store_true", default=False, help="Make the test runner window visible during testing."),
+        optparse.make_option("--self-compare-with-header", help="Run all tests as A/B tests between the default configuration and the given test features header (ignoring expected results)."),
     ]))
 
     option_group_definitions.append(("Web Platform Test Server Options", [
+        optparse.make_option("--disable-wpt-hostname-aliases", action="store_true", default=False, help="Disable running tests from WPT against the web-platform.test domain, if the port supports it."),
         optparse.make_option("--wptserver-doc-root", type="string", help=("Set web platform server document root, relative to LayoutTests directory")),
     ]))
 
@@ -370,21 +405,39 @@ def parse_args(args):
     if options.use_gpu_process:
         host = Host()
         host.initialize_scm()
-        options.additional_expectations.insert(0, host.filesystem.join(host.scm().checkout_root, 'LayoutTests/gpu-process/TestExpectations'))
         if not options.internal_feature:
             options.internal_feature = []
-        options.internal_feature.append('UseGPUProcessForMediaEnabled')
         options.internal_feature.append('CaptureAudioInGPUProcessEnabled')
         options.internal_feature.append('CaptureVideoInGPUProcessEnabled')
         options.internal_feature.append('UseGPUProcessForCanvasRenderingEnabled')
-        options.internal_feature.append('UseGPUProcessForDOMRenderingEnabled')
+        options.internal_feature.append('UseGPUProcessForMediaEnabled')
+        options.internal_feature.append('WebRTCPlatformCodecsInGPUProcessEnabled')
         if not options.experimental_feature:
             options.experimental_feature = []
-        options.experimental_feature.append('WebRTCPlatformCodecsInGPUProcessEnabled')
+        options.experimental_feature.append('UseGPUProcessForDOMRenderingEnabled')
         options.experimental_feature.append('UseGPUProcessForWebGLEnabled')
         if options.result_report_flavor:
             raise RuntimeError('--use-gpu-process implicitly sets the result flavor, this should not be overridden')
         options.result_report_flavor = 'gpuprocess'
+    elif options.no_use_gpu_process:
+        if not options.experimental_feature:
+            options.experimental_feature = []
+        options.experimental_feature.append('UseGPUProcessForDOMRenderingEnabled=0')
+
+    if options.accessibility_isolated_tree:
+        host = Host()
+        host.initialize_scm()
+        options.additional_expectations.insert(0, host.filesystem.join(host.scm().checkout_root, 'LayoutTests/accessibility-isolated-tree/TestExpectations'))
+        if options.result_report_flavor:
+            raise RuntimeError('--accessibility-isolated-tree implicitly sets the result flavor, this should not be overridden')
+        options.result_report_flavor = 'accessibility-isolated-tree'
+
+    if options.no_use_async_uikit_interactions:
+        host = Host()
+        host.initialize_scm()
+        if not options.internal_feature:
+            options.internal_feature = []
+        options.internal_feature.append('UseAsyncUIKitInteractions=0')
 
     return options, args
 
@@ -406,9 +459,9 @@ def _print_expectations(port, options, args, logging_stream):
         return exit_code
     except Exception as error:
         _log.error('Error printing expectations: {}'.format(error))
+        return -1
     finally:
         printer.cleanup()
-        return -1
 
 
 def _set_up_derived_options(port, options):
@@ -426,6 +479,33 @@ def _set_up_derived_options(port, options):
         options.time_out_ms = str(port.default_timeout_ms())
 
     options.slow_time_out_ms = str(5 * int(options.time_out_ms))
+
+    if port.port_name == "mac" and options.use_gpu_process and options.remote_layer_tree:
+        host = Host()
+        host.initialize_scm()
+        options.additional_expectations.insert(0, port.host.filesystem.join(host.scm().checkout_root, 'LayoutTests/platform/mac-gpup/TestExpectations'))
+        if not options.additional_platform_directory:
+            options.additional_platform_directory = []
+        options.additional_platform_directory.insert(0, port.host.filesystem.join(host.scm().checkout_root, 'LayoutTests/platform/mac-gpup'))
+
+    if options.site_isolation:
+        if not options.load_in_cross_origin_iframe:
+            _log.warning("Option --site-isolation will set --load-in-cross-origin-iframe")
+        options.load_in_cross_origin_iframe = True
+
+    if options.load_in_cross_origin_iframe:
+        options.additional_header = 'runInCrossOriginFrame=true'
+
+    if port.port_name == "mac" and options.site_isolation:
+        host = Host()
+        host.initialize_scm()
+        options.additional_expectations.insert(0, port.host.filesystem.join(host.scm().checkout_root, 'LayoutTests/platform/mac-site-isolation/TestExpectations'))
+        if not options.additional_platform_directory:
+            options.additional_platform_directory = []
+        options.additional_platform_directory.insert(0, port.host.filesystem.join(host.scm().checkout_root, 'LayoutTests/platform/mac-site-isolation'))
+        if options.result_report_flavor:
+            raise RuntimeError('--site-isolation implicitly sets the result flavor, this should not be overridden')
+        options.result_report_flavor = 'site-isolation'
 
     if options.additional_platform_directory:
         additional_platform_directories = []
@@ -472,20 +552,20 @@ def _set_up_derived_options(port, options):
     if options.platform in ["gtk", "wpe"]:
         options.webkit_test_runner = True
 
-    # Don't maintain render tree dump results for Apple Windows port.
-    if port.port_name == "win":
-        options.ignore_render_tree_dump_results = True
-
-    if options.leaks:
-        options.additional_env_var.append("JSC_usePoisoning=0")
-        options.additional_env_var.append("__XPC_JSC_usePoisoning=0")
-
 def run(port, options, args, logging_stream):
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG if options.debug_rwt_logging else logging.INFO)
 
     try:
         printer = printing.Printer(port, options, logging_stream, logger=logger)
+
+        if options.enable_core_dumps_nolimit:
+            try:
+                import resource
+                resource.setrlimit(resource.RLIMIT_CORE, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+                _log.debug('Enabled coredumps for test run')
+            except (ModuleNotFoundError, ValueError, OSError) as e:
+                _log.error('Failed to enable coredumps: %s' % str(e))
 
         _set_up_derived_options(port, options)
         manager = Manager(port, options, printer)

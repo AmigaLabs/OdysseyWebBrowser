@@ -40,10 +40,13 @@
 #include <wtf/MainThread.h>
 #include <wtf/MessageQueue.h>
 #include <wtf/NeverDestroyed.h>
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/Threading.h>
 #include <wtf/URL.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(AsyncFileStream);
 
 struct AsyncFileStream::Internals {
     WTF_MAKE_STRUCT_FAST_ALLOCATED;
@@ -52,49 +55,36 @@ struct AsyncFileStream::Internals {
 
     FileStream stream;
     FileStreamClient& client;
-#if !COMPILER(MSVC)
     std::atomic_bool destroyed { false };
-#else
-    std::atomic_bool destroyed;
-#endif
 };
 
 inline AsyncFileStream::Internals::Internals(FileStreamClient& client)
     : client(client)
 {
-#if COMPILER(MSVC)
-    // Work around a bug that prevents the default value above from compiling.
-    atomic_init(&destroyed, false);
-#endif
 }
-
-#if PLATFORM(MUI)
-static NeverDestroyed<MessageQueue<Function<void ()>>> queue;
-#endif
 
 static void callOnFileThread(Function<void ()>&& function)
 {
     ASSERT(isMainThread());
     ASSERT(function);
 
-#if !PLATFORM(MUI)
     static NeverDestroyed<MessageQueue<Function<void ()>>> queue;
-#endif
 
     static std::once_flag createFileThreadOnce;
     std::call_once(createFileThreadOnce, [] {
-        Thread::create("WebCore: AsyncFileStream", [] {
+        Thread::create("WebCore: AsyncFileStream"_s, [] {
             for (;;) {
                 AutodrainedPool pool;
 
                 if (auto function = queue.get().waitForMessage()) {
 
-#if PLATFORM(MUI)
-                    if (!function) break;
-#endif
+#if !OS(MORPHOS)
+                    // This can never be null because we never kill the MessageQueue.
+                    ASSERT(function);
 
                     // This can bever be null because we never queue a function that is null.
                     ASSERT(*function);
+#endif
                     (*function)();
                 }
                 else
@@ -127,7 +117,7 @@ AsyncFileStream::~AsyncFileStream()
     });
 }
 
-void AsyncFileStream::perform(WTF::Function<WTF::Function<void(FileStreamClient&)>(FileStream&)>&& operation)
+void AsyncFileStream::perform(Function<Function<void(FileStreamClient&)>(FileStream&)>&& operation)
 {
     auto& internals = *m_internals;
     callOnFileThread([&internals, operation = WTFMove(operation)] {
@@ -149,7 +139,7 @@ void AsyncFileStream::getSize(const String& path, std::optional<WallTime> expect
 {
     // FIXME: Explicit return type here and in all the other cases like this below is a workaround for a deficiency
     // in the Windows compiler at the time of this writing. Could remove it if that is resolved.
-    perform([path = path.isolatedCopy(), expectedModificationTime](FileStream& stream) -> WTF::Function<void(FileStreamClient&)> {
+    perform([path = path.isolatedCopy(), expectedModificationTime](FileStream& stream) -> Function<void(FileStreamClient&)> {
         long long size = stream.getSize(path, expectedModificationTime);
         return [size](FileStreamClient& client) {
             client.didGetSize(size);
@@ -160,7 +150,7 @@ void AsyncFileStream::getSize(const String& path, std::optional<WallTime> expect
 void AsyncFileStream::openForRead(const String& path, long long offset, long long length)
 {
     // FIXME: Explicit return type here is a workaround for a deficiency in the Windows compiler at the time of this writing.
-    perform([path = path.isolatedCopy(), offset, length](FileStream& stream) -> WTF::Function<void(FileStreamClient&)> {
+    perform([path = path.isolatedCopy(), offset, length](FileStream& stream) -> Function<void(FileStreamClient&)> {
         bool success = stream.openForRead(path, offset, length);
         return [success](FileStreamClient& client) {
             client.didOpen(success);
@@ -176,21 +166,14 @@ void AsyncFileStream::close()
     });
 }
 
-void AsyncFileStream::read(void* buffer, int length)
+void AsyncFileStream::read(std::span<uint8_t> buffer)
 {
-    perform([buffer, length](FileStream& stream) -> WTF::Function<void(FileStreamClient&)> {
-        int bytesRead = stream.read(buffer, length);
+    perform([buffer](FileStream& stream) -> Function<void(FileStreamClient&)> {
+        int bytesRead = stream.read(buffer);
         return [bytesRead](FileStreamClient& client) {
             client.didRead(bytesRead);
         };
     });
 }
-
-#if PLATFORM(MUI)
-void AsyncFileStream::shutdown()
-{
-    queue.get().kill();
-}
-#endif
 
 } // namespace WebCore

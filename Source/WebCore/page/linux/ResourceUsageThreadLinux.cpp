@@ -29,6 +29,7 @@
 
 #if ENABLE(RESOURCE_USAGE) && OS(LINUX)
 
+#include "MemoryCache.h"
 #include "WorkerThread.h"
 #include <JavaScriptCore/GCActivityCallback.h>
 #include <JavaScriptCore/SamplingProfiler.h>
@@ -44,6 +45,10 @@
 #include <wtf/linux/CurrentProcessMemoryStatus.h>
 #include <wtf/text/StringToIntegerConversion.h>
 
+#if USE(COORDINATED_GRAPHICS)
+#include "CoordinatedTileBuffer.h"
+#endif
+
 namespace WebCore {
 
 static float cpuPeriod()
@@ -54,7 +59,9 @@ static float cpuPeriod()
 
     static const unsigned statMaxLineLength = 512;
     char buffer[statMaxLineLength + 1];
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN // GLib port
     char* line = fgets(buffer, statMaxLineLength, file);
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     if (!line) {
         fclose(file);
         return 0;
@@ -104,6 +111,9 @@ void ResourceUsageThread::platformSaveStateBeforeStarting()
             m_samplingProfilerThreadID = thread->id();
     }
 #endif
+#if USE(COORDINATED_GRAPHICS)
+    CoordinatedTileBuffer::resetMemoryUsage();
+#endif
 }
 
 struct ThreadInfo {
@@ -113,9 +123,9 @@ struct ThreadInfo {
     unsigned long long previousStime { 0 };
 };
 
-static HashMap<pid_t, ThreadInfo>& threadInfoMap()
+static UncheckedKeyHashMap<pid_t, ThreadInfo>& threadInfoMap()
 {
-    static LazyNeverDestroyed<HashMap<pid_t, ThreadInfo>> map;
+    static LazyNeverDestroyed<UncheckedKeyHashMap<pid_t, ThreadInfo>> map;
     static std::once_flag flag;
     std::call_once(flag, [&] {
         map.construct();
@@ -125,13 +135,15 @@ static HashMap<pid_t, ThreadInfo>& threadInfoMap()
 
 static bool threadCPUUsage(pid_t id, float period, ThreadInfo& info)
 {
-    String path = makeString("/proc/self/task/", id, "/stat");
+    String path = makeString("/proc/self/task/"_s, id, "/stat"_s);
     int fd = open(path.utf8().data(), O_RDONLY);
     if (fd < 0)
         return false;
 
     static const ssize_t maxBufferLength = BUFSIZ - 1;
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN // GLib port
     char buffer[BUFSIZ];
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
     buffer[0] = '\0';
 
     ssize_t totalBytesRead = 0;
@@ -154,6 +166,8 @@ static bool threadCPUUsage(pid_t id, float period, ThreadInfo& info)
     buffer[totalBytesRead] = '\0';
 
     // Skip tid and name.
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN // GLib port
+    // FIXME: Use `find(std::span { buffer }, ')')` instead of `strchr()`.
     char* position = strchr(buffer, ')');
     if (!position)
         return false;
@@ -163,8 +177,9 @@ static bool threadCPUUsage(pid_t id, float period, ThreadInfo& info)
         if (!name)
             return false;
         name++;
-        info.name = String::fromUTF8(name, position - name);
+        info.name = String::fromUTF8({ name, position });
     }
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
 
     // Move after state.
     position += 4;
@@ -172,7 +187,7 @@ static bool threadCPUUsage(pid_t id, float period, ThreadInfo& info)
     // Skip ppid, pgrp, sid, tty_nr, tty_pgrp, flags, min_flt, cmin_flt, maj_flt, cmaj_flt.
     unsigned tokensToSkip = 10;
     while (tokensToSkip--) {
-        while (!isASCIISpace(position[0]))
+        while (!isUnicodeCompatibleASCIIWhitespace(position[0]))
             position++;
         position++;
     }
@@ -195,13 +210,13 @@ static void collectCPUUsage(float period)
         return;
     }
 
-    HashSet<pid_t> previousTasks;
+    UncheckedKeyHashSet<pid_t> previousTasks;
     for (const auto& key : threadInfoMap().keys())
         previousTasks.add(key);
 
     struct dirent* dp;
     while ((dp = readdir(dir))) {
-        auto id = parseInteger<pid_t>(dp->d_name);
+        auto id = parseInteger<pid_t>(StringView::fromLatin1(dp->d_name));
         if (!id)
             continue;
 
@@ -231,7 +246,7 @@ void ResourceUsageThread::platformCollectCPUData(JSC::VM*, ResourceUsageData& da
 
     pid_t resourceUsageThreadID = Thread::currentID();
 
-    HashSet<pid_t> knownWebKitThreads;
+    UncheckedKeyHashSet<pid_t> knownWebKitThreads;
     {
         Locker locker { Thread::allThreadsLock() };
         for (auto* thread : Thread::allThreads()) {
@@ -240,16 +255,15 @@ void ResourceUsageThread::platformCollectCPUData(JSC::VM*, ResourceUsageData& da
         }
     }
 
-    HashMap<pid_t, String> knownWorkerThreads;
+    UncheckedKeyHashMap<pid_t, String> knownWorkerThreads;
     {
-        Locker locker { WorkerOrWorkletThread::workerOrWorkletThreadsLock() };
-        for (auto* thread : WorkerOrWorkletThread::workerOrWorkletThreads()) {
+        for (auto& thread : WorkerOrWorkletThread::workerOrWorkletThreads()) {
             // Ignore worker threads that have not been fully started yet.
-            if (!thread->thread())
+            if (!thread.thread())
                 continue;
 
-            if (auto id = thread->thread()->id())
-                knownWorkerThreads.set(id, thread->identifier().isolatedCopy());
+            if (auto id = thread.thread()->id())
+                knownWorkerThreads.set(id, thread.inspectorIdentifier().isolatedCopy());
         }
     }
 
@@ -268,7 +282,7 @@ void ResourceUsageThread::platformCollectCPUData(JSC::VM*, ResourceUsageData& da
             return true;
 
         // The bmalloc scavenger thread is below WTF. Detect it by its name.
-        if (name == "BMScavenger")
+        if (name == "BMScavenger"_s)
             return true;
 
         return false;
@@ -312,6 +326,21 @@ void ResourceUsageThread::platformCollectMemoryData(JSC::VM* vm, ResourceUsageDa
     data.categories[MemoryCategory::GCHeap].dirtySize = currentGCHeapCapacity;
     data.categories[MemoryCategory::GCOwned].dirtySize = currentGCOwnedExtra - currentGCOwnedExternal;
     data.categories[MemoryCategory::GCOwned].externalSize = currentGCOwnedExternal;
+
+    int imagesDecodedSize = 0;
+    callOnMainThreadAndWait([&imagesDecodedSize] {
+        imagesDecodedSize = MemoryCache::singleton().getStatistics().images.decodedSize;
+    });
+    data.categories[MemoryCategory::Images].dirtySize = imagesDecodedSize;
+
+#if USE(COORDINATED_GRAPHICS)
+    data.categories[MemoryCategory::Layers].dirtySize = CoordinatedTileBuffer::getMemoryUsage();
+#endif
+
+    size_t categoriesTotalSize = 0;
+    for (auto& category : data.categories)
+        categoriesTotalSize += category.totalSize();
+    data.categories[MemoryCategory::Other].dirtySize = data.totalDirtySize - categoriesTotalSize;
 
     data.totalExternalSize = currentGCOwnedExternal;
 

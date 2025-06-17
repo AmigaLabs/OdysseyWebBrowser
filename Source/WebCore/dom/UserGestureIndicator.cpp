@@ -26,15 +26,21 @@
 #include "config.h"
 #include "UserGestureIndicator.h"
 
-#include "DOMWindow.h"
 #include "Document.h"
-#include "Frame.h"
+#include "FrameDestructionObserverInlines.h"
+#include "LocalDOMWindow.h"
+#include "LocalFrame.h"
+#include "Logging.h"
+#include "Page.h"
 #include "ResourceLoadObserver.h"
 #include "SecurityOrigin.h"
 #include <wtf/MainThread.h>
 #include <wtf/NeverDestroyed.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(UserGestureIndicator);
 
 static RefPtr<UserGestureToken>& currentToken()
 {
@@ -43,9 +49,11 @@ static RefPtr<UserGestureToken>& currentToken()
     return token;
 }
 
-UserGestureToken::UserGestureToken(ProcessingUserGestureState state, UserGestureType gestureType, Document* document)
-    : m_state(state)
+UserGestureToken::UserGestureToken(IsProcessingUserGesture isProcessingUserGesture, UserGestureType gestureType, Document* document, std::optional<WTF::UUID> authorizationToken, CanRequestDOMPaste canRequestDOMPaste)
+    : m_isProcessingUserGesture(isProcessingUserGesture)
     , m_gestureType(gestureType)
+    , m_canRequestDOMPaste(canRequestDOMPaste)
+    , m_authorizationToken(authorizationToken)
 {
     if (!document || !processingUserGesture())
         return;
@@ -54,19 +62,26 @@ UserGestureToken::UserGestureToken(ProcessingUserGestureState state, UserGesture
     // as well as all same-origin documents on the page.
     m_documentsImpactedByUserGesture.add(*document);
 
-    auto* documentFrame = document->frame();
+    RefPtr documentFrame = document->frame();
     if (!documentFrame)
         return;
 
-    for (auto* ancestorFrame = documentFrame->tree().parent(); ancestorFrame; ancestorFrame = ancestorFrame->tree().parent()) {
-        if (auto* ancestorDocument = ancestorFrame->document())
-            m_documentsImpactedByUserGesture.add(ancestorDocument);
+    for (RefPtr ancestorFrame = documentFrame->tree().parent(); ancestorFrame; ancestorFrame = ancestorFrame->tree().parent()) {
+        RefPtr localAncestor = dynamicDowncast<LocalFrame>(ancestorFrame);
+        if (!localAncestor)
+            continue;
+        if (RefPtr ancestorDocument = localAncestor->document())
+            m_documentsImpactedByUserGesture.add(*ancestorDocument);
     }
 
-    auto& documentOrigin = document->securityOrigin();
-    for (auto* frame = &documentFrame->tree().top(); frame; frame = frame->tree().traverseNext()) {
-        auto* frameDocument = frame->document();
-        if (frameDocument && documentOrigin.isSameOriginDomain(frameDocument->securityOrigin()))
+    Ref documentOrigin = document->securityOrigin();
+    for (RefPtr frame = &documentFrame->tree().top(); frame; frame = frame->tree().traverseNext()) {
+        RefPtr localFrame = dynamicDowncast<LocalFrame>(frame);
+        if (!localFrame)
+            continue;
+        RefPtr frameDocument = localFrame->document();
+        Ref frameOrigin = frameDocument->securityOrigin();
+        if (frameDocument && documentOrigin->isSameOriginDomain(frameOrigin.get()))
             m_documentsImpactedByUserGesture.add(*frameDocument);
     }
 }
@@ -93,27 +108,45 @@ bool UserGestureToken::isValidForDocument(const Document& document) const
     return m_documentsImpactedByUserGesture.contains(document);
 }
 
-UserGestureIndicator::UserGestureIndicator(std::optional<ProcessingUserGestureState> state, Document* document, UserGestureType gestureType, ProcessInteractionStyle processInteractionStyle)
+void UserGestureToken::forEachImpactedDocument(Function<void(Document&)>&& function)
+{
+    m_documentsImpactedByUserGesture.forEach(function);
+}
+
+UserGestureIndicator::UserGestureIndicator(std::optional<IsProcessingUserGesture> isProcessingUserGesture, Document* document, UserGestureType gestureType, ProcessInteractionStyle processInteractionStyle, std::optional<WTF::UUID> authorizationToken, CanRequestDOMPaste canRequestDOMPaste)
     : m_previousToken { currentToken() }
 {
     ASSERT(isMainThread());
 
-    if (state)
-        currentToken() = UserGestureToken::create(state.value(), gestureType, document);
+    if (isProcessingUserGesture)
+        currentToken() = UserGestureToken::create(isProcessingUserGesture.value(), gestureType, document, authorizationToken, canRequestDOMPaste);
 
-    if (state && document && currentToken()->processingUserGesture()) {
+    if (isProcessingUserGesture && document && currentToken()->processingUserGesture()) {
+        bool oldHadUserInteraction = document->hasHadUserInteraction();
         document->updateLastHandledUserGestureTimestamp(currentToken()->startTime());
-        if (processInteractionStyle == ProcessInteractionStyle::Immediate)
-            ResourceLoadObserver::shared().logUserInteractionWithReducedTimeResolution(document->topDocument());
-        document->topDocument().setUserDidInteractWithPage(true);
-        if (auto* frame = document->frame()) {
-            if (!frame->hasHadUserInteraction()) {
-                for (; frame; frame = frame->tree().parent())
-                    frame->setHasHadUserInteraction();
+        if (processInteractionStyle == ProcessInteractionStyle::Immediate) {
+            RefPtr mainFrameDocument = document->protectedMainFrameDocument();
+            if (mainFrameDocument)
+                ResourceLoadObserver::shared().logUserInteractionWithReducedTimeResolution(*mainFrameDocument);
+            else
+                LOG_ONCE(SiteIsolation, "Unable to properly construct UserGestureIndicator::UserGestureIndicator() without access to the main frame document ");
+        }
+        if (RefPtr page = document->protectedPage())
+            page->setUserDidInteractWithPage(true);
+        if (RefPtr frame = document->frame(); frame && !oldHadUserInteraction) {
+            for (RefPtr<Frame> ancestor = WTFMove(frame); ancestor; ancestor = ancestor->tree().parent()) {
+                if (RefPtr localAncestor = dynamicDowncast<LocalFrame>(ancestor)) {
+                    if (RefPtr ancestorDocument = localAncestor->protectedDocument())
+                        ancestorDocument->updateLastHandledUserGestureTimestamp(currentToken()->startTime());
+                }
             }
         }
 
-        if (auto* window = document->domWindow())
+        // https://html.spec.whatwg.org/multipage/interaction.html#user-activation-processing-model
+        // When a user interaction causes firing of an activation triggering input event in a Document...
+        // NOTE: Only activate the relevent DOMWindow when the gestureType is an ActivationTriggering one
+        RefPtr window = document->domWindow();
+        if (window && gestureType == UserGestureType::ActivationTriggering)
             window->notifyActivated(currentToken()->startTime());
     }
 }
@@ -161,10 +194,11 @@ bool UserGestureIndicator::processingUserGesture(const Document* document)
     if (!isMainThread())
         return false;
 
-    if (!currentToken() || !currentToken()->processingUserGesture())
+    RefPtr token = currentToken();
+    if (!token || !token->processingUserGesture())
         return false;
 
-    return !document || currentToken()->isValidForDocument(*document);
+    return !document || token->isValidForDocument(*document);
 }
 
 bool UserGestureIndicator::processingUserGestureForMedia()
@@ -172,7 +206,17 @@ bool UserGestureIndicator::processingUserGestureForMedia()
     if (!isMainThread())
         return false;
 
-    return currentToken() ? currentToken()->processingUserGestureForMedia() : false;
+    RefPtr token = currentToken();
+    return token ? token->processingUserGestureForMedia() : false;
+}
+
+std::optional<WTF::UUID> UserGestureIndicator::authorizationToken() const
+{
+    if (!isMainThread())
+        return std::nullopt;
+
+    RefPtr token = currentToken();
+    return token ? token->authorizationToken() : std::nullopt;
 }
 
 }

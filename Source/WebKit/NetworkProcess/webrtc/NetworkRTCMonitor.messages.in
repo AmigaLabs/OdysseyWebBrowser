@@ -22,8 +22,13 @@
 
 #if USE(LIBWEBRTC)
 
-messages -> NetworkRTCMonitor NotRefCounted {
-    void StartUpdatingIfNeeded(bool enumerateAllInterfaces)
+[
+    ExceptionForEnabledBy,
+    DispatchedFrom=WebContent,
+    DispatchedTo=Networking
+]
+messages -> NetworkRTCMonitor {
+    void StartUpdatingIfNeeded()
     void StopUpdating()
 }
 

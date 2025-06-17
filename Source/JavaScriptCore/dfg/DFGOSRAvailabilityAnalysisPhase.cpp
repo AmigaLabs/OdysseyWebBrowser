@@ -41,7 +41,7 @@ class OSRAvailabilityAnalysisPhase : public Phase {
     static constexpr bool verbose = false;
 public:
     OSRAvailabilityAnalysisPhase(Graph& graph, HeadFunctor& availabilityAtHead, TailFunctor& availabilityAtTail)
-        : Phase(graph, "OSR availability analysis")
+        : Phase(graph, "OSR availability analysis"_s)
         , availabilityAtHead(availabilityAtHead)
         , availabilityAtTail(availabilityAtTail)
     {
@@ -154,8 +154,10 @@ public:
                             case FunctionExecutablePLoc:
                             case StructurePLoc:
                                 if (heapPair.value.isDead()) {
-                                    dataLogLn("PromotedHeapLocation is dead, but should not be: ", heapPair.key);
-                                    availabilityMap.dump(WTF::dataFile());
+                                    WTF::dataFile().atomically([&](auto&) {
+                                        dataLogLn("PromotedHeapLocation is dead, but should not be: ", heapPair.key);
+                                        availabilityMap.dump(WTF::dataFile());
+                                    });
                                     CRASH();
                                 }
                                 break;
@@ -224,9 +226,7 @@ LocalOSRAvailabilityCalculator::LocalOSRAvailabilityCalculator(Graph& graph)
 {
 }
 
-LocalOSRAvailabilityCalculator::~LocalOSRAvailabilityCalculator()
-{
-}
+LocalOSRAvailabilityCalculator::~LocalOSRAvailabilityCalculator() = default;
 
 void LocalOSRAvailabilityCalculator::beginBlock(BasicBlock* block)
 {
@@ -270,7 +270,8 @@ void LocalOSRAvailabilityCalculator::executeNode(Node* node)
         break;
     }
 
-    case MovHint: {
+    case MovHint:
+    case ZombieHint: {
         m_availability.m_locals.operand(node->unlinkedOperand()).setNode(node->child1().node());
         break;
     }

@@ -22,10 +22,13 @@
 
 #if ENABLE(WEBXR) && USE(OPENXR)
 #include "OpenXRInputSource.h"
+#include <wtf/TZoneMallocInlines.h>
 
 using namespace WebCore;
 
 namespace PlatformXR {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(OpenXRInput);
 
 std::unique_ptr<OpenXRInput> OpenXRInput::create(XrInstance instance, XrSession session, XrSpace space)
 {
@@ -48,9 +51,9 @@ XrResult OpenXRInput::initialize()
         XRHandedness::Left, XRHandedness::Right
     };
 
-    for (auto handeness : hands) {
+    for (auto handedness : hands) {
         m_handleIndex++;;
-        if (auto inputSource = OpenXRInputSource::create(m_instance, m_session, handeness, m_handleIndex))
+        if (auto inputSource = OpenXRInputSource::create(m_instance, m_session, handedness, m_handleIndex))
             m_inputSources.append(makeUniqueRefFromNonNullUniquePtr(WTFMove(inputSource)));
     }
 
@@ -77,7 +80,7 @@ XrResult OpenXRInput::initialize()
     return XR_SUCCESS;
 }
 
-Vector<Device::FrameData::InputSource> OpenXRInput::collectInputSources(const XrFrameState& frameState) const
+Vector<FrameData::InputSource> OpenXRInput::collectInputSources(const XrFrameState& frameState) const
 {
     Vector<XrActiveActionSet> actionSets;
     for (auto& input : m_inputSources)
@@ -88,7 +91,7 @@ Vector<Device::FrameData::InputSource> OpenXRInput::collectInputSources(const Xr
     syncInfo.activeActionSets = actionSets.data();
     RETURN_IF_FAILED(xrSyncActions(m_session, &syncInfo), "xrSyncActions", m_instance, { });
 
-    Vector<Device::FrameData::InputSource> result;
+    Vector<FrameData::InputSource> result;
     for (auto& input : m_inputSources) {
         if (auto data = input->getInputSource(m_localSpace, frameState))
             result.append(*data);

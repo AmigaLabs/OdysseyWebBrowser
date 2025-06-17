@@ -38,7 +38,9 @@ class AudioWorklet;
 class AudioWorkletThread;
 class Document;
 
-class AudioWorkletMessagingProxy : public WorkletGlobalScopeProxy, public WorkerLoaderProxy {
+class AudioWorkletMessagingProxy final : public WorkletGlobalScopeProxy, public WorkerLoaderProxy, public CanMakeThreadSafeCheckedPtr<AudioWorkletMessagingProxy> {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(AudioWorkletMessagingProxy);
 public:
     static Ref<AudioWorkletMessagingProxy> create(AudioWorklet& worklet)
     {
@@ -53,6 +55,12 @@ public:
     AudioWorkletThread& workletThread() { return m_workletThread.get(); }
 
     void postTaskToAudioWorklet(Function<void(AudioWorklet&)>&&);
+    ScriptExecutionContextIdentifier loaderContextIdentifier() const final;
+
+    uint32_t checkedPtrCount() const final { return CanMakeThreadSafeCheckedPtr<AudioWorkletMessagingProxy>::checkedPtrCount(); }
+    uint32_t checkedPtrCountWithoutThreadCheck() const final { return CanMakeThreadSafeCheckedPtr<AudioWorkletMessagingProxy>::checkedPtrCountWithoutThreadCheck(); }
+    void incrementCheckedPtrCount() const final { CanMakeThreadSafeCheckedPtr<AudioWorkletMessagingProxy>::incrementCheckedPtrCount(); }
+    void decrementCheckedPtrCount() const final { CanMakeThreadSafeCheckedPtr<AudioWorkletMessagingProxy>::decrementCheckedPtrCount(); }
 
 private:
     explicit AudioWorkletMessagingProxy(AudioWorklet&);
@@ -61,7 +69,6 @@ private:
     RefPtr<CacheStorageConnection> createCacheStorageConnection() final;
     RefPtr<RTCDataChannelRemoteHandlerConnection> createRTCDataChannelRemoteHandlerConnection() final;
     void postTaskToLoader(ScriptExecutionContext::Task&&) final;
-    bool postTaskForModeToWorkerOrWorkletGlobalScope(ScriptExecutionContext::Task&&, const String& mode) final;
 
     bool isAudioWorkletMessagingProxy() const final { return true; }
 

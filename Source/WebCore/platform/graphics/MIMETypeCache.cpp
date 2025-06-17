@@ -27,13 +27,16 @@
 #include "MIMETypeCache.h"
 
 #include "ContentType.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
-HashSet<String, ASCIICaseInsensitiveHash>& MIMETypeCache::supportedTypes()
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MIMETypeCache);
+
+HashSet<String>& MIMETypeCache::supportedTypes()
 {
     if (!m_supportedTypes) {
-        m_supportedTypes = HashSet<String, ASCIICaseInsensitiveHash> { };
+        m_supportedTypes = HashSet<String> { };
         initializeCache(*m_supportedTypes);
     }
 
@@ -88,7 +91,7 @@ MediaPlayerEnums::SupportsType MIMETypeCache::canDecodeType(const String& mimeTy
     } while (0);
 
     if (!m_cachedResults)
-        m_cachedResults = HashMap<String, MediaPlayerEnums::SupportsType, ASCIICaseInsensitiveHash>();
+        m_cachedResults = UncheckedKeyHashMap<String, MediaPlayerEnums::SupportsType>();
     m_cachedResults->add(mimeType, result);
 
     return result;
@@ -97,7 +100,7 @@ MediaPlayerEnums::SupportsType MIMETypeCache::canDecodeType(const String& mimeTy
 void MIMETypeCache::addSupportedTypes(const Vector<String>& newTypes)
 {
     if (!m_supportedTypes)
-        m_supportedTypes = HashSet<String, ASCIICaseInsensitiveHash> { };
+        m_supportedTypes = HashSet<String> { };
 
     for (auto& type : newTypes)
         m_supportedTypes->add(type);
@@ -123,7 +126,7 @@ bool MIMETypeCache::isEmpty() const
     return m_supportedTypes && m_supportedTypes->isEmpty();
 }
 
-void MIMETypeCache::initializeCache(HashSet<String, ASCIICaseInsensitiveHash>&)
+void MIMETypeCache::initializeCache(HashSet<String>&)
 {
 }
 
@@ -138,9 +141,9 @@ bool MIMETypeCache::shouldOverrideExtendedType(const ContentType& type)
 
     // Some sites (e.g. Modernizr) use 'audio/mpeg; codecs="mp3"' even though
     // it is not RFC 3003 compliant.
-    if (equalIgnoringASCIICase(type.containerType(), "audio/mpeg")) {
+    if (equalLettersIgnoringASCIICase(type.containerType(), "audio/mpeg"_s)) {
         auto codecs = type.codecs();
-        return codecs.size() == 1 && codecs[0] == "mp3";
+        return codecs.size() == 1 && codecs[0] == "mp3"_s;
     }
 
     return false;

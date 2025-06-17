@@ -24,13 +24,14 @@
 
 #pragma once
 
-#if ENABLE(WEB_RTC)
+#if ENABLE(WEB_RTC) && USE(LIBWEBRTC)
 
 #include "LibWebRTCMacros.h"
 #include "LibWebRTCPeerConnectionBackend.h"
 #include "RTCRtpSenderBackend.h"
 #include "RealtimeOutgoingAudioSource.h"
 #include "RealtimeOutgoingVideoSource.h"
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakPtr.h>
 
 ALLOW_UNUSED_PARAMETERS_BEGIN
@@ -41,13 +42,22 @@ ALLOW_UNUSED_PARAMETERS_BEGIN
 ALLOW_UNUSED_PARAMETERS_END
 
 namespace WebCore {
+class LibWebRTCRtpSenderBackend;
+}
+
+namespace WTF {
+template<typename T> struct IsDeprecatedWeakRefSmartPointerException;
+template<> struct IsDeprecatedWeakRefSmartPointerException<WebCore::LibWebRTCRtpSenderBackend> : std::true_type { };
+}
+
+namespace WebCore {
 
 class LibWebRTCPeerConnectionBackend;
 
 class LibWebRTCRtpSenderBackend final : public RTCRtpSenderBackend, public CanMakeWeakPtr<LibWebRTCRtpSenderBackend> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(LibWebRTCRtpSenderBackend);
 public:
-    using Source = Variant<std::nullptr_t, Ref<RealtimeOutgoingAudioSource>, Ref<RealtimeOutgoingVideoSource>>;
+    using Source = std::variant<std::nullptr_t, Ref<RealtimeOutgoingAudioSource>, Ref<RealtimeOutgoingVideoSource>>;
     LibWebRTCRtpSenderBackend(LibWebRTCPeerConnectionBackend&, rtc::scoped_refptr<webrtc::RtpSenderInterface>&&, Source&&);
     LibWebRTCRtpSenderBackend(LibWebRTCPeerConnectionBackend&, rtc::scoped_refptr<webrtc::RtpSenderInterface>&&);
     ~LibWebRTCRtpSenderBackend();
@@ -67,11 +77,13 @@ private:
     std::unique_ptr<RTCDTMFSenderBackend> createDTMFBackend() final;
     Ref<RTCRtpTransformBackend> rtcRtpTransformBackend() final;
     std::unique_ptr<RTCDtlsTransportBackend> dtlsTransportBackend() final;
-    void setMediaStreamIds(const Vector<String>&) final;
+    void setMediaStreamIds(const FixedVector<String>&) final;
 
     void startSource();
     void stopSource();
     bool hasSource() const;
+
+    RefPtr<LibWebRTCPeerConnectionBackend> protectedPeerConnectionBackend() const;
 
     WeakPtr<LibWebRTCPeerConnectionBackend> m_peerConnectionBackend;
     rtc::scoped_refptr<webrtc::RtpSenderInterface> m_rtcSender;
@@ -82,4 +94,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(WEB_RTC)
+#endif // ENABLE(WEB_RTC) && USE(LIBWEBRTC)

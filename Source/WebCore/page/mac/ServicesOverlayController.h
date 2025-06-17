@@ -28,11 +28,13 @@
 #if (ENABLE(SERVICE_CONTROLS) || ENABLE(TELEPHONE_NUMBER_DETECTION)) && PLATFORM(MAC)
 
 #include "DataDetectorHighlight.h"
+#include "GraphicsLayer.h"
 #include "GraphicsLayerClient.h"
 #include "PageOverlay.h"
 #include "Timer.h"
 #include <wtf/MonotonicTime.h>
 #include <wtf/OptionSet.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakHashSet.h>
 
 namespace WebCore {
@@ -40,24 +42,29 @@ namespace WebCore {
 class LayoutRect;
 class Page;
 
+enum class RenderingUpdateStep : uint32_t;
+
 struct GapRects;
 
-class ServicesOverlayController : private DataDetectorHighlightClient, private PageOverlay::Client {
-    WTF_MAKE_FAST_ALLOCATED;
+class ServicesOverlayController : private DataDetectorHighlightClient, private PageOverlayClient {
+    WTF_MAKE_TZONE_ALLOCATED(ServicesOverlayController);
 public:
     explicit ServicesOverlayController(Page&);
     ~ServicesOverlayController();
+
+    void ref() const;
+    void deref() const;
 
     void selectedTelephoneNumberRangesChanged();
     void selectionRectsDidChange(const Vector<LayoutRect>&, const Vector<GapRects>&, bool isTextOnly);
 
 private:
-    // PageOverlay::Client
+    // PageOverlayClient
     void willMoveToPage(PageOverlay&, Page*) override;
     void didMoveToPage(PageOverlay&, Page*) override;
     void drawRect(PageOverlay&, GraphicsContext&, const IntRect& dirtyRect) override;
     bool mouseEvent(PageOverlay&, const PlatformMouseEvent&) override;
-    void didScrollFrame(PageOverlay&, Frame&) override;
+    void didScrollFrame(PageOverlay&, LocalFrame&) override;
 
     void createOverlayIfNeeded();
     void handleClick(const IntPoint&, DataDetectorHighlight&);
@@ -67,14 +74,21 @@ private:
     void invalidateHighlightsOfType(DataDetectorHighlight::Type);
     void buildPotentialHighlightsIfNeeded();
 
-    void replaceHighlightsOfTypePreservingEquivalentHighlights(HashSet<RefPtr<DataDetectorHighlight>>&, DataDetectorHighlight::Type);
+    void replaceHighlightsOfTypePreservingEquivalentHighlights(UncheckedKeyHashSet<RefPtr<DataDetectorHighlight>>&, DataDetectorHighlight::Type);
     void removeAllPotentialHighlightsOfType(DataDetectorHighlight::Type);
     void buildPhoneNumberHighlights();
     void buildSelectionHighlight();
 
     void determineActiveHighlight(bool& mouseIsOverButton);
     void clearActiveHighlight();
+
+#if ENABLE(DATA_DETECTION)
+    // DataDetectorHighlightClient
     DataDetectorHighlight* activeHighlight() const final { return m_activeHighlight.get(); }
+    void scheduleRenderingUpdate(OptionSet<RenderingUpdateStep>) final;
+    float deviceScaleFactor() const final;
+    RefPtr<GraphicsLayer> createGraphicsLayer(GraphicsLayerClient&) final;
+#endif
 
     DataDetectorHighlight* findTelephoneNumberHighlightContainingSelectionHighlight(DataDetectorHighlight&);
 
@@ -86,16 +100,16 @@ private:
 
     Vector<SimpleRange> telephoneNumberRangesForFocusedFrame();
 
-    Frame& mainFrame() const;
     Page& page() const { return m_page; }
+    Ref<Page> protectedPage() const { return m_page.get(); }
 
-    Page& m_page;
-    PageOverlay* m_servicesOverlay { nullptr };
+    WeakRef<Page> m_page;
+    WeakPtr<PageOverlay> m_servicesOverlay;
 
     RefPtr<DataDetectorHighlight> m_activeHighlight;
     RefPtr<DataDetectorHighlight> m_nextActiveHighlight;
-    HashSet<RefPtr<DataDetectorHighlight>> m_potentialHighlights;
-    HashSet<RefPtr<DataDetectorHighlight>> m_animatingHighlights;
+    UncheckedKeyHashSet<RefPtr<DataDetectorHighlight>> m_potentialHighlights;
+    UncheckedKeyHashSet<RefPtr<DataDetectorHighlight>> m_animatingHighlights;
     WeakHashSet<DataDetectorHighlight> m_highlights;
 
     Vector<LayoutRect> m_currentSelectionRects;

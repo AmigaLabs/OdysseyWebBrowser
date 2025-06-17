@@ -27,8 +27,9 @@
 
 #include "CSSPropertyNames.h"
 #include "QualifiedName.h"
-#include <wtf/RefCounted.h>
+#include <wtf/RefCountedAndCanMakeWeakPtr.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WeakPtr.h>
 
 namespace WebCore {
@@ -52,8 +53,8 @@ enum class CalcMode : uint8_t {
     Spline
 };
 
-class SVGAttributeAnimator : public RefCounted<SVGAttributeAnimator>, public CanMakeWeakPtr<SVGAttributeAnimator> {
-    WTF_MAKE_FAST_ALLOCATED;
+class SVGAttributeAnimator : public RefCountedAndCanMakeWeakPtr<SVGAttributeAnimator> {
+    WTF_MAKE_TZONE_ALLOCATED(SVGAttributeAnimator);
 public:
     SVGAttributeAnimator(const QualifiedName& attributeName)
         : m_attributeName(attributeName)
@@ -76,7 +77,7 @@ public:
     virtual std::optional<float> calculateDistance(SVGElement&, const String&, const String&) const { return { }; }
 
 protected:
-    bool isAnimatedStylePropertyAniamtor(const SVGElement&) const;
+    bool isAnimatedStylePropertyAnimator(const SVGElement&) const;
 
     static void invalidateStyle(SVGElement&);
     static void applyAnimatedStylePropertyChange(SVGElement&, CSSPropertyID, const String& value);

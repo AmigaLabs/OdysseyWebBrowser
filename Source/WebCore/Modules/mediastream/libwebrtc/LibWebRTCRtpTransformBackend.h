@@ -30,14 +30,13 @@
 #include "RTCRtpTransformBackend.h"
 #include <webrtc/api/scoped_refptr.h>
 #include <wtf/Lock.h>
+#include <wtf/StdUnorderedMap.h>
 
-ALLOW_UNUSED_PARAMETERS_BEGIN
-ALLOW_DEPRECATED_DECLARATIONS_BEGIN
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
 
 #include <webrtc/api/frame_transformer_interface.h>
 
-ALLOW_DEPRECATED_DECLARATIONS_END
-ALLOW_UNUSED_PARAMETERS_END
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
 
 namespace WebCore {
 
@@ -50,7 +49,9 @@ protected:
     MediaType mediaType() const final { return m_mediaType; }
 
 private:
-    void setOutputCallback(rtc::scoped_refptr<webrtc::TransformedFrameCallback>&&);
+    void sendFrameToOutput(std::unique_ptr<webrtc::TransformableFrameInterface>&&);
+    void addOutputCallback(rtc::scoped_refptr<webrtc::TransformedFrameCallback>&&, uint32_t ssrc);
+    void removeOutputCallback(uint32_t ssrc);
 
     // RTCRtpTransformBackend
     void processTransformedFrame(RTCRtpTransformableFrame&) final;
@@ -64,7 +65,7 @@ private:
     void UnregisterTransformedFrameCallback() final;
     void UnregisterTransformedFrameSinkCallback(uint32_t ssrc) final;
     void AddRef() const final { ref(); }
-    rtc::RefCountReleaseStatus Release() const final;
+    webrtc::RefCountReleaseStatus Release() const final;
 
     MediaType m_mediaType;
     Side m_side;
@@ -72,8 +73,8 @@ private:
     Lock m_inputCallbackLock;
     Callback m_inputCallback WTF_GUARDED_BY_LOCK(m_inputCallbackLock);
 
-    Lock m_outputCallbackLock;
-    rtc::scoped_refptr<webrtc::TransformedFrameCallback> m_outputCallback WTF_GUARDED_BY_LOCK(m_outputCallbackLock);
+    Lock m_outputCallbacksLock;
+    StdUnorderedMap<uint32_t, rtc::scoped_refptr<webrtc::TransformedFrameCallback>> m_outputCallbacks WTF_GUARDED_BY_LOCK(m_outputCallbacksLock);
 };
 
 inline LibWebRTCRtpTransformBackend::LibWebRTCRtpTransformBackend(MediaType mediaType, Side side)
@@ -82,10 +83,10 @@ inline LibWebRTCRtpTransformBackend::LibWebRTCRtpTransformBackend(MediaType medi
 {
 }
 
-inline rtc::RefCountReleaseStatus LibWebRTCRtpTransformBackend::Release() const
+inline webrtc::RefCountReleaseStatus LibWebRTCRtpTransformBackend::Release() const
 {
     deref();
-    return rtc::RefCountReleaseStatus::kOtherRefsRemained;
+    return webrtc::RefCountReleaseStatus::kOtherRefsRemained;
 }
 
 } // namespace WebCore

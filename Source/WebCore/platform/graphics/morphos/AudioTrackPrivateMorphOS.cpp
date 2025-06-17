@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include "AudioTrackPrivateMorphOS.h"
+#include "MediaPlayerPrivateMorphOS.h"
 
 #define D(x) 
 
@@ -8,11 +9,10 @@
 
 namespace WebCore {
 
-AudioTrackPrivateMorphOS::AudioTrackPrivateMorphOS(WeakPtr<MediaPlayerPrivateMorphOS> player, int index)
+AudioTrackPrivateMorphOS::AudioTrackPrivateMorphOS(ThreadSafeWeakPtr<MediaPlayerPrivateMorphOS> player, int index)
 	: m_index(index)
 	, m_player(player)
 {
-	m_id = "A" + String::number(index);
 	D(dprintf("%s(%p)\n", __PRETTY_FUNCTION__, this));
 }
 
@@ -32,8 +32,9 @@ void AudioTrackPrivateMorphOS::setEnabled(bool setenabled)
 	if (setenabled != enabled())
 	{
 		AudioTrackPrivate::setEnabled(setenabled);
-		if (m_player)
-			m_player->onTrackEnabled(m_index, setenabled);
+        RefPtr<MediaPlayerPrivateMorphOS> player(m_player.get());
+		if (player)
+			player->onTrackEnabled(m_index, setenabled);
 	}
 }
 

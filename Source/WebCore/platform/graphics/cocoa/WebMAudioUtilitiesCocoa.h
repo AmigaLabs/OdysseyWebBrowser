@@ -27,16 +27,20 @@
 
 #if PLATFORM(COCOA)
 
-#include <wtf/RetainPtr.h>
+#include <wtf/RefPtr.h>
+#include <wtf/Vector.h>
 
-class AudioStreamDescription;
-typedef const struct opaqueCMFormatDescription* CMFormatDescriptionRef;
+struct AudioStreamBasicDescription;
 
 namespace WebCore {
 
+struct AudioInfo;
+class SharedBuffer;
+
 WEBCORE_EXPORT bool isVorbisDecoderAvailable();
 WEBCORE_EXPORT bool registerVorbisDecoderIfNeeded();
-RetainPtr<CMFormatDescriptionRef> createVorbisAudioFormatDescription(size_t, const void*);
+static constexpr size_t kVorbisMinimumFrameDataSize = 1;
+RefPtr<AudioInfo> createVorbisAudioInfo(std::span<const uint8_t>);
 
 struct OpusCookieContents {
     uint8_t version { 0 };
@@ -51,12 +55,19 @@ struct OpusCookieContents {
     uint8_t framesPerPacket { 0 };
     bool isVBR { false };
     bool hasPadding { false };
+#if HAVE(AUDIOFORMATPROPERTY_VARIABLEPACKET_SUPPORTED)
+    RefPtr<SharedBuffer> cookieData;
+#endif
 };
 
 WEBCORE_EXPORT bool isOpusDecoderAvailable();
 WEBCORE_EXPORT bool registerOpusDecoderIfNeeded();
-bool parseOpusPrivateData(size_t privateDataSize, const void* privateData, size_t frameDataSize, const void* frameData, OpusCookieContents&);
-RetainPtr<CMFormatDescriptionRef> createOpusAudioFormatDescription(const OpusCookieContents&);
+static constexpr size_t kOpusHeaderSize = 19;
+static constexpr size_t kOpusMinimumFrameDataSize = 2;
+std::optional<OpusCookieContents> parseOpusPrivateData(std::span<const uint8_t> privateData, std::span<const uint8_t> frameData);
+bool parseOpusTOCData(std::span<const uint8_t> frameData, OpusCookieContents&);
+RefPtr<AudioInfo> createOpusAudioInfo(const OpusCookieContents&);
+Vector<uint8_t> createOpusPrivateData(const AudioStreamBasicDescription&, uint16_t preSkip = 0);
 
 }
 

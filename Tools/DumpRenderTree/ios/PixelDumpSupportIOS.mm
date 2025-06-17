@@ -32,16 +32,17 @@
 #import "DumpRenderTree.h"
 #import "DumpRenderTreeWindow.h"
 #import "PixelDumpSupportCG.h"
-#import "UIKitSPI.h"
+#import "UIKitSPIForTesting.h"
 
 #define COMMON_DIGEST_FOR_OPENSSL
 #import <CommonCrypto/CommonDigest.h>
 #import <MobileCoreServices/UTCoreTypes.h>
 #import <QuartzCore/QuartzCore.h>
+#import <WebCore/ContentsFormatCocoa.h>
 #import <WebCore/DestinationColorSpace.h>
 #import <WebCore/GraphicsContextCG.h>
 #import <WebCore/IOSurface.h>
-#import <WebCore/PlatformScreen.h>
+#import <WebCore/PlatformCALayer.h>
 #import <WebKit/WebCoreThread.h>
 #import <pal/spi/cg/CoreGraphicsSPI.h>
 #import <pal/spi/cocoa/QuartzCoreSPI.h>
@@ -67,19 +68,21 @@ RefPtr<BitmapContext> createBitmapContextFromWebView(bool onscreen, bool increme
     WebCore::FloatSize snapshotSize(viewSize);
     snapshotSize.scale(deviceScaleFactor);
 
-#if HAVE(IOSURFACE_RGB10)
-    WebCore::IOSurface::Format snapshotFormat = WebCore::screenSupportsExtendedColor() ? WebCore::IOSurface::Format::RGB10 : WebCore::IOSurface::Format::BGRA;
-#else
-    WebCore::IOSurface::Format snapshotFormat = WebCore::IOSurface::Format::BGRA;
-#endif
-    auto surface = WebCore::IOSurface::create(WebCore::expandedIntSize(snapshotSize), WebCore::DestinationColorSpace::SRGB(), snapshotFormat);
-    RetainPtr<CGImageRef> cgImage = surface->createImage();
+    auto snapshotFormat = WebCore::convertToIOSurfaceFormat(WebCore::PlatformCALayer::contentsFormatForLayer());
+    auto surface = WebCore::IOSurface::create(nullptr, WebCore::expandedIntSize(snapshotSize), WebCore::DestinationColorSpace::SRGB(), WebCore::IOSurface::Name::Snapshot, snapshotFormat);
+    if (!surface)
+        return nullptr;
 
-    void* bitmapBuffer = nullptr;
+    // FIXME: Something is missing here, nothing draws to surface.
+    auto context = surface->createPlatformContext();
+    RetainPtr<CGImageRef> cgImage = surface->createImage(context.get());
+
     size_t bitmapRowBytes = 0;
-    auto bitmapContext = createBitmapContext(bufferWidth, bufferHeight, bitmapRowBytes, bitmapBuffer);
+    auto bitmapContext = createBitmapContext(bufferWidth, bufferHeight, bitmapRowBytes);
     if (!bitmapContext)
         return nullptr;
+
+    bitmapContext->setScaleFactor(deviceScaleFactor);
 
     CGContextDrawImage(bitmapContext->cgContext(), CGRectMake(0, 0, bufferWidth, bufferHeight), cgImage.get());
     return bitmapContext;

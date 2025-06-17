@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2021-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,8 +34,16 @@
 #include "VM.h"
 #include "VerifierSlotVisitorInlines.h"
 #include <wtf/StackTrace.h>
+#include <wtf/TZoneMallocInlines.h>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 
 namespace JSC {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(VerifierSlotVisitor);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(VerifierSlotVisitor::MarkedBlockData);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(VerifierSlotVisitor::OpaqueRootData);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(VerifierSlotVisitor::PreciseAllocationData);
 
 using MarkerData = VerifierSlotVisitor::MarkerData;
 
@@ -96,8 +104,8 @@ void VerifierSlotVisitor::OpaqueRootData::addMarkerData(MarkerData&& marker)
     m_marker = WTFMove(marker);
 }
 
-VerifierSlotVisitor::VerifierSlotVisitor(Heap& heap)
-    : Base(heap, "Verifier", m_opaqueRootStorage)
+VerifierSlotVisitor::VerifierSlotVisitor(JSC::Heap& heap)
+    : Base(heap, "Verifier"_s, m_opaqueRootStorage)
 {
     m_needsExtraOpaqueRootHandling = true;
 }
@@ -301,9 +309,7 @@ void VerifierSlotVisitor::dumpMarkerData(HeapCell* cell)
             opaqueRoot = nullptr;
         }
 
-        markerData->stack()->dump(WTF::dataFile(), "    ");
-        dataLogLn();
-
+        dataLogLn(StackTracePrinter { *markerData->stack(), "    " });
     } while (cell || opaqueRoot);
 }
 
@@ -318,7 +324,7 @@ bool VerifierSlotVisitor::isFirstVisit() const
 
 bool VerifierSlotVisitor::isMarked(const void* rawCell) const
 {
-    HeapCell* cell = bitwise_cast<HeapCell*>(rawCell);
+    HeapCell* cell = std::bit_cast<HeapCell*>(rawCell);
     if (cell->isPreciseAllocation())
         return isMarked(cell->preciseAllocation(), cell);
     return isMarked(cell->markedBlock(), cell);
@@ -342,7 +348,7 @@ bool VerifierSlotVisitor::isMarked(MarkedBlock& block, HeapCell* cell) const
 
 void VerifierSlotVisitor::markAuxiliary(const void* base)
 {
-    HeapCell* cell = bitwise_cast<HeapCell*>(base);
+    HeapCell* cell = std::bit_cast<HeapCell*>(base);
 
     ASSERT(cell->heap() == heap());
     testAndSetMarked(cell);
@@ -355,7 +361,7 @@ bool VerifierSlotVisitor::mutatorIsStopped() const
 
 bool VerifierSlotVisitor::testAndSetMarked(const void* rawCell)
 {
-    HeapCell* cell = bitwise_cast<HeapCell*>(rawCell);
+    HeapCell* cell = std::bit_cast<HeapCell*>(rawCell);
     if (cell->isPreciseAllocation())
         return testAndSetMarked(cell->preciseAllocation());
     return testAndSetMarked(cell->markedBlock(), cell);
@@ -408,7 +414,9 @@ void VerifierSlotVisitor::visitAsConstraint(const JSCell* cell)
 void VerifierSlotVisitor::visitChildren(const JSCell* cell)
 {
     RELEASE_ASSERT(isMarked(cell));
-    cell->methodTable(vm())->visitChildren(const_cast<JSCell*>(cell), *this);
+    cell->methodTable()->visitChildren(const_cast<JSCell*>(cell), *this);
 }
 
 } // namespace JSC
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

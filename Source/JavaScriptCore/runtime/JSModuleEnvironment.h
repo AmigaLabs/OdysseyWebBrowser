@@ -30,6 +30,8 @@
 
 #include "JSLexicalEnvironment.h"
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace JSC {
 
 class AbstractModuleRecord;
@@ -50,10 +52,7 @@ public:
 
     DECLARE_INFO;
 
-    static Structure* createStructure(VM& vm, JSGlobalObject* globalObject)
-    {
-        return Structure::create(vm, globalObject, jsNull(), TypeInfo(ModuleEnvironmentType, StructureFlags), info());
-    }
+    inline static Structure* createStructure(VM&, JSGlobalObject*);
 
     static size_t offsetOfModuleRecord(SymbolTable* symbolTable)
     {
@@ -78,23 +77,26 @@ public:
     static bool deleteProperty(JSCell*, JSGlobalObject*, PropertyName, DeletePropertySlot&);
 
 private:
-    JSModuleEnvironment(VM&, Structure*, JSScope*, SymbolTable*);
+    JSModuleEnvironment(VM&, Structure*, JSScope*, SymbolTable*, JSValue initialValue, AbstractModuleRecord*);
 
     static JSModuleEnvironment* create(VM&, Structure*, JSScope*, SymbolTable*, JSValue initialValue, AbstractModuleRecord*);
 
-    void finishCreation(VM&, JSValue initialValue, AbstractModuleRecord*);
+    DECLARE_DEFAULT_FINISH_CREATION;
 
     WriteBarrierBase<AbstractModuleRecord>& moduleRecordSlot()
     {
-        return *bitwise_cast<WriteBarrierBase<AbstractModuleRecord>*>(bitwise_cast<char*>(this) + offsetOfModuleRecord(symbolTable()));
+        return *std::bit_cast<WriteBarrierBase<AbstractModuleRecord>*>(std::bit_cast<char*>(this) + offsetOfModuleRecord(symbolTable()));
     }
 
     DECLARE_VISIT_CHILDREN;
 };
 
-inline JSModuleEnvironment::JSModuleEnvironment(VM& vm, Structure* structure, JSScope* currentScope, SymbolTable* symbolTable)
-    : Base(vm, structure, currentScope, symbolTable)
+inline JSModuleEnvironment::JSModuleEnvironment(VM& vm, Structure* structure, JSScope* currentScope, SymbolTable* symbolTable, JSValue initialValue, AbstractModuleRecord* moduleRecord)
+    : Base(vm, structure, currentScope, symbolTable, initialValue)
 {
+    this->moduleRecordSlot().setWithoutWriteBarrier(moduleRecord);
 }
 
 } // namespace JSC
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

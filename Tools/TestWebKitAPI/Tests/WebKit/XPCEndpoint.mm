@@ -26,34 +26,34 @@
 #import "config.h"
 #import "PlatformUtilities.h"
 
-#import <WebKit/XPCEndpoint.h>
-#import <WebKit/XPCEndpointClient.h>
+#import "XPCEndpoint.h"
+#import "XPCEndpointClient.h"
 #import <wtf/text/WTFString.h>
 
 static bool clientConnectedToEndpoint = false;
 static bool endpointReceivedMessageFromClient = false;
 static bool clientReceivedMessageFromEndpoint = false;
 
-static constexpr auto testMessageFromEndpoint = "test-message-from-endpoint";
-static constexpr auto testMessageFromClient = "test-message-from-client";
+static constexpr auto testMessageFromEndpoint = "test-message-from-endpoint"_s;
+static constexpr auto testMessageFromClient = "test-message-from-client"_s;
 
 class XPCEndpoint final : public WebKit::XPCEndpoint {
 private:
-    const char* xpcEndpointMessageNameKey() const final
+    ASCIILiteral xpcEndpointMessageNameKey() const final
     {
-        return nullptr;
+        return { };
     }
-    const char* xpcEndpointMessageName() const final
+    ASCIILiteral xpcEndpointMessageName() const final
     {
-        return nullptr;
+        return { };
     }
-    const char* xpcEndpointNameKey() const final
+    ASCIILiteral xpcEndpointNameKey() const final
     {
-        return nullptr;
+        return { };
     }
     void handleEvent(xpc_connection_t connection, xpc_object_t event) final
     {
-        String messageName = xpc_dictionary_get_string(event, XPCEndpoint::xpcMessageNameKey);
+        String messageName = xpc_dictionary_get_wtfstring(event, XPCEndpoint::xpcMessageNameKey);
         if (messageName == testMessageFromClient) {
             endpointReceivedMessageFromClient = true;
 
@@ -68,7 +68,7 @@ class XPCEndpointClient final : public WebKit::XPCEndpointClient {
 private:
     void handleEvent(xpc_object_t event) final
     {
-        String messageName = xpc_dictionary_get_string(event, XPCEndpoint::xpcMessageNameKey);
+        String messageName = xpc_dictionary_get_wtfstring(event, XPCEndpoint::xpcMessageNameKey);
         if (messageName == testMessageFromEndpoint)
             clientReceivedMessageFromEndpoint = true;
     }

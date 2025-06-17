@@ -35,6 +35,8 @@ template<typename T, typename Type>
 class CompactRefPtrTuple final {
     WTF_MAKE_FAST_ALLOCATED;
     WTF_MAKE_NONCOPYABLE(CompactRefPtrTuple);
+
+    static_assert(::allowCompactPointers<T>());
 public:
     CompactRefPtrTuple() = default;
     ~CompactRefPtrTuple()
@@ -49,9 +51,24 @@ public:
 
     void setPointer(T* pointer)
     {
-        WTF::DefaultRefDerefTraits<T>::refIfNotNull(pointer);
         auto* old = m_data.pointer();
-        m_data.setPointer(pointer);
+        m_data.setPointer(WTF::DefaultRefDerefTraits<T>::refIfNotNull(pointer));
+        WTF::DefaultRefDerefTraits<T>::derefIfNotNull(old);
+    }
+
+    void setPointer(RefPtr<T>&& pointer)
+    {
+        auto willRelease = WTFMove(pointer);
+        auto* old = m_data.pointer();
+        m_data.setPointer(willRelease.leakRef());
+        WTF::DefaultRefDerefTraits<T>::derefIfNotNull(old);
+    }
+
+    void setPointer(Ref<T>&& pointer)
+    {
+        auto willRelease = WTFMove(pointer);
+        auto* old = m_data.pointer();
+        m_data.setPointer(&willRelease.leakRef());
         WTF::DefaultRefDerefTraits<T>::derefIfNotNull(old);
     }
 

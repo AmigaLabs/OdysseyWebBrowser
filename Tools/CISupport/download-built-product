@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright (C) 2009, 2020 Apple Inc.  All rights reserved.
 # Copyright (C) 2012 Google Inc. All rights reserved.
@@ -30,12 +30,8 @@ import os
 import subprocess
 import sys
 
-if sys.version_info > (3, 0):
-    from urllib.request import urlretrieve as urllib_urlretrieve
-    from urllib.parse import quote as urllib_quote
-else:
-    from urllib import quote as urllib_quote
-    from urllib import urlretrieve as urllib_urlretrieve
+from urllib.request import urlretrieve as urllib_urlretrieve
+from urllib.parse import quote as urllib_quote
 
 
 def main():

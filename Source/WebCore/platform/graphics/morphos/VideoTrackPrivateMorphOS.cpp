@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include "VideoTrackPrivateMorphOS.h"
+#include "MediaPlayerPrivateMorphOS.h"
 
 #define D(x) 
 
@@ -8,11 +9,10 @@
 
 namespace WebCore {
 
-VideoTrackPrivateMorphOS::VideoTrackPrivateMorphOS(WeakPtr<MediaPlayerPrivateMorphOS> player, int index)
+VideoTrackPrivateMorphOS::VideoTrackPrivateMorphOS(ThreadSafeWeakPtr<MediaPlayerPrivateMorphOS> player, int index)
 	: m_index(index)
 	, m_player(player)
 {
-	m_id = "V" + String::number(index);
 	D(dprintf("%s(%p)\n", __PRETTY_FUNCTION__, this));
 }
 
@@ -26,8 +26,9 @@ void VideoTrackPrivateMorphOS::setSelected(bool setselected)
 	if (setselected != selected())
 	{
 		VideoTrackPrivate::setSelected(setselected);
-		if (m_player)
-			m_player->onTrackEnabled(m_index, setselected);
+        RefPtr<MediaPlayerPrivateMorphOS> player(m_player.get());
+		if (player)
+			player->onTrackEnabled(m_index, setselected);
 	}
 }
 

@@ -25,19 +25,19 @@
 
 #include "config.h"
 
-#if ENABLE(INPUT_TYPE_DATE) && PLATFORM(MAC)
+#if PLATFORM(MAC)
 
 #import "TestWKWebView.h"
 #import <WebKit/WKPreferencesPrivate.h>
-#import <WebKit/_WKInternalDebugFeature.h>
+#import <WebKit/_WKFeature.h>
 #import <wtf/RetainPtr.h>
 
 static RetainPtr<TestWKWebView> createWebViewForTest()
 {
     auto configuration = adoptNS([[WKWebViewConfiguration alloc] init]);
-    for (_WKInternalDebugFeature *feature in [WKPreferences _internalDebugFeatures]) {
+    for (_WKFeature *feature in [WKPreferences _features]) {
         if ([feature.key isEqualToString:@"InputTypeDateEnabled"]) {
-            [[configuration preferences] _setEnabled:YES forInternalDebugFeature:feature];
+            [[configuration preferences] _setEnabled:YES forFeature:feature];
             break;
         }
     }
@@ -75,4 +75,4 @@ TEST(DateInputTests, IgnoresUserEditsToLocale)
     EXPECT_EQ(widthForCustomFormat, widthForDefaultFormat);
 }
 
-#endif // ENABLE(INPUT_TYPE_DATE) && PLATFORM(MAC)
+#endif // PLATFORM(MAC)

@@ -27,8 +27,8 @@
 #include "WebURLSchemeTaskProxy.h"
 
 #include "Logging.h"
+#include "MessageSenderInlines.h"
 #include "URLSchemeTaskParameters.h"
-#include "WebCoreArgumentCoders.h"
 #include "WebFrame.h"
 #include "WebPage.h"
 #include "WebPageProxyMessages.h"
@@ -39,8 +39,8 @@
 #include <WebCore/ResourceLoader.h>
 #include <wtf/CompletionHandler.h>
 
-#define WEBURLSCHEMETASKPROXY_RELEASE_LOG_STANDARD_TEMPLATE "[schemeHandler=%" PRIu64 ", webPageID=%" PRIu64 ", frameID=%" PRIu64 ", taskID=%lu] WebURLSchemeTaskProxy::"
-#define WEBURLSCHEMETASKPROXY_RELEASE_LOG_STANDARD_PARAMETERS m_urlSchemeHandler.identifier(), pageIDFromWebFrame(m_frame), frameIDFromWebFrame(m_frame), m_identifier
+#define WEBURLSCHEMETASKPROXY_RELEASE_LOG_STANDARD_TEMPLATE "[schemeHandler=%" PRIu64 ", webPageID=%" PRIu64 ", frameID=%" PRIu64 ", taskID=%" PRIu64 "] WebURLSchemeTaskProxy::"
+#define WEBURLSCHEMETASKPROXY_RELEASE_LOG_STANDARD_PARAMETERS m_urlSchemeHandler->identifier().toUInt64(), pageIDFromWebFrame(m_frame), frameIDFromWebFrame(m_frame), m_identifier.toUInt64()
 #define WEBURLSCHEMETASKPROXY_RELEASE_LOG(fmt, ...) RELEASE_LOG(Network, WEBURLSCHEMETASKPROXY_RELEASE_LOG_STANDARD_TEMPLATE fmt, WEBURLSCHEMETASKPROXY_RELEASE_LOG_STANDARD_PARAMETERS, ##__VA_ARGS__)
 
 namespace WebKit {
@@ -59,7 +59,7 @@ static uint64_t pageIDFromWebFrame(const RefPtr<WebFrame>& frame)
 static uint64_t frameIDFromWebFrame(const RefPtr<WebFrame>& frame)
 {
     if (frame)
-        return frame->frameID().toUInt64();
+        return frame->frameID().object().toUInt64();
     return 0;
 }
 #endif
@@ -69,7 +69,7 @@ WebURLSchemeTaskProxy::WebURLSchemeTaskProxy(WebURLSchemeHandlerProxy& handler, 
     , m_coreLoader(&loader)
     , m_frame(&frame)
     , m_request(loader.request())
-    , m_identifier(loader.identifier())
+    , m_identifier(*loader.identifier())
 {
 }
 
@@ -78,19 +78,21 @@ void WebURLSchemeTaskProxy::startLoading()
     ASSERT(m_coreLoader);
     ASSERT(m_frame);
     WEBURLSCHEMETASKPROXY_RELEASE_LOG("startLoading");
-    m_urlSchemeHandler.page().send(Messages::WebPageProxy::StartURLSchemeTask(URLSchemeTaskParameters { m_urlSchemeHandler.identifier(), m_coreLoader->identifier(), m_request, m_frame->info() }));
+    Ref urlSchemeHandler = m_urlSchemeHandler.get();
+    urlSchemeHandler->page().send(Messages::WebPageProxy::StartURLSchemeTask(URLSchemeTaskParameters { urlSchemeHandler->identifier(), *m_coreLoader->identifier(), m_request, m_frame->info() }));
 }
 
 void WebURLSchemeTaskProxy::stopLoading()
 {
     ASSERT(m_coreLoader);
     WEBURLSCHEMETASKPROXY_RELEASE_LOG("stopLoading");
-    m_urlSchemeHandler.page().send(Messages::WebPageProxy::StopURLSchemeTask(m_urlSchemeHandler.identifier(), m_coreLoader->identifier()));
+    Ref urlSchemeHandler = m_urlSchemeHandler.get();
+    urlSchemeHandler->page().send(Messages::WebPageProxy::StopURLSchemeTask(urlSchemeHandler->identifier(), *m_coreLoader->identifier()));
     m_coreLoader = nullptr;
     m_frame = nullptr;
 
     // This line will result in this being deleted.
-    m_urlSchemeHandler.taskDidStopLoading(*this);
+    urlSchemeHandler->taskDidStopLoading(*this);
 }
     
 void WebURLSchemeTaskProxy::didPerformRedirection(WebCore::ResourceResponse&& redirectResponse, WebCore::ResourceRequest&& request, CompletionHandler<void(WebCore::ResourceRequest&&)>&& completionHandler)
@@ -102,14 +104,14 @@ void WebURLSchemeTaskProxy::didPerformRedirection(WebCore::ResourceResponse&& re
 
     if (m_waitingForCompletionHandler) {
         WEBURLSCHEMETASKPROXY_RELEASE_LOG("didPerformRedirection: Received redirect during previous redirect processing, queuing it.");
-        queueTask([this, protectedThis = makeRef(*this), redirectResponse = WTFMove(redirectResponse), request = WTFMove(request), completionHandler = WTFMove(completionHandler)]() mutable {
+        queueTask([this, protectedThis = Ref { *this }, redirectResponse = WTFMove(redirectResponse), request = WTFMove(request), completionHandler = WTFMove(completionHandler)]() mutable {
             didPerformRedirection(WTFMove(redirectResponse), WTFMove(request), WTFMove(completionHandler));
         });
         return;
     }
     m_waitingForCompletionHandler = true;
 
-    auto innerCompletionHandler = [this, protectedThis = makeRef(*this), originalRequest = request, completionHandler = WTFMove(completionHandler)] (ResourceRequest&& request) mutable {
+    auto innerCompletionHandler = [this, protectedThis = Ref { *this }, originalRequest = request, completionHandler = WTFMove(completionHandler)] (ResourceRequest&& request) mutable {
         m_waitingForCompletionHandler = false;
 
         completionHandler(WTFMove(request));
@@ -124,7 +126,7 @@ void WebURLSchemeTaskProxy::didReceiveResponse(const ResourceResponse& response)
 {
     if (m_waitingForCompletionHandler) {
         WEBURLSCHEMETASKPROXY_RELEASE_LOG("didReceiveResponse: Received response during redirect processing, queuing it.");
-        queueTask([this, protectedThis = makeRef(*this), response] {
+        queueTask([this, protectedThis = Ref { *this }, response] {
             didReceiveResponse(response);
         });
         return;
@@ -134,27 +136,27 @@ void WebURLSchemeTaskProxy::didReceiveResponse(const ResourceResponse& response)
         return;
 
     m_waitingForCompletionHandler = true;
-    m_coreLoader->didReceiveResponse(response, [this, protectedThis = makeRef(*this)] {
+    m_coreLoader->didReceiveResponse(response, [this, protectedThis = Ref { *this }] {
         m_waitingForCompletionHandler = false;
         processNextPendingTask();
     });
 }
 
-void WebURLSchemeTaskProxy::didReceiveData(size_t size, const uint8_t* data)
+void WebURLSchemeTaskProxy::didReceiveData(const WebCore::SharedBuffer& data)
 {
     if (!hasLoader())
         return;
 
     if (m_waitingForCompletionHandler) {
         WEBURLSCHEMETASKPROXY_RELEASE_LOG("didReceiveData: Received data during response processing, queuing it.");
-        queueTask([this, protectedThis = makeRef(*this), dataVector = Vector { data, size }] {
-            didReceiveData(dataVector.size(), dataVector.data());
+        queueTask([this, protectedThis = Ref { *this }, data = Ref { data }] {
+            didReceiveData(data);
         });
         return;
     }
 
-    auto protectedThis = makeRef(*this);
-    m_coreLoader->didReceiveData(data, size, 0, DataPayloadType::DataPayloadBytes);
+    Ref protectedThis { *this };
+    m_coreLoader->didReceiveData(data, 0, DataPayloadType::DataPayloadBytes);
     processNextPendingTask();
 }
 
@@ -165,7 +167,7 @@ void WebURLSchemeTaskProxy::didComplete(const ResourceError& error)
         return;
 
     if (m_waitingForCompletionHandler) {
-        queueTask([this, protectedThis = makeRef(*this), error] {
+        queueTask([this, protectedThis = Ref { *this }, error] {
             didComplete(error);
         });
         return;

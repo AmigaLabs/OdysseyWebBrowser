@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright (c) 2014-2018 Apple Inc. All rights reserved.
 # Copyright (c) 2014 University of Washington. All rights reserved.
@@ -34,7 +34,7 @@ try:
     from .cpp_generator_templates import CppGeneratorTemplates as CppTemplates
     from .generator import Generator, ucfirst
     from .models import ObjectType, ArrayType, AliasedType, EnumType
-except ValueError:
+except ImportError:
     from cpp_generator import CppGenerator
     from cpp_generator_templates import CppGeneratorTemplates as CppTemplates
     from generator import Generator, ucfirst
@@ -79,8 +79,9 @@ class CppBackendDispatcherImplementationGenerator(CppGenerator):
 
     def _generate_secondary_header_includes(self):
         header_includes = [
-            (["JavaScriptCore", "WebKit"], ("JavaScriptCore", "inspector/InspectorFrontendRouter.h")),
-            (["JavaScriptCore", "WebKit"], ("WTF", "wtf/NeverDestroyed.h")),
+            (["JavaScriptCore", "WebKit", "WebDriverBidi"], ("JavaScriptCore", "inspector/InspectorFrontendRouter.h")),
+            (["JavaScriptCore", "WebKit", "WebDriverBidi"], ("WTF", "wtf/NeverDestroyed.h")),
+            (["JavaScriptCore", "WebKit", "WebDriverBidi"], ("WTF", "wtf/text/MakeString.h")),
         ]
         return self.generate_includes_from_entries(header_includes)
 

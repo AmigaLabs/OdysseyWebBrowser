@@ -30,16 +30,20 @@
 
 #include "HeapCellInlines.h"
 #include "HeapInlines.h"
+#include "JSCellInlines.h"
 #include "JSWebAssemblyInstance.h"
 #include "SlotVisitorInlines.h"
+#include "WasmTypeDefinitionInlines.h"
 
 namespace JSC {
 
-const ClassInfo WebAssemblyFunctionBase::s_info = { "WebAssemblyFunctionBase", &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(WebAssemblyFunctionBase) };
+const ClassInfo WebAssemblyFunctionBase::s_info = { "WebAssemblyFunctionBase"_s, &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(WebAssemblyFunctionBase) };
 
-WebAssemblyFunctionBase::WebAssemblyFunctionBase(VM& vm, NativeExecutable* executable, JSGlobalObject* globalObject, Structure* structure, WasmToWasmImportableFunction importableFunction)
+WebAssemblyFunctionBase::WebAssemblyFunctionBase(VM& vm, NativeExecutable* executable, JSGlobalObject* globalObject, Structure* structure, JSWebAssemblyInstance* instance, Wasm::WasmOrJSImportableFunction&& importableFunction, Wasm::WasmOrJSImportableFunctionCallLinkInfo* callLinkInfo)
     : Base(vm, executable, globalObject, structure)
-    , m_importableFunction(importableFunction)
+    , m_importableFunction(WTFMove(importableFunction))
+    , m_callLinkInfo(callLinkInfo)
+    , m_instance(instance, WriteBarrierEarlyInit)
 { }
 
 template<typename Visitor>
@@ -53,11 +57,15 @@ void WebAssemblyFunctionBase::visitChildrenImpl(JSCell* cell, Visitor& visitor)
 
 DEFINE_VISIT_CHILDREN(WebAssemblyFunctionBase);
 
-void WebAssemblyFunctionBase::finishCreation(VM& vm, NativeExecutable* executable, unsigned length, const String& name, JSWebAssemblyInstance* instance)
+void WebAssemblyFunctionBase::finishCreation(VM& vm, NativeExecutable* executable, unsigned length, const String& name)
 {
     Base::finishCreation(vm, executable, length, name);
-    ASSERT(inherits(vm, info()));
-    m_instance.set(vm, this, instance);
+    ASSERT(inherits(info()));
+}
+
+const Wasm::FunctionSignature& WebAssemblyFunctionBase::signature() const
+{
+    return Wasm::TypeInformation::getFunctionSignature(typeIndex());
 }
 
 } // namespace JSC

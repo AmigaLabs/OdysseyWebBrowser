@@ -28,6 +28,7 @@
 #include "Identifier.h"
 #include "JSGenerator.h"
 #include "JSInternalFieldObjectImpl.h"
+#include "ScriptFetchParameters.h"
 #include <wtf/ListHashSet.h>
 
 namespace JSC {
@@ -43,7 +44,7 @@ class AbstractModuleRecord : public JSInternalFieldObjectImpl<2> {
 public:
     using Base = JSInternalFieldObjectImpl<2>;
 
-    static constexpr bool needsDestruction = true;
+    static constexpr DestructionMode needsDestruction = NeedsDestruction;
 
     template<typename CellType, SubspaceAccess>
     static void subspaceFor(VM&)
@@ -97,12 +98,17 @@ public:
     };
 
     typedef WTF::ListHashSet<RefPtr<UniquedStringImpl>, IdentifierRepHash> OrderedIdentifierSet;
-    typedef HashMap<RefPtr<UniquedStringImpl>, ImportEntry, IdentifierRepHash, HashTraits<RefPtr<UniquedStringImpl>>> ImportEntries;
-    typedef HashMap<RefPtr<UniquedStringImpl>, ExportEntry, IdentifierRepHash, HashTraits<RefPtr<UniquedStringImpl>>> ExportEntries;
+    typedef UncheckedKeyHashMap<RefPtr<UniquedStringImpl>, ImportEntry, IdentifierRepHash, HashTraits<RefPtr<UniquedStringImpl>>> ImportEntries;
+    typedef UncheckedKeyHashMap<RefPtr<UniquedStringImpl>, ExportEntry, IdentifierRepHash, HashTraits<RefPtr<UniquedStringImpl>>> ExportEntries;
+
+    struct ModuleRequest {
+        RefPtr<UniquedStringImpl> m_specifier;
+        RefPtr<ScriptFetchParameters> m_attributes;
+    };
 
     DECLARE_EXPORT_INFO;
 
-    void appendRequestedModule(const Identifier&);
+    void appendRequestedModule(const Identifier&, RefPtr<ScriptFetchParameters>&&);
     void addStarExportEntry(const Identifier&);
     void addImportEntry(const ImportEntry&);
     void addExportEntry(const ExportEntry&);
@@ -111,7 +117,7 @@ public:
     std::optional<ExportEntry> tryGetExportEntry(UniquedStringImpl* exportName);
 
     const Identifier& moduleKey() const { return m_moduleKey; }
-    const OrderedIdentifierSet& requestedModules() const { return m_requestedModules; }
+    const Vector<ModuleRequest>& requestedModules() const { return m_requestedModules; }
     const ExportEntries& exportEntries() const { return m_exportEntries; }
     const ImportEntries& importEntries() const { return m_importEntries; }
     const OrderedIdentifierSet& starExportEntries() const { return m_starExportEntries; }
@@ -194,7 +200,7 @@ private:
 
     // Save the occurrence order since the module loader loads and runs the modules in this order.
     // http://www.ecma-international.org/ecma-262/6.0/#sec-moduleevaluation
-    OrderedIdentifierSet m_requestedModules;
+    Vector<ModuleRequest> m_requestedModules;
 
     WriteBarrier<JSMap> m_dependenciesMap;
     
@@ -206,7 +212,7 @@ private:
     // So here, we don't visit each object for GC. The resolution cache map caches the once
     // looked up correctly resolved resolution, since (1) we rarely looked up the non-resolved one,
     // and (2) if we cache all the attempts the size of the map becomes infinitely large.
-    typedef HashMap<RefPtr<UniquedStringImpl>, Resolution, IdentifierRepHash, HashTraits<RefPtr<UniquedStringImpl>>> Resolutions;
+    typedef UncheckedKeyHashMap<RefPtr<UniquedStringImpl>, Resolution, IdentifierRepHash, HashTraits<RefPtr<UniquedStringImpl>>> Resolutions;
     Resolutions m_resolutionCache;
 };
 

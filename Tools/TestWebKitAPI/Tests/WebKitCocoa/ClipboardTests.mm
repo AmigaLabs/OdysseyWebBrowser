@@ -27,11 +27,11 @@
 
 #import "PlatformUtilities.h"
 #import "TestWKWebView.h"
-#import "UIKitSPI.h"
+#import "UIKitSPIForTesting.h"
 #import <CoreServices/CoreServices.h>
 #import <WebCore/LegacyNSPasteboardTypes.h>
 #import <WebKit/WKPreferencesPrivate.h>
-#import <WebKit/_WKExperimentalFeature.h>
+#import <WebKit/_WKFeature.h>
 
 @interface TestWKWebView (ClipboardTests)
 
@@ -76,9 +76,9 @@ static RetainPtr<TestWKWebView> createWebViewForClipboardTests()
     auto configuration = adoptNS([[WKWebViewConfiguration alloc] init]);
     [[configuration preferences] _setDOMPasteAllowed:YES];
     [[configuration preferences] _setJavaScriptCanAccessClipboard:YES];
-    for (_WKExperimentalFeature *feature in [WKPreferences _experimentalFeatures]) {
+    for (_WKFeature *feature in [WKPreferences _features]) {
         if ([feature.key isEqualToString:@"AsyncClipboardAPIEnabled"]) {
-            [[configuration preferences] _setEnabled:YES forExperimentalFeature:feature];
+            [[configuration preferences] _setEnabled:YES forFeature:feature];
             break;
         }
     }
@@ -139,7 +139,12 @@ static RetainPtr<NSString> readMarkupFromPasteboard()
     return adoptNS([[NSString alloc] initWithData:rawData encoding:NSUTF8StringEncoding]);
 }
 
+// rdar://138144869
+#if PLATFORM(IOS) && !defined(NDEBUG)
+TEST(ClipboardTests, DISABLED_ReadMultipleItems)
+#else
 TEST(ClipboardTests, ReadMultipleItems)
+#endif
 {
     auto webView = createWebViewForClipboardTests();
     writeMultipleObjectsToPlatformPasteboard();
@@ -171,7 +176,7 @@ TEST(ClipboardTests, WriteSanitizedMarkup)
 TEST(ClipboardTests, ConvertTIFFToPNGWhenPasting)
 {
     auto webView = createWebViewForClipboardTests();
-    auto url = [[NSBundle mainBundle] URLForResource:@"sunset-in-cupertino-100px" withExtension:@"tiff" subdirectory:@"TestWebKitAPI.resources"];
+    auto url = [NSBundle.test_resourcesBundle URLForResource:@"sunset-in-cupertino-100px" withExtension:@"tiff"];
     auto pasteboard = NSPasteboard.generalPasteboard;
     [pasteboard clearContents];
     [pasteboard setData:[NSData dataWithContentsOfURL:url] forType:NSPasteboardTypeTIFF];

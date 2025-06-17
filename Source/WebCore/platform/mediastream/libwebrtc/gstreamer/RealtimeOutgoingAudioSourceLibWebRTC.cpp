@@ -27,8 +27,11 @@
 #include "LibWebRTCAudioFormat.h"
 #include "LibWebRTCProvider.h"
 #include "NotImplemented.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RealtimeOutgoingAudioSourceLibWebRTC);
 
 RealtimeOutgoingAudioSourceLibWebRTC::RealtimeOutgoingAudioSourceLibWebRTC(Ref<MediaStreamTrackPrivate>&& audioSource)
     : RealtimeOutgoingAudioSource(WTFMove(audioSource))
@@ -86,7 +89,7 @@ void RealtimeOutgoingAudioSourceLibWebRTC::audioSamplesAvailable(const MediaTime
         auto* buffer = gst_sample_get_buffer(sample.get());
         gst_adapter_push(m_adapter.get(), gst_buffer_ref(buffer));
     }
-    LibWebRTCProvider::callOnWebRTCSignalingThread([protectedThis = makeRef(*this)] {
+    LibWebRTCProvider::callOnWebRTCSignalingThread([protectedThis = Ref { *this }] {
         protectedThis->pullAudioData();
     });
 }

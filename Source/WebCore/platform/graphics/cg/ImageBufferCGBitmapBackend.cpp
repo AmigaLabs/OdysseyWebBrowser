@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 Apple Inc.  All rights reserved.
+ * Copyright (C) 2020-2024 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,129 +33,101 @@
 #include "ImageBufferUtilitiesCG.h"
 #include "IntRect.h"
 #include "PixelBuffer.h"
-#include <wtf/IsoMallocInlines.h>
+#include <wtf/CheckedArithmetic.h>
+#include <wtf/TZoneMallocInlines.h>
+#include <wtf/MallocSpan.h>
 
 namespace WebCore {
 
-WTF_MAKE_ISO_ALLOCATED_IMPL(ImageBufferCGBitmapBackend);
-
-IntSize ImageBufferCGBitmapBackend::calculateSafeBackendSize(const Parameters& parameters)
-{
-    IntSize backendSize = calculateBackendSize(parameters);
-    if (backendSize.isEmpty())
-        return backendSize;
-    
-    auto bytesPerRow = 4 * CheckedUint32(backendSize.width());
-    if (bytesPerRow.hasOverflowed())
-        return { };
-
-    CheckedSize numBytes = CheckedUint32(backendSize.height()) * bytesPerRow;
-    if (numBytes.hasOverflowed())
-        return { };
-
-    return backendSize;
-}
+WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(ImageBufferCGBitmapBackend);
 
 size_t ImageBufferCGBitmapBackend::calculateMemoryCost(const Parameters& parameters)
 {
-    IntSize backendSize = calculateBackendSize(parameters);
-    return ImageBufferBackend::calculateMemoryCost(backendSize, calculateBytesPerRow(backendSize));
+    return ImageBufferBackend::calculateMemoryCost(parameters.backendSize, calculateBytesPerRow(parameters.backendSize));
 }
 
-std::unique_ptr<ImageBufferCGBitmapBackend> ImageBufferCGBitmapBackend::create(const Parameters& parameters, const HostWindow*)
+std::unique_ptr<ImageBufferCGBitmapBackend> ImageBufferCGBitmapBackend::create(const Parameters& parameters, const ImageBufferCreationContext&)
 {
-    ASSERT(parameters.pixelFormat == PixelFormat::BGRA8);
+    ASSERT(parameters.pixelFormat == ImageBufferPixelFormat::BGRA8);
 
     IntSize backendSize = calculateSafeBackendSize(parameters);
     if (backendSize.isEmpty())
         return nullptr;
 
-    void* data;
-    unsigned bytesPerRow = 4 * backendSize.width();
-
-    if (!tryFastCalloc(backendSize.height(), bytesPerRow).getValue(data))
+    CheckedSize bytesPerRow = checkedProduct<size_t>(4, backendSize.width());
+    if (bytesPerRow.hasOverflowed())
         return nullptr;
 
-    ASSERT(!(reinterpret_cast<intptr_t>(data) & 3));
+    CheckedSize numBytes = checkedProduct<size_t>(backendSize.height(), bytesPerRow);
+    if (numBytes.hasOverflowed())
+        return nullptr;
 
-    size_t numBytes = backendSize.height() * bytesPerRow;
-    verifyImageBufferIsBigEnough(data, numBytes);
+    auto data = MallocSpan<uint8_t>::tryZeroedMalloc(numBytes);
+    if (!data)
+        return nullptr;
 
-    auto cgContext = adoptCF(CGBitmapContextCreate(data, backendSize.width(), backendSize.height(), 8, bytesPerRow, parameters.colorSpace.platformColorSpace(), kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
+    ASSERT(!(reinterpret_cast<intptr_t>(data.span().data()) & 3));
+
+    verifyImageBufferIsBigEnough(data.span());
+
+    RetainPtr cgContext = adoptCF(CGBitmapContextCreate(data.mutableSpan().data(), backendSize.width(), backendSize.height(), 8, bytesPerRow, parameters.colorSpace.platformColorSpace(), static_cast<uint32_t>(kCGImageAlphaPremultipliedFirst) | static_cast<uint32_t>(kCGBitmapByteOrder32Host)));
     if (!cgContext)
         return nullptr;
 
     auto context = makeUnique<GraphicsContextCG>(cgContext.get());
 
-    auto dataProvider = adoptCF(CGDataProviderCreateWithData(nullptr, data, numBytes, [] (void*, const void* data, size_t) {
+    RetainPtr dataProvider = adoptCF(CGDataProviderCreateWithData(nullptr, data.mutableSpan().data(), numBytes, [] (void*, const void* data, size_t) {
         fastFree(const_cast<void*>(data));
     }));
 
-    return std::unique_ptr<ImageBufferCGBitmapBackend>(new ImageBufferCGBitmapBackend(parameters, data, WTFMove(dataProvider), WTFMove(context)));
+    return std::unique_ptr<ImageBufferCGBitmapBackend>(new ImageBufferCGBitmapBackend(parameters, data.leakSpan(), WTFMove(dataProvider), WTFMove(context)));
 }
 
-std::unique_ptr<ImageBufferCGBitmapBackend> ImageBufferCGBitmapBackend::create(const Parameters& parameters, const GraphicsContext& context)
-{
-    if (auto cgColorSpace = context.hasPlatformContext() ? contextColorSpace(context) : nullptr) {
-        auto overrideParameters = parameters;
-        overrideParameters.colorSpace = DestinationColorSpace { cgColorSpace };
-
-        return ImageBufferCGBitmapBackend::create(overrideParameters, nullptr);
-    }
-
-    return ImageBufferCGBitmapBackend::create(parameters, nullptr);
-}
-
-ImageBufferCGBitmapBackend::ImageBufferCGBitmapBackend(const Parameters& parameters, void* data, RetainPtr<CGDataProviderRef>&& dataProvider, std::unique_ptr<GraphicsContext>&& context)
-    : ImageBufferCGBackend(parameters)
+ImageBufferCGBitmapBackend::ImageBufferCGBitmapBackend(const Parameters& parameters, std::span<uint8_t> data, RetainPtr<CGDataProviderRef>&& dataProvider, std::unique_ptr<GraphicsContextCG>&& context)
+    : ImageBufferCGBackend(parameters, WTFMove(context))
     , m_data(data)
     , m_dataProvider(WTFMove(dataProvider))
-    , m_context(WTFMove(context))
 {
-    ASSERT(m_data);
+    ASSERT(m_data.data());
     ASSERT(m_dataProvider);
     ASSERT(m_context);
-    setupContext();
+    applyBaseTransform(*m_context);
 }
 
-GraphicsContext& ImageBufferCGBitmapBackend::context() const
+ImageBufferCGBitmapBackend::~ImageBufferCGBitmapBackend() = default;
+
+GraphicsContext& ImageBufferCGBitmapBackend::context()
 {
     return *m_context;
 }
 
-IntSize ImageBufferCGBitmapBackend::backendSize() const
-{
-    CGContextRef cgContext = context().platformContext();
-    return { static_cast<int>(CGBitmapContextGetWidth(cgContext)), static_cast<int>(CGBitmapContextGetHeight(cgContext)) };
-}
-
 unsigned ImageBufferCGBitmapBackend::bytesPerRow() const
 {
-    IntSize backendSize = calculateBackendSize(m_parameters);
-    return calculateBytesPerRow(backendSize);
+    return calculateBytesPerRow(m_parameters.backendSize);
 }
 
-RefPtr<NativeImage> ImageBufferCGBitmapBackend::copyNativeImage(BackingStoreCopy copyBehavior) const
+bool ImageBufferCGBitmapBackend::canMapBackingStore() const
 {
-    switch (copyBehavior) {
-    case CopyBackingStore:
-        return NativeImage::create(adoptCF(CGBitmapContextCreateImage(context().platformContext())));
-
-    case DontCopyBackingStore:
-        auto backendSize = this->backendSize();
-        return NativeImage::create(adoptCF(CGImageCreate(
-            backendSize.width(), backendSize.height(), 8, 32, bytesPerRow(),
-            colorSpace().platformColorSpace(), kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host, m_dataProvider.get(),
-            0, true, kCGRenderingIntentDefault)));
-    }
-
-    ASSERT_NOT_REACHED();
-    return nullptr;
+    return true;
 }
 
-std::optional<PixelBuffer> ImageBufferCGBitmapBackend::getPixelBuffer(const PixelBufferFormat& outputFormat, const IntRect& srcRect) const
+RefPtr<NativeImage> ImageBufferCGBitmapBackend::copyNativeImage()
 {
-    return ImageBufferBackend::getPixelBuffer(outputFormat, srcRect, m_data);
+    return NativeImage::create(adoptCF(CGBitmapContextCreateImage(context().platformContext())));
+}
+
+RefPtr<NativeImage> ImageBufferCGBitmapBackend::createNativeImageReference()
+{
+    auto backendSize = size();
+    return NativeImage::create(adoptCF(CGImageCreate(
+        backendSize.width(), backendSize.height(), 8, 32, bytesPerRow(),
+        colorSpace().platformColorSpace(), static_cast<uint32_t>(kCGImageAlphaPremultipliedFirst) | static_cast<uint32_t>(kCGBitmapByteOrder32Host), m_dataProvider.get(),
+        0, true, kCGRenderingIntentDefault)));
+}
+
+void ImageBufferCGBitmapBackend::getPixelBuffer(const IntRect& srcRect, PixelBuffer& destination)
+{
+    ImageBufferBackend::getPixelBuffer(srcRect, m_data, destination);
 }
 
 void ImageBufferCGBitmapBackend::putPixelBuffer(const PixelBuffer& pixelBuffer, const IntRect& srcRect, const IntPoint& destPoint, AlphaPremultiplication destFormat)

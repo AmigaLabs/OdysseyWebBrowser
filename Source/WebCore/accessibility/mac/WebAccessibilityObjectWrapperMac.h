@@ -26,6 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#import "AXTextMarker.h"
 #import "WebAccessibilityObjectWrapperBase.h"
 
 #if PLATFORM(MAC)
@@ -33,20 +34,27 @@
 #import <pal/spi/mac/HIServicesSPI.h>
 #import <wtf/RetainPtr.h>
 
-#ifndef NSAccessibilityPrimaryScreenHeightAttribute
-#define NSAccessibilityPrimaryScreenHeightAttribute @"_AXPrimaryScreenHeight"
+extern "C" AXUIElementRef NSAccessibilityCreateAXUIElementRef(id element);
+
+// Private attributes exposed only for testing:
+#define _AXStartTextMarkerForTextMarkerRangeAttribute @"_AXStartTextMarkerForTextMarkerRange"
+#define _AXEndTextMarkerForTextMarkerRangeAttribute @"_AXEndTextMarkerForTextMarkerRange"
+#define _AXTextMarkerRangeForNSRangeAttribute @"_AXTextMarkerRangeForNSRange"
+
+#if ENABLE(TREE_DEBUGGING)
+#define AXTextMarkerDebugDescriptionAttribute @"AXTextMarkerDebugDescription"
+#define AXTextMarkerRangeDebugDescriptionAttribute @"AXTextMarkerRangeDebugDescription"
+#define AXTextMarkerNodeDebugDescriptionAttribute @"AXTextMarkerNodeDebugDescription"
+#define AXTextMarkerNodeTreeDebugDescriptionAttribute @"AXTextMarkerNodeTreeDebugDescription"
 #endif
 
 @interface WebAccessibilityObjectWrapper : WebAccessibilityObjectWrapperBase
 
-// FIXME: Remove these methods since clients should not need to call them and hence should not be exposed in the public interface.
-// Inside WebCore, use the WebCore homonymous declared below instead.
-- (id)textMarkerRangeFromVisiblePositions:(const WebCore::VisiblePosition&)startPosition endPosition:(const WebCore::VisiblePosition&)endPosition;
-- (id)textMarkerForVisiblePosition:(const WebCore::VisiblePosition&)visiblePos;
-- (RetainPtr<AXTextMarkerRef>)textMarkerForFirstPositionInTextControl:(WebCore::HTMLTextFormControlElement&)textControl;
-
 // When a plugin uses a WebKit control to act as a surrogate view (e.g. PDF use WebKit to create text fields).
-- (id)associatedPluginParent;
+- (id)_associatedPluginParent;
+// For testing use only.
+- (void)_accessibilityHitTestResolvingRemoteFrame:(NSPoint)point callback:(void(^)(NSString *))callback;
+- (NSArray *)_accessibilityChildrenFromIndex:(NSUInteger)index maxCount:(NSUInteger)maxCount returnPlatformElements:(BOOL)returnPlatformElements;
 
 @end
 
@@ -65,6 +73,7 @@ struct CharacterOffset;
 // TextMarker and TextMarkerRange public funcstions.
 // FIXME: TextMarker and TextMarkerRange should become classes on their own right, wrapping the system objects.
 
+RetainPtr<AXTextMarkerRangeRef> textMarkerRangeFromMarkers(AXTextMarkerRef, AXTextMarkerRef);
 AccessibilityObject* accessibilityObjectForTextMarker(AXObjectCache*, AXTextMarkerRef);
 
 // TextMarker <-> VisiblePosition conversion.
@@ -76,7 +85,7 @@ AXTextMarkerRangeRef textMarkerRangeFromVisiblePositions(AXObjectCache*, const V
 VisiblePositionRange visiblePositionRangeForTextMarkerRange(AXObjectCache*, AXTextMarkerRangeRef);
 
 // TextMarker <-> CharacterOffset conversion.
-AXTextMarkerRef textMarkerForCharacterOffset(AXObjectCache*, const CharacterOffset&);
+AXTextMarkerRef textMarkerForCharacterOffset(AXObjectCache*, const CharacterOffset&, TextMarkerOrigin = TextMarkerOrigin::Unknown);
 CharacterOffset characterOffsetForTextMarker(AXObjectCache*, AXTextMarkerRef);
 
 // TextMarkerRange <-> SimpleRange conversion.
@@ -84,4 +93,6 @@ AXTextMarkerRef startOrEndTextMarkerForRange(AXObjectCache*, const std::optional
 AXTextMarkerRangeRef textMarkerRangeFromRange(AXObjectCache*, const std::optional<SimpleRange>&);
 std::optional<SimpleRange> rangeForTextMarkerRange(AXObjectCache*, AXTextMarkerRangeRef);
 
-}
+NSArray *renderWidgetChildren(const AXCoreObject&);
+
+} // namespace WebCore

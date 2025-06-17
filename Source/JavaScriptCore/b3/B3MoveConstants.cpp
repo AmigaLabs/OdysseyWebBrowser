@@ -36,6 +36,8 @@
 #include <wtf/HashMap.h>
 #include <wtf/Vector.h>
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace JSC { namespace B3 {
 
 namespace {
@@ -52,10 +54,10 @@ public:
     {
         hoistConstants(
             [&] (const Value* value) -> bool {
-                return value->opcode() == ConstFloat || value->opcode() == ConstDouble;
+                return value->opcode() == ConstFloat || value->opcode() == ConstDouble || value->opcode() == Const128;
             });
 
-        lowerFPConstants();
+        lowerMaterializationCostHeavyConstants();
         
         hoistConstants(
             [&] (const Value* value) -> bool {
@@ -68,7 +70,7 @@ private:
     void hoistConstants(const Filter& filter)
     {
         Dominators& dominators = m_proc.dominators();
-        HashMap<ValueKey, Value*> valueForConstant;
+        UncheckedKeyHashMap<ValueKey, Value*> valueForConstant;
         IndexMap<BasicBlock*, Vector<Value*>> materializations(m_proc.size());
 
         // We determine where things get materialized based on where they are used.
@@ -215,6 +217,8 @@ private:
                         if (!addend->hasInt() || !filter(addend))
                             break;
                         int64_t addendConst = addend->asInt();
+                        if (Air::Arg::isValidImmForm(addendConst))
+                            break;
                         Value* bestAddend = findBestConstant(
                             [&] (Value* candidateAddend) -> bool {
                                 if (candidateAddend->type() != addend->type())
@@ -257,18 +261,65 @@ private:
         }
     }
 
-    void lowerFPConstants()
+    void lowerMaterializationCostHeavyConstants()
     {
+        unsigned floatSize = 0;
+        unsigned doubleSize = 0;
+        unsigned v128Size = 0;
+        UncheckedKeyHashMap<ValueKey, unsigned> constTable;
         for (Value* value : m_proc.values()) {
             if (!goesInTable(value))
                 continue;
+
             ValueKey key = value->key();
-            m_constTable.add(key, m_constTable.size());
+            switch (value->opcode()) {
+            case Const128:
+                constTable.add(key, v128Size++);
+                break;
+            case ConstDouble:
+                constTable.add(key, doubleSize++);
+                break;
+            case ConstFloat:
+                constTable.add(key, floatSize++);
+                break;
+            default:
+                RELEASE_ASSERT_NOT_REACHED();
+                break;
+            }
         }
-        
-        m_dataSection = static_cast<int64_t*>(m_proc.addDataSection(m_constTable.size() * sizeof(int64_t)));
-        for (auto& entry : m_constTable)
-            m_dataSection[entry.value] = entry.key.value();
+
+        auto getOffset = [&](Opcode opcode, unsigned indexInKind) -> size_t {
+            switch (opcode) {
+            case Const128:
+                return sizeof(v128_t) * indexInKind;
+            case ConstDouble:
+                return sizeof(v128_t) * v128Size + sizeof(double) * indexInKind;
+            case ConstFloat:
+                return sizeof(v128_t) * v128Size + sizeof(double) * doubleSize + sizeof(float) * indexInKind;
+            default:
+                RELEASE_ASSERT_NOT_REACHED();
+                break;
+            }
+        };
+
+        uint8_t* dataSection = static_cast<uint8_t*>(m_proc.addDataSection(sizeof(v128_t) * v128Size + sizeof(double) * doubleSize + sizeof(float) * floatSize));
+        for (auto& entry : constTable) {
+            auto* pointer = dataSection + getOffset(entry.key.opcode(), entry.value);
+            switch (entry.key.opcode()) {
+            case Const128:
+                *std::bit_cast<v128_t*>(pointer) = entry.key.vectorValue();
+                break;
+            case ConstDouble:
+                *std::bit_cast<double*>(pointer) = entry.key.doubleValue();
+                break;
+            case ConstFloat:
+                *std::bit_cast<float*>(pointer) = entry.key.floatValue();
+                break;
+            default:
+                RELEASE_ASSERT_NOT_REACHED();
+                break;
+            }
+        }
 
         IndexSet<Value*> offLimits;
         for (BasicBlock* block : m_proc) {
@@ -280,9 +331,13 @@ private:
                 for (unsigned childIndex = 0; childIndex < value->numChildren(); ++childIndex) {
                     if (!value->constrainedChild(childIndex).rep().isAny())
                         continue;
-                    
+
                     Value*& child = value->child(childIndex);
                     if (!goesInTable(child))
+                        continue;
+
+                    // This is still the best representation for vectors
+                    if (child->type().isVector())
                         continue;
 
                     ValueKey key = child->key();
@@ -304,13 +359,13 @@ private:
                     continue;
 
                 ValueKey key = value->key();
-                auto offset = sizeof(int64_t) * m_constTable.get(key);
+                auto offset = getOffset(key.opcode(), constTable.get(key));
                 if (!isRepresentableAs<Value::OffsetType>(offset))
                     continue;
 
                 Value* tableBase = m_insertionSet.insertIntConstant(
                     valueIndex, value->origin(), pointerType(),
-                    bitwise_cast<intptr_t>(m_dataSection));
+                    std::bit_cast<intptr_t>(dataSection));
                 Value* result = m_insertionSet.insert<MemoryValue>(
                     valueIndex, Load, value->type(), value->origin(), tableBase,
                     static_cast<Value::OffsetType>(offset));
@@ -321,16 +376,17 @@ private:
         }
     }
 
-    bool goesInTable(const Value* value)
+    static bool goesInTable(const Value* value)
     {
         switch (value->opcode()) {
         case ConstDouble: {
-            double doubleZero = 0.0;
-            return bitwise_cast<uint64_t>(value->asDouble()) != bitwise_cast<uint64_t>(doubleZero);
+            return !Air::Arg::isValidFPImm64Form(std::bit_cast<uint64_t>(value->asDouble()));
         }
         case ConstFloat: {
-            float floatZero = 0.0;
-            return bitwise_cast<uint32_t>(value->asFloat()) != bitwise_cast<uint32_t>(floatZero);
+            return !Air::Arg::isValidFPImm32Form(std::bit_cast<uint32_t>(value->asFloat()));
+        }
+        case Const128: {
+            return !bitEquals(value->asV128(), v128_t { });
         }
         default:
             break;
@@ -339,8 +395,6 @@ private:
     }
 
     Procedure& m_proc;
-    HashMap<ValueKey, unsigned> m_constTable;
-    int64_t* m_dataSection;
     InsertionSet m_insertionSet;
 };
 
@@ -348,12 +402,13 @@ private:
 
 void moveConstants(Procedure& proc)
 {
-    PhaseScope phaseScope(proc, "moveConstants");
+    PhaseScope phaseScope(proc, "moveConstants"_s);
     MoveConstants moveConstants(proc);
     moveConstants.run();
 }
 
 } } // namespace JSC::B3
 
-#endif // ENABLE(B3_JIT)
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
 
+#endif // ENABLE(B3_JIT)

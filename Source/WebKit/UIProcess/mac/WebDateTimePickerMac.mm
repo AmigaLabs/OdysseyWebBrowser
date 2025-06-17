@@ -26,7 +26,7 @@
 #include "config.h"
 #include "WebDateTimePickerMac.h"
 
-#if ENABLE(DATE_AND_TIME_INPUT_TYPES) && USE(APPKIT)
+#if USE(APPKIT)
 
 #import "AppKitSPI.h"
 #import "WebPageProxy.h"
@@ -228,7 +228,7 @@ void WebDateTimePickerMac::didChooseDate(StringView date)
 
 - (void)showPicker:(WebKit::WebDateTimePickerMac&)picker
 {
-    _picker = makeWeakPtr(picker);
+    _picker = picker;
 
     [[_enclosingWindow contentView] addSubview:_datePicker.get()];
     [[_presentingView window] addChildWindow:_enclosingWindow.get() ordered:NSWindowAbove];
@@ -240,12 +240,21 @@ void WebDateTimePickerMac::didChooseDate(StringView date)
 
     NSString *currentDateValueString = _params.currentValue;
 
-    [_dateFormatter setDateFormat:[self dateFormatStringForType:_params.type]];
+    NSString *format = [self dateFormatStringForType:_params.type];
+    [_dateFormatter setDateFormat:format];
 
     if (![currentDateValueString length])
         [_datePicker setDateValue:[self initialDateForEmptyValue]];
-    else
-        [_datePicker setDateValue:[_dateFormatter dateFromString:currentDateValueString]];
+    else {
+        NSDate *dateValue = [_dateFormatter dateFromString:currentDateValueString];
+
+        while (!dateValue && (format = [self dateFormatFallbackForFormat:format])) {
+            [_dateFormatter setDateFormat:format];
+            dateValue = [_dateFormatter dateFromString:currentDateValueString];
+        }
+
+        [_datePicker setDateValue:dateValue];
+    }
 
     [_datePicker setMinDate:[NSDate dateWithTimeIntervalSince1970:_params.minimum / 1000.0]];
     [_datePicker setMaxDate:[NSDate dateWithTimeIntervalSince1970:_params.maximum / 1000.0]];
@@ -289,6 +298,16 @@ void WebDateTimePickerMac::didChooseDate(StringView date)
     return kDateFormatString;
 }
 
+- (NSString *)dateFormatFallbackForFormat:(NSString *)format
+{
+    if ([format isEqualToString:kDateTimeWithMillisecondsFormatString])
+        return kDateTimeWithSecondsFormatString;
+    if ([format isEqualToString:kDateTimeWithSecondsFormatString])
+        return kDateTimeFormatString;
+
+    return nil;
+}
+
 - (NSDate *)initialDateForEmptyValue
 {
     NSDate *now = [NSDate date];
@@ -299,4 +318,4 @@ void WebDateTimePickerMac::didChooseDate(StringView date)
 
 @end
 
-#endif // ENABLE(DATE_AND_TIME_INPUT_TYPES) && USE(APPKIT)
+#endif // USE(APPKIT)

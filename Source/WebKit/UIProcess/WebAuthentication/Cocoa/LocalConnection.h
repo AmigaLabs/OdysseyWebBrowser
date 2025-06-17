@@ -28,8 +28,9 @@
 #if ENABLE(WEB_AUTHN)
 
 #include <wtf/CompletionHandler.h>
-#include <wtf/FastMalloc.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/RefCounted.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 
@@ -38,7 +39,7 @@ OBJC_CLASS LAContext;
 namespace WebCore {
 class AuthenticatorAssertionResponse;
 enum class ClientDataType : bool;
-enum class UserVerificationRequirement;
+enum class UserVerificationRequirement : uint8_t;
 }
 
 namespace WebKit {
@@ -48,10 +49,12 @@ namespace WebKit {
 // However, such abstraction is still provided to isolate operations
 // that are not allowed in auto test environment such that some mocking
 // mechnism can override them.
-class LocalConnection {
-    WTF_MAKE_FAST_ALLOCATED;
+class LocalConnection : public RefCounted<LocalConnection> {
+    WTF_MAKE_TZONE_ALLOCATED(LocalConnection);
     WTF_MAKE_NONCOPYABLE(LocalConnection);
 public:
+    static Ref<LocalConnection> create();
+
     enum class UserVerification : uint8_t {
         No,
         Yes,
@@ -62,15 +65,17 @@ public:
     using AttestationCallback = CompletionHandler<void(NSArray *, NSError *)>;
     using UserVerificationCallback = CompletionHandler<void(UserVerification, LAContext *)>;
 
-    LocalConnection() = default;
     virtual ~LocalConnection();
 
     // Overrided by MockLocalConnection.
+    virtual RetainPtr<NSArray> getExistingCredentials(const String& rpId);
     virtual void verifyUser(const String& rpId, WebCore::ClientDataType, SecAccessControlRef, WebCore::UserVerificationRequirement, UserVerificationCallback&&);
     virtual void verifyUser(SecAccessControlRef, LAContext *, CompletionHandler<void(UserVerification)>&&);
     virtual RetainPtr<SecKeyRef> createCredentialPrivateKey(LAContext *, SecAccessControlRef, const String& secAttrLabel, NSData *secAttrApplicationTag) const;
-    virtual void getAttestation(SecKeyRef, NSData *authData, NSData *hash, AttestationCallback&&) const;
     virtual void filterResponses(Vector<Ref<WebCore::AuthenticatorAssertionResponse>>&) const { };
+
+protected:
+    LocalConnection() = default;
 
 private:
     RetainPtr<LAContext> m_context;

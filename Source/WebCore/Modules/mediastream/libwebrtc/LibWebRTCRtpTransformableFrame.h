@@ -24,10 +24,11 @@
 
 #pragma once
 
-#if ENABLE(WEB_RTC)
+#if ENABLE(WEB_RTC) && USE(LIBWEBRTC)
 
 #include "RTCRtpTransformableFrame.h"
 #include <wtf/Ref.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace webrtc {
 class TransformableFrameInterface;
@@ -36,7 +37,7 @@ class TransformableFrameInterface;
 namespace WebCore {
 
 class LibWebRTCRtpTransformableFrame final : public RTCRtpTransformableFrame {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(LibWebRTCRtpTransformableFrame);
 public:
     static Ref<LibWebRTCRtpTransformableFrame> create(std::unique_ptr<webrtc::TransformableFrameInterface>&& frame, bool isAudioSenderFrame) { return adoptRef(*new LibWebRTCRtpTransformableFrame(WTFMove(frame), isAudioSenderFrame)); }
     ~LibWebRTCRtpTransformableFrame();
@@ -47,8 +48,8 @@ private:
     LibWebRTCRtpTransformableFrame(std::unique_ptr<webrtc::TransformableFrameInterface>&&, bool isAudioSenderFrame);
 
     // RTCRtpTransformableFrame
-    Span<const uint8_t> data() const final;
-    void setData(Span<const uint8_t>) final;
+    std::span<const uint8_t> data() const final;
+    void setData(std::span<const uint8_t>) final;
     bool isKeyFrame() const final;
     uint64_t timestamp() const final;
     RTCEncodedAudioFrameMetadata audioMetadata() const final;
@@ -60,4 +61,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(WEB_RTC)
+#endif // ENABLE(WEB_RTC) && USE(LIBWEBRTC)

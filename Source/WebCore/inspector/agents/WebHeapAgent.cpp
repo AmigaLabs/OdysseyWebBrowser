@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,21 +28,26 @@
 
 #include "InstrumentingAgents.h"
 #include "WebConsoleAgent.h"
+#include <JavaScriptCore/InspectorProtocolTypes.h>
 #include <wtf/Lock.h>
 #include <wtf/RunLoop.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
 using namespace Inspector;
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(WebHeapAgent);
+
 struct GarbageCollectionData {
-    Protocol::Heap::GarbageCollection::Type type;
+    Inspector::Protocol::Heap::GarbageCollection::Type type;
     Seconds startTime;
     Seconds endTime;
 };
 
-class SendGarbageCollectionEventsTask final {
-    WTF_MAKE_FAST_ALLOCATED;
+class SendGarbageCollectionEventsTask final : public CanMakeThreadSafeCheckedPtr<SendGarbageCollectionEventsTask> {
+    WTF_MAKE_TZONE_ALLOCATED(SendGarbageCollectionEventsTask);
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(SendGarbageCollectionEventsTask);
 public:
     SendGarbageCollectionEventsTask(WebHeapAgent&);
     void addGarbageCollection(GarbageCollectionData&&);
@@ -53,8 +58,10 @@ private:
     WebHeapAgent& m_agent;
     Lock m_collectionsLock;
     Vector<GarbageCollectionData> m_collections WTF_GUARDED_BY_LOCK(m_collectionsLock);
-    RunLoop::Timer<SendGarbageCollectionEventsTask> m_timer;
+    RunLoop::Timer m_timer;
 };
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SendGarbageCollectionEventsTask);
 
 SendGarbageCollectionEventsTask::SendGarbageCollectionEventsTask(WebHeapAgent& agent)
     : m_agent(agent)
@@ -104,7 +111,23 @@ WebHeapAgent::WebHeapAgent(WebAgentContext& context)
 
 WebHeapAgent::~WebHeapAgent() = default;
 
-Protocol::ErrorStringOr<void> WebHeapAgent::enable()
+void WebHeapAgent::didCreateFrontendAndBackend(FrontendRouter* frontendRouter, BackendDispatcher* backendDispatcher)
+{
+    InspectorHeapAgent::didCreateFrontendAndBackend(frontendRouter, backendDispatcher);
+
+    ASSERT(m_instrumentingAgents.persistentWebHeapAgent() != this);
+    m_instrumentingAgents.setPersistentWebHeapAgent(this);
+}
+
+void WebHeapAgent::willDestroyFrontendAndBackend(DisconnectReason reason)
+{
+    InspectorHeapAgent::willDestroyFrontendAndBackend(reason);
+
+    ASSERT(m_instrumentingAgents.persistentWebHeapAgent() == this);
+    m_instrumentingAgents.setPersistentWebHeapAgent(nullptr);
+}
+
+Inspector::Protocol::ErrorStringOr<void> WebHeapAgent::enable()
 {
     auto result = InspectorHeapAgent::enable();
 
@@ -114,7 +137,7 @@ Protocol::ErrorStringOr<void> WebHeapAgent::enable()
     return result;
 }
 
-Protocol::ErrorStringOr<void> WebHeapAgent::disable()
+Inspector::Protocol::ErrorStringOr<void> WebHeapAgent::disable()
 {
     m_sendGarbageCollectionEventsTask->reset();
 
@@ -124,7 +147,7 @@ Protocol::ErrorStringOr<void> WebHeapAgent::disable()
     return InspectorHeapAgent::disable();
 }
 
-void WebHeapAgent::dispatchGarbageCollectedEvent(Protocol::Heap::GarbageCollection::Type type, Seconds startTime, Seconds endTime)
+void WebHeapAgent::dispatchGarbageCollectedEvent(Inspector::Protocol::Heap::GarbageCollection::Type type, Seconds startTime, Seconds endTime)
 {
     // Dispatch the event asynchronously because this method may be
     // called between collection and sweeping and we don't want to

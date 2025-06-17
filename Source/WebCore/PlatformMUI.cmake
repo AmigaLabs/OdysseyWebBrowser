@@ -3,6 +3,7 @@ include(platform/Curl.cmake)
 include(platform/ImageDecoders.cmake)
 include(platform/TextureMapper.cmake)
 include(platform/FreeType.cmake)
+include(platform/GCrypt.cmake)
 
 list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/platform/cairo"
@@ -11,24 +12,25 @@ list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/platform/graphics/freetype"
     "${WEBCORE_DIR}/platform/graphics/texmap"
     "${WEBCORE_DIR}/platform/graphics/opengl"
+    "${WEBCORE_DIR}/platform/graphics/egl"
     "${WEBCORE_DIR}/platform/network/curl"
     "${WEBCORE_DIR}/platform/mui"
     "${WEBCORE_DIR}/platform/bal"
     "${WEBCORE_DIR}/platform/mediacapabilities"
     "${WEBKITLEGACY_DIR}/mui/UI"
     "${WEBKITLEGACY_DIR}/mui/UI/AROS/include"
+    "${WEBKIT_LIBRARIES_DIR}/include"
 )
-
 list(APPEND WebCore_INCLUDE_DIRECTORIES
     "${DERIVED_SOURCES_DIR}/ForwardingHeaders"
 )
 
 list(APPEND WebCore_SOURCES
 
-    loader/AdBlock.cpp
+    #loader/AdBlock.cpp
 
-    platform/bal/ObserverServiceBookmarklet.cpp
-    platform/bal/ObserverServiceData.cpp
+    #platform/bal/ObserverServiceBookmarklet.cpp
+    #platform/bal/ObserverServiceData.cpp
 
     platform/Cursor.cpp
 
@@ -90,16 +92,16 @@ list(APPEND WebCore_SOURCES
 
     platform/image-decoders/cairo/ImageBackingStoreCairo.cpp
 
-    platform/network/mui/CurlSSLHandleMUI.cpp
+    #platform/network/mui/CurlSSLHandleMUI.cpp
 
     platform/PlatformStrategies.cpp
 
-    platform/posix/SharedBufferPOSIX.cpp
+    #platform/posix/SharedBufferPOSIX.cpp
 
     platform/text/Hyphenation.cpp
     platform/text/LocaleICU.cpp
-    platform/text/TextCodecICU.cpp
-    platform/text/TextEncodingDetectorICU.cpp
+    #platform/text/TextCodecICU.cpp
+    #platform/text/TextEncodingDetectorICU.cpp
 )
 
 list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS

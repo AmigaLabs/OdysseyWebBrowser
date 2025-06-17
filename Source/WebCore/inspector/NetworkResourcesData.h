@@ -30,8 +30,10 @@
 #pragma once
 
 #include "InspectorPageAgent.h"
-#include <wtf/Deque.h>
-#include <wtf/HashMap.h>
+#include "SharedBuffer.h"
+#include <wtf/ListHashSet.h>
+#include <wtf/RobinHoodHashMap.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WallTime.h>
 #include <wtf/text/WTFString.h>
 
@@ -40,13 +42,12 @@ namespace WebCore {
 class CachedResource;
 class ResourceResponse;
 class TextResourceDecoder;
-class SharedBuffer;
 
 class NetworkResourcesData {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(NetworkResourcesData);
 public:
     class ResourceData {
-        WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_TZONE_ALLOCATED(ResourceData);
         friend class NetworkResourcesData;
     public:
         ResourceData(const String& requestId, const String& loaderId);
@@ -88,8 +89,8 @@ public:
         RefPtr<TextResourceDecoder> decoder() const { return m_decoder.copyRef(); }
         void setDecoder(RefPtr<TextResourceDecoder>&& decoder) { m_decoder = WTFMove(decoder); }
 
-        RefPtr<SharedBuffer> buffer() const { return m_buffer.copyRef(); }
-        void setBuffer(RefPtr<SharedBuffer>&& buffer) { m_buffer = WTFMove(buffer); }
+        RefPtr<FragmentedSharedBuffer> buffer() const { return m_buffer.copyRef(); }
+        void setBuffer(RefPtr<FragmentedSharedBuffer>&& buffer) { m_buffer = WTFMove(buffer); }
 
         const std::optional<CertificateInfo>& certificateInfo() const { return m_certificateInfo; }
         void setCertificateInfo(const std::optional<CertificateInfo>& certificateInfo) { m_certificateInfo = certificateInfo; }
@@ -103,13 +104,13 @@ public:
         WallTime responseTimestamp() const { return m_responseTimestamp; }
         void setResponseTimestamp(WallTime time) { m_responseTimestamp = time; }
 
-        bool hasBufferedData() const { return m_dataBuffer; }
+        bool hasBufferedData() const { return hasData(); }
 
     private:
-        bool hasData() const { return m_dataBuffer; }
+        bool hasData() const;
         size_t dataLength() const;
-        void appendData(const uint8_t* data, size_t dataLength);
-        unsigned decodeDataToContent();
+        void appendData(const SharedBuffer&);
+        void decodeDataToContent();
 
         String m_requestId;
         String m_loaderId;
@@ -119,8 +120,8 @@ public:
         String m_textEncodingName;
         String m_mimeType;
         RefPtr<TextResourceDecoder> m_decoder;
-        RefPtr<SharedBuffer> m_dataBuffer;
-        RefPtr<SharedBuffer> m_buffer;
+        SharedBufferBuilder m_dataBuffer;
+        RefPtr<FragmentedSharedBuffer> m_buffer;
         std::optional<CertificateInfo> m_certificateInfo;
         CachedResource* m_cachedResource { nullptr };
         InspectorPageAgent::ResourceType m_type { InspectorPageAgent::OtherResource };
@@ -141,10 +142,10 @@ public:
     void setResourceType(const String& requestId, InspectorPageAgent::ResourceType);
     InspectorPageAgent::ResourceType resourceType(const String& requestId);
     void setResourceContent(const String& requestId, const String& content, bool base64Encoded = false);
-    ResourceData const* maybeAddResourceData(const String& requestId, const uint8_t* data, size_t dataLength);
+    ResourceData const* maybeAddResourceData(const String& requestId, const SharedBuffer&);
     void maybeDecodeDataToContent(const String& requestId);
     void addCachedResource(const String& requestId, CachedResource*);
-    void addResourceSharedBuffer(const String& requestId, RefPtr<SharedBuffer>&&, const String& textEncodingName);
+    void addResourceSharedBuffer(const String& requestId, RefPtr<FragmentedSharedBuffer>&&, const String& textEncodingName);
     ResourceData const* data(const String& requestId);
     ResourceData const* dataForURL(const String& url);
     Vector<String> removeCachedResource(CachedResource*);
@@ -156,8 +157,8 @@ private:
     void ensureNoDataForRequestId(const String& requestId);
     bool ensureFreeSpace(size_t);
 
-    Deque<String> m_requestIdsDeque;
-    HashMap<String, std::unique_ptr<ResourceData>> m_requestIdToResourceDataMap;
+    ListHashSet<String> m_requestIdsDeque;
+    MemoryCompactRobinHoodHashMap<String, std::unique_ptr<ResourceData>> m_requestIdToResourceDataMap;
     size_t m_contentSize { 0 };
     size_t m_maximumResourcesContentSize;
     size_t m_maximumSingleResourceContentSize;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2021-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -40,7 +40,7 @@ namespace TestWebKitAPI {
 TEST(Fullscreen, RemoveNodeBeforeEnter)
 {
     auto configuration = adoptNS([[WKWebViewConfiguration alloc] init]);
-    [configuration preferences]._fullScreenEnabled = YES;
+    [configuration preferences].elementFullscreenEnabled = YES;
     auto webView = adoptNS([[TestWKWebView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100) configuration:configuration.get() addToWindow:YES]);
 
     [webView synchronouslyLoadHTMLString:
@@ -65,14 +65,14 @@ TEST(Fullscreen, RemoveNodeBeforeEnter)
     TestWebKitAPI::Util::run(&nodeRemoved);
 
     // Allow the potential negative result time to occur.
-    TestWebKitAPI::Util::sleep(0.5);
+    TestWebKitAPI::Util::runFor(0.5_s);
 
     // Fullscreen mode should eventually close.
     int tries = 0;
     do {
         if (![webView _isInFullscreen])
             break;
-        TestWebKitAPI::Util::sleep(0.1);
+        TestWebKitAPI::Util::runFor(0.1_s);
     } while (++tries <= 100);
 
     ASSERT_FALSE([webView _isInFullscreen]);

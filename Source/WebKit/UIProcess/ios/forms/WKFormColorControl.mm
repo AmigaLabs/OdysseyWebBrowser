@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Apple Inc. All rights reserved.
+ * Copyright (C) 2018-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,14 +26,16 @@
 #import "config.h"
 #import "WKFormColorControl.h"
 
-#if ENABLE(INPUT_TYPE_COLOR) && PLATFORM(IOS_FAMILY)
+#if PLATFORM(IOS_FAMILY)
 
 #import "FocusedElementInformation.h"
 #import "UIKitSPI.h"
-#import "UserInterfaceIdiom.h"
+#import "UIKitUtilities.h"
 #import "WKContentViewInteraction.h"
 #import "WebPageProxy.h"
-#import <WebCore/Color.h>
+#import <WebCore/ColorCocoa.h>
+#import <pal/system/ios/UserInterfaceIdiom.h>
+#import <wtf/cocoa/VectorCocoa.h>
 
 #pragma mark - WKColorPicker
 
@@ -70,28 +72,24 @@ ALLOW_DEPRECATED_DECLARATIONS_BEGIN
 ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
-#if ENABLE(DATALIST_ELEMENT)
 - (NSArray<UIColor *> *)focusedElementSuggestedColors
 {
-    size_t numColorSuggestions = _view.focusedElementInformation.suggestedColors.size();
-    if (!numColorSuggestions)
+    auto& colors = _view.focusedElementInformation.suggestedColors;
+
+    if (colors.isEmpty())
         return nil;
 
-    NSMutableArray<UIColor *> *colors = [NSMutableArray array];
-    for (const WebCore::Color& color : _view.focusedElementInformation.suggestedColors)
-        [colors addObject:[UIColor colorWithCGColor:cachedCGColor(color)]];
-
-    return colors;
+    return createNSArray(colors, [] (auto& color) {
+        return cocoaColor(color);
+    }).autorelease();
 }
-#endif
 
 - (void)updateColorPickerState
 {
-    [_colorPickerViewController setSelectedColor:[UIColor colorWithCGColor:cachedCGColor(_view.focusedElementInformation.colorValue)]];
-#if ENABLE(DATALIST_ELEMENT)
+    [_colorPickerViewController setSelectedColor:cocoaColor(_view.focusedElementInformation.colorValue).get()];
+    [_colorPickerViewController setSupportsAlpha:_view.focusedElementInformation.supportsAlpha == WebKit::ColorControlSupportsAlpha::Yes && _view.page->preferences().inputTypeColorEnhancementsEnabled()];
     if ([_colorPickerViewController respondsToSelector:@selector(_setSuggestedColors:)])
         [_colorPickerViewController _setSuggestedColors:[self focusedElementSuggestedColors]];
-#endif
 }
 
 - (void)configurePresentation
@@ -118,8 +116,12 @@ ALLOW_DEPRECATED_DECLARATIONS_END
     [self updateColorPickerState];
     [self configurePresentation];
 
-    UIViewController *presentingViewController = [UIViewController _viewControllerForFullScreenPresentationFromView:_view];
+    auto presentingViewController = _view._wk_viewControllerForFullScreenPresentation;
     [presentingViewController presentViewController:_colorPickerViewController.get() animated:YES completion:nil];
+}
+
+- (void)controlUpdateEditing
+{
 }
 
 - (void)controlEndEditing
@@ -158,7 +160,8 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 - (instancetype)initWithView:(WKContentView *)view
 {
     RetainPtr<NSObject <WKFormControl>> control = adoptNS([[WKColorPicker alloc] initWithView:view]);
-    return [super initWithView:view control:WTFMove(control)];
+    self = [super initWithView:view control:WTFMove(control)];
+    return self;
 }
 
 @end
@@ -167,10 +170,10 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 
 - (void)selectColor:(UIColor *)color
 {
-    if ([self.control isKindOfClass:WKColorPicker.class])
-        [(WKColorPicker *)self.control selectColor:color];
+    if (auto *picker = dynamic_objc_cast<WKColorPicker>(self.control))
+        [picker selectColor:color];
 }
 
 @end
 
-#endif // ENABLE(INPUT_TYPE_COLOR) && PLATFORM(IOS_FAMILY)
+#endif // PLATFORM(IOS_FAMILY)

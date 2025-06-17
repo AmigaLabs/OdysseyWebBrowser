@@ -27,11 +27,21 @@
 
 #include "SpeechRecognitionConnectionClientIdentifier.h"
 #include "SpeechRecognitionRequestInfo.h"
+#include <wtf/TZoneMalloc.h>
+
+namespace WebCore {
+class SpeechRecognitionRequest;
+}
+
+namespace WTF {
+template<typename T> struct IsDeprecatedWeakRefSmartPointerException;
+template<> struct IsDeprecatedWeakRefSmartPointerException<WebCore::SpeechRecognitionRequest> : std::true_type { };
+}
 
 namespace WebCore {
 
 class SpeechRecognitionRequest : public CanMakeWeakPtr<SpeechRecognitionRequest> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(SpeechRecognitionRequest, WEBCORE_EXPORT);
 public:
     WEBCORE_EXPORT explicit SpeechRecognitionRequest(SpeechRecognitionRequestInfo&&);
 
@@ -40,11 +50,11 @@ public:
     bool continuous() const { return m_info.continuous;; }
     bool interimResults() const { return m_info.interimResults; }
     uint64_t maxAlternatives() const { return m_info.maxAlternatives; }
-    const ClientOrigin clientOrigin() const { return m_info.clientOrigin; }
-    FrameIdentifier frameIdentifier() const { return m_info.frameIdentifier; }
+    const ClientOrigin& clientOrigin() const { return m_info.clientOrigin; }
+    FrameIdentifier mainFrameIdentifier() const { return m_info.mainFrameIdentifier; }
 
 private:
-    SpeechRecognitionRequestInfo m_info;
+    const SpeechRecognitionRequestInfo m_info;
 };
 
 } // namespace WebCore

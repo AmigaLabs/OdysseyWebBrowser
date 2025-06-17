@@ -28,12 +28,16 @@
 
 #if USE(AUDIO_SESSION) && PLATFORM(IOS_FAMILY)
 
+#import "AVAudioSessionCaptureDeviceManager.h"
 #import "Logging.h"
 #import <AVFoundation/AVAudioSession.h>
 #import <objc/runtime.h>
 #import <pal/spi/cocoa/AVFoundationSPI.h>
+#import <pal/spi/cocoa/LaunchServicesSPI.h>
 #import <wtf/BlockObjCExceptions.h>
+#import <wtf/LoggerHelper.h>
 #import <wtf/RetainPtr.h>
+#import <wtf/TZoneMallocInlines.h>
 #import <wtf/WorkQueue.h>
 
 #import <pal/cocoa/AVFoundationSoftLink.h>
@@ -96,39 +100,30 @@
 
 namespace WebCore {
 
-static void setEligibleForSmartRouting(bool eligible)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(AudioSessionIOS);
+
+static WeakHashSet<AudioSessionIOS::CategoryChangedObserver>& audioSessionCategoryChangedObservers()
 {
-#if PLATFORM(IOS)
-    if (!AudioSession::shouldManageAudioSessionCategory())
-        return;
+    static NeverDestroyed<WeakHashSet<AudioSessionIOS::CategoryChangedObserver>> observers;
+    return observers;
+}
 
-    auto *session = [PAL::getAVAudioSessionClass() sharedInstance];
-    if (![session respondsToSelector:@selector(setEligibleForBTSmartRoutingConsideration:error:)]
-        || ![session respondsToSelector:@selector(eligibleForBTSmartRoutingConsideration)])
-        return;
+void AudioSessionIOS::addAudioSessionCategoryChangedObserver(const CategoryChangedObserver& observer)
+{
+    audioSessionCategoryChangedObservers().add(observer);
+    observer(AudioSession::sharedSession(), AudioSession::sharedSession().category());
+}
 
-    if (session.eligibleForBTSmartRoutingConsideration == eligible)
-        return;
-
-    NSError *error = nil;
-    if (![session setEligibleForBTSmartRoutingConsideration:eligible error:&error])
-        RELEASE_LOG_ERROR(Media, "failed to set eligible to %d with error: %@", eligible, error.localizedDescription);
-#else
-    UNUSED_PARAM(eligible);
-#endif
+Ref<AudioSessionIOS> AudioSessionIOS::create()
+{
+    return adoptRef(*new AudioSessionIOS);
 }
 
 AudioSessionIOS::AudioSessionIOS()
-    : m_workQueue(WorkQueue::create("AudioSession Activation Queue"))
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS
     m_interruptionObserverHelper = adoptNS([[WebInterruptionObserverHelper alloc] initWithCallback:this]);
     END_BLOCK_OBJC_EXCEPTIONS
-
-    m_workQueue->dispatch([] {
-        setEligibleForSmartRouting(false);
-    });
-
 }
 
 AudioSessionIOS::~AudioSessionIOS()
@@ -136,22 +131,70 @@ AudioSessionIOS::~AudioSessionIOS()
     [m_interruptionObserverHelper clearCallback];
 }
 
-void AudioSessionIOS::setCategory(CategoryType newCategory, RouteSharingPolicy policy)
+void AudioSessionIOS::setHostProcessAttribution(audit_token_t auditToken)
+{
+#if ENABLE(APP_PRIVACY_REPORT) && !PLATFORM(MACCATALYST)
+    ALWAYS_LOG(LOGIDENTIFIER);
+
+    NSError *error = nil;
+    auto bundleProxy = [LSBundleProxy bundleProxyWithAuditToken:auditToken error:&error];
+    if (error) {
+        RELEASE_LOG_ERROR(WebRTC, "Failed to get attribution bundleID from audit token with error: %@.", error.localizedDescription);
+        return;
+    }
+
+    auto bundleIdentifier = bundleProxy.bundleIdentifier;
+    if (!bundleIdentifier) {
+        RELEASE_LOG_ERROR(WebRTC, "-[LSBundleProxy bundleIdentifier] returned nil!");
+        return;
+    }
+
+    [[PAL::getAVAudioSessionClass() sharedInstance] setHostProcessAttribution:@[ bundleIdentifier ] error:&error];
+    if (error)
+        RELEASE_LOG_ERROR(WebRTC, "Failed to set attribution bundleID with error: %@.", error.localizedDescription);
+#else
+    UNUSED_PARAM(auditToken);
+#endif
+};
+
+void AudioSessionIOS::setPresentingProcesses(Vector<audit_token_t>&& auditTokens)
+{
+#if HAVE(AUDIOSESSION_PROCESSASSERTION)
+    ALWAYS_LOG(LOGIDENTIFIER);
+
+    AVAudioSession *session = [PAL::getAVAudioSessionClass() sharedInstance];
+    auto nsAuditTokens = adoptNS([[NSMutableArray alloc] init]);
+    for (auto& token : auditTokens) {
+        auto nsToken = adoptNS([[NSData alloc] initWithBytes:token.val length:sizeof(token.val)]);
+        [nsAuditTokens addObject:nsToken.get()];
+    }
+
+    NSError *error = nil;
+    [session setAuditTokensForProcessAssertion:nsAuditTokens.get() error:&error];
+    if (error)
+        RELEASE_LOG_ERROR(Media, "Failed to set audit tokens for process assertion with error: %@", error.localizedDescription);
+#else
+    UNUSED_PARAM(auditTokens);
+#endif
+}
+
+void AudioSessionIOS::setCategory(CategoryType newCategory, Mode newMode, RouteSharingPolicy policy)
 {
 #if !HAVE(ROUTE_SHARING_POLICY_LONG_FORM_VIDEO)
     if (policy == RouteSharingPolicy::LongFormVideo)
         policy = RouteSharingPolicy::LongFormAudio;
 #endif
 
-    LOG(Media, "AudioSession::setCategory() - category = %s", convertEnumerationToString(newCategory).ascii().data());
+    auto identifier = LOGIDENTIFIER;
 
-    if (categoryOverride() !=  CategoryType::None && categoryOverride() != newCategory) {
-        LOG(Media, "AudioSession::setCategory() - override set, NOT changing");
+    AudioSessionCocoa::setCategory(newCategory, newMode, policy);
+
+    if (categoryOverride() != CategoryType::None && categoryOverride() != newCategory) {
+        ALWAYS_LOG(identifier, "override set, NOT changing");
         return;
     }
 
     NSString *categoryString;
-    NSString *categoryMode = AVAudioSessionModeDefault;
     AVAudioSessionCategoryOptions options = 0;
 
     switch (newCategory) {
@@ -169,8 +212,14 @@ void AudioSessionIOS::setCategory(CategoryType newCategory, RouteSharingPolicy p
         break;
     case CategoryType::PlayAndRecord:
         categoryString = AVAudioSessionCategoryPlayAndRecord;
-        categoryMode = AVAudioSessionModeVideoChat;
-        options |= AVAudioSessionCategoryOptionAllowBluetooth | AVAudioSessionCategoryOptionAllowBluetoothA2DP | AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowAirPlay;
+        // FIXME: Stop using `AVAudioSessionCategoryOptionAllowBluetooth` as it is deprecated (rdar://145294046).
+        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
+        options |= AVAudioSessionCategoryOptionAllowBluetooth | AVAudioSessionCategoryOptionAllowBluetoothA2DP | AVAudioSessionCategoryOptionAllowAirPlay;
+        ALLOW_DEPRECATED_DECLARATIONS_END
+#if ENABLE(MEDIA_STREAM)
+        if (!AVAudioSessionCaptureDeviceManager::singleton().isReceiverPreferredSpeaker())
+#endif
+            options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
         break;
     case CategoryType::AudioProcessing:
         categoryString = AVAudioSessionCategoryAudioProcessing;
@@ -180,11 +229,60 @@ void AudioSessionIOS::setCategory(CategoryType newCategory, RouteSharingPolicy p
         break;
     }
 
-    NSError *error = nil;
-    [[PAL::getAVAudioSessionClass() sharedInstance] setCategory:categoryString mode:categoryMode routeSharingPolicy:static_cast<AVAudioSessionRouteSharingPolicy>(policy) options:options error:&error];
-#if !PLATFORM(IOS_FAMILY_SIMULATOR) && !PLATFORM(MACCATALYST)
-    ASSERT(!error);
+    NSString *modeString = [&] {
+        switch (newMode) {
+        case Mode::MoviePlayback:
+            return AVAudioSessionModeMoviePlayback;
+        case Mode::VideoChat:
+#if ENABLE(MEDIA_STREAM)
+            if (AVAudioSessionCaptureDeviceManager::singleton().isReceiverPreferredSpeaker())
+                return AVAudioSessionModeVoiceChat;
 #endif
+            return AVAudioSessionModeVideoChat;
+        case Mode::Default:
+            break;
+        }
+        return AVAudioSessionModeDefault;
+    }();
+
+    bool needDeviceUpdate = false;
+#if ENABLE(MEDIA_STREAM)
+    auto preferredMicrophoneID = AVAudioSessionCaptureDeviceManager::singleton().preferredMicrophoneID();
+    if ((newCategory == CategoryType::PlayAndRecord || newCategory == CategoryType::RecordAudio) && !preferredMicrophoneID.isEmpty()) {
+        if (m_lastSetPreferredMicrophoneID != preferredMicrophoneID)
+            needDeviceUpdate = true;
+    } else
+        m_lastSetPreferredMicrophoneID = emptyString();
+#endif
+
+    AVAudioSession *session = [PAL::getAVAudioSessionClass() sharedInstance];
+    auto *currentCategory = [session category];
+    auto *currentMode = [session mode];
+    auto currentOptions = [session categoryOptions];
+    auto currentPolicy = [session routeSharingPolicy];
+    auto needSessionUpdate = ![currentCategory isEqualToString:categoryString] || ![currentMode isEqualToString:modeString] || currentOptions != options || currentPolicy != static_cast<AVAudioSessionRouteSharingPolicy>(policy);
+
+    if (!needSessionUpdate && !needDeviceUpdate)
+        return;
+
+    if (needSessionUpdate) {
+        ALWAYS_LOG(identifier, newCategory, ", mode = ", newMode);
+        NSError *error = nil;
+        [session setCategory:categoryString mode:modeString routeSharingPolicy:static_cast<AVAudioSessionRouteSharingPolicy>(policy) options:options error:&error];
+#if !PLATFORM(IOS_FAMILY_SIMULATOR) && !PLATFORM(MACCATALYST)
+        ASSERT(!error);
+#endif
+    }
+
+#if ENABLE(MEDIA_STREAM)
+    if (needDeviceUpdate) {
+        AVAudioSessionCaptureDeviceManager::singleton().configurePreferredMicrophone();
+        m_lastSetPreferredMicrophoneID = AVAudioSessionCaptureDeviceManager::singleton().preferredMicrophoneID();
+        ALWAYS_LOG(identifier, "prefered microphone = ", m_lastSetPreferredMicrophoneID);
+    }
+#endif
+    for (auto& observer : audioSessionCategoryChangedObservers())
+        observer(*this, category());
 }
 
 AudioSession::CategoryType AudioSessionIOS::category() const
@@ -203,6 +301,17 @@ AudioSession::CategoryType AudioSessionIOS::category() const
     if ([categoryString isEqual:AVAudioSessionCategoryAudioProcessing])
         return CategoryType::AudioProcessing;
     return CategoryType::None;
+}
+
+AudioSession::Mode AudioSessionIOS::mode() const
+{
+    AVAudioSession *session = [PAL::getAVAudioSessionClass() sharedInstance];
+    NSString *modeString = [session mode];
+    if ([modeString isEqual:AVAudioSessionModeVideoChat] || [modeString isEqual:AVAudioSessionModeVoiceChat])
+        return Mode::VideoChat;
+    if ([modeString isEqual:AVAudioSessionModeMoviePlayback])
+        return Mode::MoviePlayback;
+    return Mode::Default;
 }
 
 RouteSharingPolicy AudioSessionIOS::routeSharingPolicy() const
@@ -252,43 +361,29 @@ size_t AudioSessionIOS::maximumNumberOfOutputChannels() const
     return [[PAL::getAVAudioSessionClass() sharedInstance] maximumOutputNumberOfChannels];
 }
 
-bool AudioSessionIOS::tryToSetActiveInternal(bool active)
-{
-    // We need to deactivate the session on another queue because the AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation option
-    // means that AVAudioSession may synchronously unduck previously ducked clients. Activation needs to complete before this method
-    // returns, so do it synchronously on the same serial queue.
-    if (active) {
-        bool success = false;
-        m_workQueue->dispatchSync([&success] {
-            NSError *error = nil;
-            setEligibleForSmartRouting(true);
-            [[PAL::getAVAudioSessionClass() sharedInstance] setActive:YES withOptions:0 error:&error];
-            success = !error;
-        });
-        return success;
-    }
-
-    m_workQueue->dispatch([] {
-        NSError *error = nil;
-        [[PAL::getAVAudioSessionClass() sharedInstance] setActive:NO withOptions:0 error:&error];
-        setEligibleForSmartRouting(false);
-    });
-
-    return true;
-}
-
 size_t AudioSessionIOS::preferredBufferSize() const
 {
-    return [[PAL::getAVAudioSessionClass() sharedInstance] preferredIOBufferDuration] * sampleRate();
+// FIXME: rdar://138773933
+IGNORE_WARNINGS_BEGIN("objc-multiple-method-names")
+     return [[PAL::getAVAudioSessionClass() sharedInstance] preferredIOBufferDuration] * sampleRate();
+IGNORE_WARNINGS_END
 }
 
 void AudioSessionIOS::setPreferredBufferSize(size_t bufferSize)
 {
+    ALWAYS_LOG(LOGIDENTIFIER, bufferSize);
+
     NSError *error = nil;
     float duration = bufferSize / sampleRate();
     [[PAL::getAVAudioSessionClass() sharedInstance] setPreferredIOBufferDuration:duration error:&error];
     RELEASE_LOG_ERROR_IF(error, Media, "failed to set preferred buffer duration to %f with error: %@", duration, error.localizedDescription);
     ASSERT(!error);
+}
+
+size_t AudioSessionIOS::outputLatency() const
+{
+    auto latency = [[PAL::getAVAudioSessionClass() sharedInstance] outputLatency];
+    return latency * sampleRate();
 }
 
 bool AudioSessionIOS::isMuted() const
@@ -298,6 +393,63 @@ bool AudioSessionIOS::isMuted() const
 
 void AudioSessionIOS::handleMutedStateChange()
 {
+}
+
+void AudioSessionIOS::updateSpatialExperience()
+{
+#if PLATFORM(VISION)
+    AVAudioSessionSoundStageSize size = [&] {
+        switch (m_soundStageSize) {
+        case AudioSession::SoundStageSize::Automatic:
+            return AVAudioSessionSoundStageSizeAutomatic;
+        case AudioSession::SoundStageSize::Small:
+            return AVAudioSessionSoundStageSizeSmall;
+        case AudioSession::SoundStageSize::Medium:
+            return AVAudioSessionSoundStageSizeMedium;
+        case AudioSession::SoundStageSize::Large:
+            return AVAudioSessionSoundStageSizeLarge;
+        };
+        ASSERT_NOT_REACHED();
+        return AVAudioSessionSoundStageSizeAutomatic;
+    }();
+    NSError *error = nil;
+    AVAudioSession *session = [PAL::getAVAudioSessionClass() sharedInstance];
+    if (m_sceneIdentifier.length()) {
+        [session setIntendedSpatialExperience:AVAudioSessionSpatialExperienceHeadTracked options:@{
+            @"AVAudioSessionSpatialExperienceOptionSoundStageSize" : @(size),
+            @"AVAudioSessionSpatialExperienceOptionAnchoringStrategy" : @(AVAudioSessionAnchoringStrategyScene),
+            @"AVAudioSessionSpatialExperienceOptionSceneIdentifier" : (NSString *)m_sceneIdentifier
+        } error:&error];
+    } else {
+        [session setIntendedSpatialExperience:AVAudioSessionSpatialExperienceHeadTracked options:@{
+            @"AVAudioSessionSpatialExperienceOptionSoundStageSize" : @(size),
+            @"AVAudioSessionSpatialExperienceOptionAnchoringStrategy" : @(AVAudioSessionAnchoringStrategyAutomatic)
+        } error:&error];
+    }
+
+    if (error)
+        ALWAYS_LOG(error.localizedDescription.UTF8String);
+#endif
+}
+
+void AudioSessionIOS::setSceneIdentifier(const String& sceneIdentifier)
+{
+    if (m_sceneIdentifier == sceneIdentifier)
+        return;
+    m_sceneIdentifier = sceneIdentifier;
+    ALWAYS_LOG(LOGIDENTIFIER, sceneIdentifier);
+
+    updateSpatialExperience();
+}
+
+void AudioSessionIOS::setSoundStageSize(SoundStageSize size)
+{
+    if (m_soundStageSize == size)
+        return;
+    m_soundStageSize = size;
+    ALWAYS_LOG(LOGIDENTIFIER, size);
+
+    updateSpatialExperience();
 }
 
 }

@@ -25,9 +25,10 @@
 
 #pragma once
 
+#include "PlatformVideoColorSpace.h"
+#include "ScreenDataOverrides.h"
 #include <wtf/text/StringView.h>
 #include <wtf/text/WTFString.h>
-
 namespace WebCore {
 
 namespace VPConfigurationLevel {
@@ -126,46 +127,14 @@ struct VPCodecConfigurationRecord {
 };
 
 WEBCORE_EXPORT std::optional<VPCodecConfigurationRecord> parseVPCodecParameters(StringView codecString);
+WEBCORE_EXPORT String createVPCodecParametersString(const VPCodecConfigurationRecord&);
+std::optional<VPCodecConfigurationRecord> createVPCodecConfigurationRecordFromVPCC(std::span<const uint8_t>);
+void setConfigurationColorSpaceFromVP9ColorSpace(VPCodecConfigurationRecord&, uint8_t);
 
-struct ScreenDataOverrides {
-    double width { 0 };
-    double height { 0 };
-    double scale { 1 };
+enum class VPXCodec : uint8_t { Vp8, Vp9 };
+std::optional<VPCodecConfigurationRecord> vPCodecConfigurationRecordFromVPXByteStream(VPXCodec, std::span<const uint8_t>);
+Vector<uint8_t> vpcCFromVPCodecConfigurationRecord(const VPCodecConfigurationRecord&);
 
-    template<class Encoder>
-    void encode(Encoder& encoder) const
-    {
-        encoder << width;
-        encoder << height;
-        encoder << scale;
-    }
-
-    template <class Decoder>
-    static std::optional<ScreenDataOverrides> decode(Decoder& decoder)
-    {
-#define DECODE(name, type) \
-        std::optional<type> name; \
-        decoder >> name; \
-        if (!name) \
-            return std::nullopt; \
-
-        DECODE(width, double);
-        DECODE(height, double);
-        DECODE(scale, double);
-#undef DECODE
-
-    return {{ WTFMove(*width), WTFMove(*height), WTFMove(*scale) }};
-    }
-};
-
-inline bool operator==(const ScreenDataOverrides& a, const ScreenDataOverrides& b)
-{
-    return a.width == b.width && a.height == b.height && a.scale == b.scale;
-}
-
-inline bool operator!=(const ScreenDataOverrides& a, const ScreenDataOverrides& b)
-{
-    return !(a == b);
-}
+PlatformVideoColorSpace colorSpaceFromVPCodecConfigurationRecord(const VPCodecConfigurationRecord&);
 
 }

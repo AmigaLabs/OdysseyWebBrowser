@@ -42,12 +42,11 @@ class Worker;
 
 // A proxy to talk to the worker object.
 class WorkerObjectProxy : public WorkerReportingProxy {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(WorkerObjectProxy);
 public:
     virtual void postMessageToWorkerObject(MessageWithMessagePorts&&) = 0;
-    virtual void postTaskToWorkerObject(Function<void(Worker&)>&&) { };
-
-    virtual void confirmMessageFromWorkerObject(bool hasPendingActivity) = 0;
-    virtual void reportPendingActivity(bool hasPendingActivity) = 0;
+    virtual void postTaskToWorkerObject(Function<void(Worker&)>&&) { }
 
     // No need to notify the parent page context when dedicated workers are closing.
     void workerGlobalScopeClosed() override { }

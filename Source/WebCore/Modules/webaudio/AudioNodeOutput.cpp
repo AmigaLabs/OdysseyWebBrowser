@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2010, Google Inc. All rights reserved.
+ * Copyright (C) 2010-2014 Google Inc. All rights reserved.
+ * Copyright (C) 2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,12 +34,15 @@
 #include "AudioNodeInput.h"
 #include "AudioParam.h"
 #include "AudioUtilities.h"
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/Threading.h>
 
 namespace WebCore {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(AudioNodeOutput);
+
 AudioNodeOutput::AudioNodeOutput(AudioNode* node, unsigned numberOfChannels)
-    : m_node(node)
+    : m_node(node, EnableWeakPtrThreadingAssertions::No) // WebAudio code uses locking when accessing the context.
     , m_numberOfChannels(numberOfChannels)
     , m_desiredNumberOfChannels(numberOfChannels)
 {
@@ -174,6 +178,14 @@ void AudioNodeOutput::removeInput(AudioNodeInput* input)
     m_inputs.remove(input);
 }
 
+void AudioNodeOutput::forEachInputNode(Function<void(AudioNode&)>&& callback) const
+{
+    for (auto& node : m_inputs.values()) {
+        if (node)
+            callback(*node);
+    }
+}
+
 void AudioNodeOutput::disconnectAllInputs()
 {
     ASSERT(context().isGraphOwner());
@@ -229,9 +241,9 @@ void AudioNodeOutput::disable()
     ASSERT(context().isGraphOwner());
 
     if (m_isEnabled) {
+        m_isEnabled = false;
         for (auto& input : m_inputs.keys())
             input->disable(this);
-        m_isEnabled = false;
     }
 }
 
@@ -240,9 +252,9 @@ void AudioNodeOutput::enable()
     ASSERT(context().isGraphOwner());
 
     if (!m_isEnabled) {
+        m_isEnabled = true;
         for (auto& input : m_inputs.keys())
             input->enable(this);
-        m_isEnabled = true;
     }
 }
 

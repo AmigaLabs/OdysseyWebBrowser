@@ -25,49 +25,73 @@
 
 #pragma once
 
-#if ENABLE(LAYOUT_FORMATTING_CONTEXT)
-
-#include "LayoutContainerBox.h"
+#include "LayoutElementBox.h"
+#include "SecurityOrigin.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
-#include <wtf/IsoMalloc.h>
 #include <wtf/WeakPtr.h>
 
 namespace WebCore {
+namespace Layout {
+class LayoutState;
+}
+}
+
+namespace WTF {
+template<typename T> struct IsDeprecatedWeakRefSmartPointerException;
+template<> struct IsDeprecatedWeakRefSmartPointerException<WebCore::Layout::LayoutState> : std::true_type { };
+}
+
+namespace WebCore {
+
+class Document;
+
+namespace LayoutIntegration {
+enum class LogicalWidthType : uint8_t;
+enum class LogicalHeightType : uint8_t;
+}
 
 namespace Layout {
 
 class BlockFormattingState;
-class FlexFormattingState;
+class BoxGeometry;
 class FormattingContext;
 class FormattingState;
-class BoxGeometry;
-class InlineFormattingState;
+class InlineContentCache;
 class TableFormattingState;
 
 class LayoutState : public CanMakeWeakPtr<LayoutState> {
     WTF_MAKE_NONCOPYABLE(LayoutState);
-    WTF_MAKE_ISO_ALLOCATED(LayoutState);
+    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(LayoutState);
 public:
-    LayoutState(const Document&, const ContainerBox& rootContainer);
+    // Primary layout state has a direct geometry cache in layout boxes.
+    enum class Type { Primary, Secondary };
+
+    using FormattingContextLayoutFunction = Function<void(const ElementBox&, std::optional<LayoutUnit>, LayoutState&)>;
+    using FormattingContextLogicalWidthFunction = Function<LayoutUnit(const ElementBox&, LayoutIntegration::LogicalWidthType)>;
+    using FormattingContextLogicalHeightFunction = Function<LayoutUnit(const ElementBox&, LayoutIntegration::LogicalHeightType)>;
+
+    LayoutState(const Document&, const ElementBox& rootContainer, Type, FormattingContextLayoutFunction&&, FormattingContextLogicalWidthFunction&&, FormattingContextLogicalHeightFunction&&);
     ~LayoutState();
 
-    FormattingState& ensureFormattingState(const ContainerBox& formattingContextRoot);
-    InlineFormattingState& ensureInlineFormattingState(const ContainerBox& formattingContextRoot);
-    BlockFormattingState& ensureBlockFormattingState(const ContainerBox& formattingContextRoot);
-    TableFormattingState& ensureTableFormattingState(const ContainerBox& formattingContextRoot);
-    FlexFormattingState& ensureFlexFormattingState(const ContainerBox& formattingContextRoot);
+    Type type() const { return m_type; }
 
-    FormattingState& establishedFormattingState(const ContainerBox& formattingRoot) const;
-    InlineFormattingState& establishedInlineFormattingState(const ContainerBox& formattingContextRoot) const;
-    BlockFormattingState& establishedBlockFormattingState(const ContainerBox& formattingContextRoot) const;
-    TableFormattingState& establishedTableFormattingState(const ContainerBox& formattingContextRoot) const;
-    FlexFormattingState& establishedFlexFormattingState(const ContainerBox& formattingContextRoot) const;
+    void updateQuirksMode(const Document&);
 
-    FormattingState& formattingStateForBox(const Box&) const;
+    InlineContentCache& inlineContentCache(const ElementBox& formattingContextRoot);
 
-    bool hasFormattingState(const ContainerBox& formattingRoot) const;
-    bool hasInlineFormattingState(const ContainerBox& formattingRoot) const { return m_inlineFormattingStates.contains(&formattingRoot); }
+    BlockFormattingState& ensureBlockFormattingState(const ElementBox& formattingContextRoot);
+    TableFormattingState& ensureTableFormattingState(const ElementBox& formattingContextRoot);
+
+    BlockFormattingState& formattingStateForBlockFormattingContext(const ElementBox& blockFormattingContextRoot) const;
+    TableFormattingState& formattingStateForTableFormattingContext(const ElementBox& tableFormattingContextRoot) const;
+
+    FormattingState& formattingStateForFormattingContext(const ElementBox& formattingRoot) const;
+
+    void destroyBlockFormattingState(const ElementBox& formattingContextRoot);
+    void destroyInlineContentCache(const ElementBox& formattingContextRoot);
+
+    bool hasFormattingState(const ElementBox& formattingRoot) const;
 
 #ifndef NDEBUG
     void registerFormattingContext(const FormattingContext&);
@@ -84,61 +108,66 @@ public:
     bool inQuirksMode() const { return m_quirksMode == QuirksMode::Yes; }
     bool inLimitedQuirksMode() const { return m_quirksMode == QuirksMode::Limited; }
     bool inStandardsMode() const { return m_quirksMode == QuirksMode::No; }
+    const SecurityOrigin& securityOrigin() const { return m_securityOrigin.get(); }
 
-    bool hasRoot() const { return !!m_rootContainer; }
-    const ContainerBox& root() const { return *m_rootContainer; }
+    const ElementBox& root() const { return m_rootContainer; }
 
-    // LFC integration only. Full LFC has proper ICB access.
-    void setViewportSize(const LayoutSize&);
-    LayoutSize viewportSize() const;
-    enum IsIntegratedRootBoxFirstChild { Yes, No, NotApplicable };
-    IsIntegratedRootBoxFirstChild isIntegratedRootBoxFirstChild() const { return m_isIntegratedRootBoxFirstChild; }
-    void setIsIntegratedRootBoxFirstChild(bool);
-    bool shouldIgnoreTrailingLetterSpacing() const;
-    bool shouldNotSynthesizeInlineBlockBaseline() const;
+    void layoutWithFormattingContextForBox(const ElementBox&, std::optional<LayoutUnit> widthConstraint) const;
+    LayoutUnit logicalWidthWithFormattingContextForBox(const ElementBox&, LayoutIntegration::LogicalWidthType) const;
+    LayoutUnit logicalHeightWithFormattingContextForBox(const ElementBox&, LayoutIntegration::LogicalHeightType) const;
 
 private:
     void setQuirksMode(QuirksMode quirksMode) { m_quirksMode = quirksMode; }
     BoxGeometry& ensureGeometryForBoxSlow(const Box&);
 
-    HashMap<const ContainerBox*, std::unique_ptr<InlineFormattingState>> m_inlineFormattingStates;
-    HashMap<const ContainerBox*, std::unique_ptr<BlockFormattingState>> m_blockFormattingStates;
-    HashMap<const ContainerBox*, std::unique_ptr<TableFormattingState>> m_tableFormattingStates;
-    HashMap<const ContainerBox*, std::unique_ptr<FlexFormattingState>> m_flexFormattingStates;
+    const Type m_type;
 
-    std::unique_ptr<InlineFormattingState> m_rootInlineFormattingStateForIntegration;
+    UncheckedKeyHashMap<const ElementBox*, std::unique_ptr<InlineContentCache>> m_inlineContentCaches;
+
+    UncheckedKeyHashMap<const ElementBox*, std::unique_ptr<BlockFormattingState>> m_blockFormattingStates;
+    UncheckedKeyHashMap<const ElementBox*, std::unique_ptr<TableFormattingState>> m_tableFormattingStates;
 
 #ifndef NDEBUG
-    HashSet<const FormattingContext*> m_formattingContextList;
+    UncheckedKeyHashSet<const FormattingContext*> m_formattingContextList;
 #endif
-    HashMap<const Box*, std::unique_ptr<BoxGeometry>> m_layoutBoxToBoxGeometry;
+    UncheckedKeyHashMap<const Box*, std::unique_ptr<BoxGeometry>> m_layoutBoxToBoxGeometry;
     QuirksMode m_quirksMode { QuirksMode::No };
 
-    WeakPtr<const ContainerBox> m_rootContainer;
+    CheckedRef<const ElementBox> m_rootContainer;
+    Ref<SecurityOrigin> m_securityOrigin;
 
-    // LFC integration only.
-    LayoutSize m_viewportSize;
-    IsIntegratedRootBoxFirstChild m_isIntegratedRootBoxFirstChild { IsIntegratedRootBoxFirstChild::NotApplicable };
+    FormattingContextLayoutFunction m_formattingContextLayoutFunction;
+    FormattingContextLogicalWidthFunction m_formattingContextLogicalWidthFunction;
+    FormattingContextLogicalHeightFunction m_formattingContextLogicalHeightFunction;
 };
 
 inline bool LayoutState::hasBoxGeometry(const Box& layoutBox) const
 {
-    if (layoutBox.cachedGeometryForLayoutState(*this))
-        return true;
+    if (LIKELY(m_type == Type::Primary))
+        return !!layoutBox.m_cachedGeometryForPrimaryLayoutState;
+
     return m_layoutBoxToBoxGeometry.contains(&layoutBox);
 }
 
 inline BoxGeometry& LayoutState::ensureGeometryForBox(const Box& layoutBox)
 {
-    if (auto* boxGeometry = layoutBox.cachedGeometryForLayoutState(*this))
-        return *boxGeometry;
+    if (LIKELY(m_type == Type::Primary)) {
+        if (auto* boxGeometry = layoutBox.m_cachedGeometryForPrimaryLayoutState.get()) {
+            ASSERT(layoutBox.m_primaryLayoutState == this);
+            return *boxGeometry;
+        }
+    }
     return ensureGeometryForBoxSlow(layoutBox);
 }
 
 inline const BoxGeometry& LayoutState::geometryForBox(const Box& layoutBox) const
 {
-    if (auto* boxGeometry = layoutBox.cachedGeometryForLayoutState(*this))
-        return *boxGeometry;
+    if (LIKELY(m_type == Type::Primary)) {
+        ASSERT(layoutBox.m_primaryLayoutState == this);
+        return *layoutBox.m_cachedGeometryForPrimaryLayoutState;
+    }
+
+    ASSERT(layoutBox.m_primaryLayoutState != this);
     ASSERT(m_layoutBoxToBoxGeometry.contains(&layoutBox));
     return *m_layoutBoxToBoxGeometry.get(&layoutBox);
 }
@@ -152,19 +181,5 @@ inline void LayoutState::registerFormattingContext(const FormattingContext& form
 }
 #endif
 
-// These Layout::Box function are here to allow inlining.
-inline bool Box::canCacheForLayoutState(const LayoutState& layoutState) const
-{
-    return !m_cachedLayoutState || m_cachedLayoutState.get() == &layoutState;
-}
-
-inline BoxGeometry* Box::cachedGeometryForLayoutState(const LayoutState& layoutState) const
-{
-    if (m_cachedLayoutState.get() != &layoutState)
-        return nullptr;
-    return m_cachedGeometryForLayoutState.get();
-}
-
 }
 }
-#endif

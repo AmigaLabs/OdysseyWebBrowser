@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Apple Inc.  All rights reserved.
+ * Copyright (C) 2020-2024 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,41 +27,26 @@
 
 #if USE(CG)
 
+#include "GraphicsContextCG.h"
 #include "ImageBufferBackend.h"
 #include <wtf/Forward.h>
-
-typedef struct CGImage* CGImageRef;
 
 namespace WebCore {
 
 class WEBCORE_EXPORT ImageBufferCGBackend : public ImageBufferBackend {
 public:
+    ~ImageBufferCGBackend() override;
     static unsigned calculateBytesPerRow(const IntSize& backendSize);
 
-    RefPtr<Image> copyImage(BackingStoreCopy = CopyBackingStore, PreserveResolution = PreserveResolution::No) const override;
-    RefPtr<Image> sinkIntoImage(PreserveResolution) override;
-
-    void draw(GraphicsContext&, const FloatRect& destRect, const FloatRect& srcRect, const ImagePaintingOptions&) override;
-    void drawPattern(GraphicsContext&, const FloatRect& destRect, const FloatRect& srcRect, const AffineTransform& patternTransform, const FloatPoint& phase, const FloatSize& spacing, const ImagePaintingOptions&) override;
-    
-    void clipToMask(GraphicsContext&, const FloatRect& destRect) override;
-
-    String toDataURL(const String& mimeType, std::optional<double> quality, PreserveResolution) const override;
-    Vector<uint8_t> toData(const String& mimeType, std::optional<double> quality) const override;
+protected:
+    ImageBufferCGBackend(const Parameters&, std::unique_ptr<GraphicsContextCG>&& = nullptr);
+    void applyBaseTransform(GraphicsContextCG&) const;
 
     std::unique_ptr<ThreadSafeImageBufferFlusher> createFlusher() override;
 
-    static constexpr bool isOriginAtBottomLeftCorner = true;
+    String debugDescription() const override;
 
-protected:
-    using ImageBufferBackend::ImageBufferBackend;
-
-    static RetainPtr<CGColorSpaceRef> contextColorSpace(const GraphicsContext&);
-    void setupContext() const;
-
-    virtual void prepareToDrawIntoContext(GraphicsContext&);
-
-    virtual RetainPtr<CGImageRef> copyCGImageForEncoding(CFStringRef destinationUTI, PreserveResolution) const;
+    std::unique_ptr<GraphicsContextCG> m_context;
 };
 
 } // namespace WebCore

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2020-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,6 +25,10 @@
 
 #pragma once
 
+#include <wtf/Compiler.h>
+
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 #include <wtf/Assertions.h>
 #include <wtf/Atomics.h>
 #include <wtf/ExportMacros.h>
@@ -33,23 +37,33 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/threads/Signals.h>
 
-#if defined(USE_SYSTEM_MALLOC) && USE_SYSTEM_MALLOC
+#if USE(SYSTEM_MALLOC)
 namespace Gigacage {
-constexpr size_t reservedSlotsForGigacageConfig = 0;
-constexpr size_t reservedBytesForGigacageConfig = 0;
+// The first 4 slots are reserved for the use of the ExecutableAllocator and additionalReservedSlots.
+constexpr size_t reservedSlotsForGigacageConfig = 4;
+constexpr size_t reservedBytesForGigacageConfig = reservedSlotsForGigacageConfig * sizeof(uint64_t);
 }
 #else
 #include <bmalloc/GigacageConfig.h>
 #endif
 
-#if ENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
 namespace WebConfig {
 
 using Slot = uint64_t;
 extern "C" WTF_EXPORT_PRIVATE Slot g_config[];
 
+constexpr size_t reservedSlotsForExecutableAllocator = 2;
+constexpr size_t additionalReservedSlots = 2;
+
+enum ReservedConfigByteOffset {
+    ReservedByteForAllocationProfiling,
+    ReservedByteForAllocationProfilingMode,
+    NumberOfReservedConfigBytes
+};
+
+static_assert(NumberOfReservedConfigBytes <= sizeof(Slot) * additionalReservedSlots);
+
 } // namespace WebConfig
-#endif // ENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
 
 namespace WTF {
 
@@ -58,6 +72,9 @@ constexpr size_t ConfigSizeToProtect = std::max(CeilingOnPageSize, 16 * KB);
 
 struct Config {
     WTF_EXPORT_PRIVATE static void permanentlyFreeze();
+    WTF_EXPORT_PRIVATE static void initialize();
+    WTF_EXPORT_PRIVATE static void finalize();
+    WTF_EXPORT_PRIVATE static void disableFreezingForTesting();
 
     struct AssertNotFrozenScope {
         AssertNotFrozenScope();
@@ -68,7 +85,12 @@ struct Config {
     // initial value is 0 / null / falsy because Config is instantiated
     // as a global singleton.
 
+    uintptr_t lowestAccessibleAddress;
+    uintptr_t highestAccessibleAddress;
+
     bool isPermanentlyFrozen;
+    bool disabledFreezingForTesting;
+    bool useSpecialAbortForExtraSecurityImplications;
 #if PLATFORM(COCOA)
     bool disableForwardingVPrintfStdErrToOSLog;
 #endif
@@ -78,15 +100,11 @@ struct Config {
     bool isThreadSuspendResumeSignalConfigured;
     int sigThreadSuspendResume;
 #endif
-#if OS(UNIX)
     SignalHandlers signalHandlers;
-#endif
     PtrTagLookup* ptrTagLookupHead;
 
     uint64_t spaceForExtensions[1];
 };
-
-#if ENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
 
 constexpr size_t startSlotOfWTFConfig = Gigacage::reservedSlotsForGigacageConfig;
 constexpr size_t startOffsetOfWTFConfig = startSlotOfWTFConfig * sizeof(WebConfig::Slot);
@@ -100,15 +118,13 @@ static_assert(roundUpToMultipleOf<alignmentOfWTFConfig>(startOffsetOfWTFConfig) 
 
 WTF_EXPORT_PRIVATE void setPermissionsOfConfigPage();
 
-#define g_wtfConfig (*bitwise_cast<WTF::Config*>(&WebConfig::g_config[WTF::startSlotOfWTFConfig]))
+// Workaround to localize bounds safety warnings to this file.
+// FIXME: Use real types to make materializing WTF::Config* bounds-safe and type-safe.
+inline Config* addressOfWTFConfig() { return std::bit_cast<Config*>(&WebConfig::g_config[startSlotOfWTFConfig]); }
 
-#else // not ENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
+#define g_wtfConfig (*WTF::addressOfWTFConfig())
 
-inline void setPermissionsOfConfigPage() { }
-
-extern "C" WTF_EXPORT_PRIVATE Config g_wtfConfig;
-
-#endif // ENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
+constexpr size_t offsetOfWTFConfigLowestAccessibleAddress = offsetof(WTF::Config, lowestAccessibleAddress);
 
 ALWAYS_INLINE Config::AssertNotFrozenScope::AssertNotFrozenScope()
 {
@@ -124,6 +140,5 @@ ALWAYS_INLINE Config::AssertNotFrozenScope::~AssertNotFrozenScope()
 
 } // namespace WTF
 
-#if !ENABLE(UNIFIED_AND_FREEZABLE_CONFIG_RECORD)
-using WTF::g_wtfConfig;
-#endif
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
+

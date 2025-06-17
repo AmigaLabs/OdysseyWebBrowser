@@ -29,70 +29,70 @@
 TEST(WTF, SortedArraySet)
 {
     static constexpr ComparableCaseFoldingASCIILiteral caseFoldingArray[] = {
-        "_",
-        "a",
-        "c",
-        "delightful",
-        "q",
-        "q_",
-        "r/y",
-        "s-z",
+        "_"_s,
+        "a"_s,
+        "c"_s,
+        "delightful"_s,
+        "q"_s,
+        "q_"_s,
+        "r/y"_s,
+        "s-z"_s,
     };
     static constexpr SortedArraySet caseFoldingSet { caseFoldingArray };
 
     static constexpr ComparableLettersLiteral lettersArray[] = {
-        "a",
-        "c",
-        "delightful",
-        "q",
-        "r/y",
-        "s-z",
+        "a"_s,
+        "c"_s,
+        "delightful"_s,
+        "q"_s,
+        "r/y"_s,
+        "s-z"_s,
     };
     static constexpr SortedArraySet lettersSet { lettersArray };
 
     static constexpr ComparableLettersLiteral scriptTypesArray[] = {
-        "application/ecmascript",
-        "application/javascript",
-        "application/x-ecmascript",
-        "application/x-javascript",
-        "text/ecmascript",
-        "text/javascript",
-        "text/javascript1.0",
-        "text/javascript1.1",
-        "text/javascript1.2",
-        "text/javascript1.3",
-        "text/javascript1.4",
-        "text/javascript1.5",
-        "text/jscript",
-        "text/livescript",
-        "text/x-ecmascript",
-        "text/x-javascript",
+        "application/ecmascript"_s,
+        "application/javascript"_s,
+        "application/x-ecmascript"_s,
+        "application/x-javascript"_s,
+        "text/ecmascript"_s,
+        "text/javascript"_s,
+        "text/javascript1.0"_s,
+        "text/javascript1.1"_s,
+        "text/javascript1.2"_s,
+        "text/javascript1.3"_s,
+        "text/javascript1.4"_s,
+        "text/javascript1.5"_s,
+        "text/jscript"_s,
+        "text/livescript"_s,
+        "text/x-ecmascript"_s,
+        "text/x-javascript"_s,
     };
     static constexpr SortedArraySet scriptTypesSet { scriptTypesArray };
 
-    EXPECT_FALSE(caseFoldingSet.contains(""));
-    EXPECT_TRUE(caseFoldingSet.contains("_"));
-    EXPECT_TRUE(caseFoldingSet.contains("c"));
-    EXPECT_TRUE(caseFoldingSet.contains("delightful"));
-    EXPECT_FALSE(caseFoldingSet.contains("d"));
-    EXPECT_TRUE(caseFoldingSet.contains("q_"));
-    EXPECT_FALSE(caseFoldingSet.contains("q__"));
+    EXPECT_FALSE(caseFoldingSet.contains(""_s));
+    EXPECT_TRUE(caseFoldingSet.contains("_"_s));
+    EXPECT_TRUE(caseFoldingSet.contains("c"_s));
+    EXPECT_TRUE(caseFoldingSet.contains("delightful"_s));
+    EXPECT_FALSE(caseFoldingSet.contains("d"_s));
+    EXPECT_TRUE(caseFoldingSet.contains("q_"_s));
+    EXPECT_FALSE(caseFoldingSet.contains("q__"_s));
 
-    EXPECT_FALSE(lettersSet.contains(""));
-    EXPECT_FALSE(lettersSet.contains("_"));
-    EXPECT_TRUE(lettersSet.contains("c"));
-    EXPECT_TRUE(lettersSet.contains("delightful"));
-    EXPECT_FALSE(lettersSet.contains("d"));
-    EXPECT_FALSE(lettersSet.contains("q_"));
-    EXPECT_FALSE(lettersSet.contains("q__"));
+    EXPECT_FALSE(lettersSet.contains(""_s));
+    EXPECT_FALSE(lettersSet.contains("_"_s));
+    EXPECT_TRUE(lettersSet.contains("c"_s));
+    EXPECT_TRUE(lettersSet.contains("delightful"_s));
+    EXPECT_FALSE(lettersSet.contains("d"_s));
+    EXPECT_FALSE(lettersSet.contains("q_"_s));
+    EXPECT_FALSE(lettersSet.contains("q__"_s));
 
-    ASSERT_TRUE(scriptTypesSet.contains("text/javascript"));
-    ASSERT_TRUE(scriptTypesSet.contains("TEXT/JAVASCRIPT"));
-    ASSERT_TRUE(scriptTypesSet.contains("application/javascript"));
-    ASSERT_TRUE(scriptTypesSet.contains("application/ecmascript"));
-    ASSERT_TRUE(scriptTypesSet.contains("application/x-javascript"));
-    ASSERT_TRUE(scriptTypesSet.contains("application/x-ecmascript"));
-    ASSERT_FALSE(scriptTypesSet.contains("text/plain"));
-    ASSERT_FALSE(scriptTypesSet.contains("application/json"));
-    ASSERT_FALSE(scriptTypesSet.contains("foo/javascript"));
+    ASSERT_TRUE(scriptTypesSet.contains("text/javascript"_s));
+    ASSERT_TRUE(scriptTypesSet.contains("TEXT/JAVASCRIPT"_s));
+    ASSERT_TRUE(scriptTypesSet.contains("application/javascript"_s));
+    ASSERT_TRUE(scriptTypesSet.contains("application/ecmascript"_s));
+    ASSERT_TRUE(scriptTypesSet.contains("application/x-javascript"_s));
+    ASSERT_TRUE(scriptTypesSet.contains("application/x-ecmascript"_s));
+    ASSERT_FALSE(scriptTypesSet.contains("text/plain"_s));
+    ASSERT_FALSE(scriptTypesSet.contains("application/json"_s));
+    ASSERT_FALSE(scriptTypesSet.contains("foo/javascript"_s));
 }

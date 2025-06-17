@@ -38,9 +38,10 @@ namespace WebCore {
 class ResourceHandle;
 class ResourceHandleClient;
 class ResourceHandleInternal;
+class SharedBuffer;
 
 class CurlResourceHandleDelegate final : public CurlRequestClient {
-    WTF_MAKE_NONCOPYABLE(CurlResourceHandleDelegate); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     CurlResourceHandleDelegate(ResourceHandle&);
 
@@ -48,19 +49,18 @@ public:
 
     // CurlRequestClient methods
 
-    void ref() final;
-    void deref() final;
+    void ref() const final;
+    void deref() const final;
 
     void curlDidSendData(CurlRequest&, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) final;
     void curlDidReceiveResponse(CurlRequest&, CurlResponse&&) final;
-    void curlDidReceiveBuffer(CurlRequest&, Ref<SharedBuffer>&&) final;
+    void curlDidReceiveData(CurlRequest&, Ref<SharedBuffer>&&) final;
     void curlDidComplete(CurlRequest&, NetworkLoadMetrics&&) final;
     void curlDidFailWithError(CurlRequest&, ResourceError&&, CertificateInfo&&) final;
-#if PLATFORM(MUI)
-    void curlDidCancel(CurlRequest&) final;
-#endif
 
 private:
+    void updateNetworkLoadMetrics(NetworkLoadMetrics&);
+
     ResourceHandle& m_handle;
     ResourceResponse m_response;
 

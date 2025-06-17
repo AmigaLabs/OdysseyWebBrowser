@@ -53,6 +53,16 @@ MemoryIndex::MemoryIndex(const IDBIndexInfo& info, MemoryObjectStore& objectStor
 
 MemoryIndex::~MemoryIndex() = default;
 
+WeakPtr<MemoryObjectStore> MemoryIndex::objectStore()
+{
+    return m_objectStore;
+}
+
+RefPtr<MemoryObjectStore> MemoryIndex::protectedObjectStore()
+{
+    return m_objectStore.get();
+}
+
 void MemoryIndex::cursorDidBecomeClean(MemoryIndexCursor& cursor)
 {
     m_cleanCursors.add(&cursor);
@@ -65,7 +75,7 @@ void MemoryIndex::cursorDidBecomeDirty(MemoryIndexCursor& cursor)
 
 void MemoryIndex::objectStoreCleared()
 {
-    auto transaction = m_objectStore.writeTransaction();
+    auto transaction = m_objectStore->writeTransaction();
     ASSERT(transaction);
 
     transaction->indexCleared(*this, WTFMove(m_records));
@@ -89,16 +99,16 @@ void MemoryIndex::notifyCursorsOfAllRecordsChanged()
 
 void MemoryIndex::clearIndexValueStore()
 {
-    ASSERT(m_objectStore.writeTransaction());
-    ASSERT(m_objectStore.writeTransaction()->isAborting());
+    ASSERT(m_objectStore->writeTransaction());
+    ASSERT(m_objectStore->writeTransaction()->isAborting());
 
     m_records = nullptr;
 }
 
 void MemoryIndex::replaceIndexValueStore(std::unique_ptr<IndexValueStore>&& valueStore)
 {
-    ASSERT(m_objectStore.writeTransaction());
-    ASSERT(m_objectStore.writeTransaction()->isAborting());
+    ASSERT(m_objectStore->writeTransaction());
+    ASSERT(m_objectStore->writeTransaction()->isAborting());
 
     m_records = WTFMove(valueStore);
 }
@@ -124,7 +134,7 @@ IDBGetResult MemoryIndex::getResultForKeyRange(IndexedDB::IndexRecordType type, 
     if (!keyValue)
         return { };
 
-    return type == IndexedDB::IndexRecordType::Key ? IDBGetResult(*keyValue) : IDBGetResult(*keyValue, m_objectStore.valueForKeyRange(*keyValue), m_objectStore.info().keyPath());
+    return type == IndexedDB::IndexRecordType::Key ? IDBGetResult(*keyValue) : IDBGetResult(*keyValue, m_objectStore->valueForKeyRange(*keyValue), m_objectStore->info().keyPath());
 }
 
 uint64_t MemoryIndex::countForKeyRange(const IDBKeyRangeData& inRange)
@@ -154,7 +164,7 @@ void MemoryIndex::getAllRecords(const IDBKeyRangeData& keyRangeData, std::option
 {
     LOG(IndexedDB, "MemoryIndex::getAllRecords");
 
-    result = { type, m_objectStore.info().keyPath() };
+    result = { type, m_objectStore->info().keyPath() };
 
     if (!m_records)
         return;
@@ -179,7 +189,7 @@ void MemoryIndex::getAllRecords(const IDBKeyRangeData& keyRangeData, std::option
         for (auto& keyValue : allValues) {
             result.addKey(IDBKeyData(keyValue));
             if (type == IndexedDB::GetAllType::Values)
-                result.addValue(m_objectStore.valueForKeyRange(keyValue));
+                result.addValue(m_objectStore->valueForKeyRange(keyValue));
         }
 
         currentCount += allValues.size();
@@ -208,7 +218,7 @@ IDBError MemoryIndex::putIndexKey(const IDBKeyData& valueKey, const IndexKey& in
     if (m_info.unique()) {
         for (auto& key : keys) {
             if (m_records->contains(key))
-                return IDBError(ConstraintError);
+                return IDBError(ExceptionCode::ConstraintError);
         }
     }
 

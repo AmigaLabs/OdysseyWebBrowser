@@ -27,19 +27,21 @@
 
 #if ENABLE(ENCRYPTED_MEDIA)
 
-#include "DOMWindow.h"
 #include "Document.h"
-#include "FeaturePolicy.h"
-#include "Frame.h"
 #include "HTMLIFrameElement.h"
+#include "LocalDOMWindow.h"
+#include "LocalFrame.h"
 #include "MediaKeySystemRequest.h"
 #include "Page.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
-const char* MediaKeySystemController::supplementName()
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaKeySystemController);
+
+ASCIILiteral MediaKeySystemController::supplementName()
 {
-    return "MediaKeySystemController";
+    return "MediaKeySystemController"_s;
 }
 
 MediaKeySystemController* MediaKeySystemController::from(Page* page)
@@ -48,7 +50,7 @@ MediaKeySystemController* MediaKeySystemController::from(Page* page)
 }
 
 MediaKeySystemController::MediaKeySystemController(MediaKeySystemClient& client)
-    : m_client(makeWeakPtr(client))
+    : m_client(client)
 {
 }
 
@@ -60,13 +62,13 @@ MediaKeySystemController::~MediaKeySystemController()
 
 void provideMediaKeySystemTo(Page& page, MediaKeySystemClient& client)
 {
-    MediaKeySystemController::provideTo(&page, MediaKeySystemController::supplementName(), makeUnique<MediaKeySystemController>(client));
+    Supplement<Page>::provideTo(&page, MediaKeySystemController::supplementName(), makeUnique<MediaKeySystemController>(client));
 }
 
 void MediaKeySystemController::logRequestMediaKeySystemDenial(Document& document)
 {
-    if (auto* window = document.domWindow())
-        window->printErrorMessage(makeString("Not allowed to access MediaKeySystem."));
+    if (RefPtr window = document.domWindow())
+        window->printErrorMessage("Not allowed to access MediaKeySystem."_str);
 }
 
 } // namespace WebCore

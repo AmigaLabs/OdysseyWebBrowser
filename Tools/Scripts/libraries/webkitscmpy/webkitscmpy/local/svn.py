@@ -1,4 +1,4 @@
-# Copyright (C) 2020, 2021 Apple Inc. All rights reserved.
+# Copyright (C) 2020-2023 Apple Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -59,7 +59,7 @@ class Svn(Scm):
 
         @property
         def path(self):
-            return os.path.join(self.repo.root_path, '.svn', 'webkitscmpy-cache.json')
+            return os.path.join(self.repo.common_directory, 'webkitscmpy-cache.json')
 
         def populate(self, branch=None):
             branch = branch or self.repo.default_branch
@@ -86,17 +86,13 @@ class Svn(Scm):
                 else:
                     branch_arg = '^/branches/{}'.format(branch)
 
-                kwargs = dict()
-                if sys.version_info >= (3, 0):
-                    kwargs = dict(encoding='utf-8')
-
                 self._last_populated[branch] = time.time()
                 log = subprocess.Popen(
                     [self.repo.executable(), 'log', '-q', branch_arg],
                     cwd=self.repo.root_path,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    **kwargs
+                    encoding='utf-8',
                 )
                 if log.poll():
                     raise self.repo.Exception("Failed to construct branch history for '{}'".format(branch))
@@ -126,7 +122,7 @@ class Svn(Scm):
                         self._data[branch].insert(pos, revision)
                     line = log.stdout.readline()
             finally:
-                if log:
+                if log and log.poll() is None:
                     log.kill()
 
             if default_count:
@@ -214,15 +210,13 @@ class Svn(Scm):
     def is_checkout(cls, path):
         return run([cls.executable(), 'info'], cwd=path, capture_output=True).returncode == 0
 
-    def __init__(self, path, dev_branches=None, prod_branches=None, contributors=None, id=None, cached=True):
-        super(Svn, self).__init__(path, dev_branches=dev_branches, prod_branches=prod_branches, contributors=contributors, id=id)
-
-        self._root_path = self.path
+    def __init__(self, path, dev_branches=None, prod_branches=None, contributors=None, id=None, cached=True, classifier=None,):
+        self._root_path = path
         self._root_path = self.info(cached=False).get('Working Copy Root Path')
-
         if not self.root_path:
             raise OSError('Provided path {} is not a svn repository'.format(path))
 
+        super(Svn, self).__init__(path, dev_branches=dev_branches, prod_branches=prod_branches, contributors=contributors, id=id, classifier=classifier,)
         self.cache = self.Cache(self) if cached else None
 
     @decorators.Memoize(cached=False)
@@ -258,6 +252,10 @@ class Svn(Scm):
         return self._root_path
 
     @property
+    def common_directory(self):
+        return os.path.join(self.root_path, '.svn')
+
+    @property
     def default_branch(self):
         return 'trunk'
 
@@ -279,7 +277,6 @@ class Svn(Scm):
     def branches(self):
         return ['trunk'] + self.list('branches')
 
-    @property
     def tags(self):
         return self.list('tags')
 
@@ -526,7 +523,7 @@ class Svn(Scm):
                 cwd=self.root_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                **(dict(encoding='utf-8') if sys.version_info > (3, 0) else dict())
+                encoding='utf-8',
             )
             if log.poll():
                 raise self.Exception('Failed to find commits between {} and {} on {}'.format(begin, end, branch_arg))
@@ -570,7 +567,7 @@ class Svn(Scm):
             yield previous
 
         finally:
-            if log:
+            if log and log.poll() is None:
                 log.kill()
 
     def checkout(self, argument):

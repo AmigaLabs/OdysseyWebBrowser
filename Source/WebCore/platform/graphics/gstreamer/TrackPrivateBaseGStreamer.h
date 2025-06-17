@@ -27,6 +27,7 @@
 
 #if ENABLE(VIDEO) && USE(GSTREAMER)
 
+#include "AbortableTaskQueue.h"
 #include "GStreamerCommon.h"
 #include "MainThreadNotifier.h"
 #include <gst/gst.h>
@@ -36,6 +37,7 @@
 namespace WebCore {
 
 class TrackPrivateBase;
+using TrackID = uint64_t;
 
 class TrackPrivateBaseGStreamer {
 public:
@@ -48,8 +50,6 @@ public:
         Unknown
     };
 
-    WEBCORE_EXPORT static AtomString generateUniquePlaybin2StreamID(TrackType, unsigned index);
-
     GstPad* pad() const { return m_pad.get(); }
     void setPad(GRefPtr<GstPad>&&);
 
@@ -57,21 +57,37 @@ public:
 
     virtual void setActive(bool) { }
 
+    unsigned index() { return m_index; };
     void setIndex(unsigned index) { m_index =  index; }
 
-    GstStream* stream() { return m_stream.get(); }
+    GstStream* stream() const { return m_stream.get(); }
 
     // Used for MSE, where the initial caps of the pad are relevant for initializing the matching pad in the
     // playback pipeline.
     void setInitialCaps(GRefPtr<GstCaps>&& caps) { m_initialCaps = WTFMove(caps); }
     const GRefPtr<GstCaps>& initialCaps() { return m_initialCaps; }
 
+    TrackID streamId() const { return m_id; }
+    const AtomString& gstStreamId() const { return m_gstStreamId; }
+
+    virtual void updateConfigurationFromCaps(GRefPtr<GstCaps>&&) { }
+
 protected:
     TrackPrivateBaseGStreamer(TrackType, TrackPrivateBase*, unsigned index, GRefPtr<GstPad>&&, bool shouldHandleStreamStartEvent);
-    TrackPrivateBaseGStreamer(TrackType, TrackPrivateBase*, unsigned index, GRefPtr<GstStream>&&);
+    TrackPrivateBaseGStreamer(TrackType, TrackPrivateBase*, unsigned index, GRefPtr<GstPad>&&, TrackID);
+    TrackPrivateBaseGStreamer(TrackType, TrackPrivateBase*, unsigned index, GstStream*);
 
     void notifyTrackOfTagsChanged();
     void notifyTrackOfStreamChanged();
+
+    GstObject* objectForLogging() const;
+
+    virtual void tagsChanged(GRefPtr<GstTagList>&&) { }
+    virtual void capsChanged(TrackID, GRefPtr<GstCaps>&&) { }
+    void installUpdateConfigurationHandlers();
+    virtual void updateConfigurationFromTags(GRefPtr<GstTagList>&&) { }
+
+    static GRefPtr<GstTagList> getAllTags(const GRefPtr<GstPad>&);
 
     enum MainThreadNotification {
         TagsChanged = 1 << 1,
@@ -83,30 +99,35 @@ protected:
     unsigned m_index;
     AtomString m_label;
     AtomString m_language;
-    AtomString m_id;
+    AtomString m_gstStreamId;
+    // Track ID parsed from stream-id.
+    TrackID m_id;
     GRefPtr<GstPad> m_pad;
     GRefPtr<GstPad> m_bestUpstreamPad;
     GRefPtr<GstStream> m_stream;
     unsigned long m_eventProbe { 0 };
     GRefPtr<GstCaps> m_initialCaps;
+    AbortableTaskQueue m_taskQueue;
+
+    // Track ID inferred from container-specific-track-id tag.
+    std::optional<TrackID> m_trackID;
+    bool updateTrackIDFromTags(const GRefPtr<GstTagList>&);
 
 private:
     bool getLanguageCode(GstTagList* tags, AtomString& value);
-
+    static AtomString generateUniquePlaybin2StreamID(TrackType, unsigned index);
+    static char prefixForType(TrackType);
     template<class StringType>
     bool getTag(GstTagList* tags, const gchar* tagName, StringType& value);
 
     void streamChanged();
-
-    static void activeChangedCallback(TrackPrivateBaseGStreamer*);
-    static void tagsChangedCallback(TrackPrivateBaseGStreamer*);
-
     void tagsChanged();
 
     TrackType m_type;
     TrackPrivateBase* m_owner;
     Lock m_tagMutex;
     GRefPtr<GstTagList> m_tags;
+    bool m_shouldUsePadStreamId { true };
     bool m_shouldHandleStreamStartEvent { true };
 };
 

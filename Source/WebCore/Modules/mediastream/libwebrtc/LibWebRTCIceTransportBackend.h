@@ -24,10 +24,11 @@
 
 #pragma once
 
-#if ENABLE(WEB_RTC)
+#if ENABLE(WEB_RTC) && USE(LIBWEBRTC)
 
 #include "LibWebRTCMacros.h"
 #include "RTCIceTransportBackend.h"
+#include <wtf/TZoneMalloc.h>
 
 ALLOW_UNUSED_PARAMETERS_BEGIN
 
@@ -44,7 +45,7 @@ namespace WebCore {
 class LibWebRTCIceTransportBackendObserver;
 
 class LibWebRTCIceTransportBackend final : public RTCIceTransportBackend {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(LibWebRTCIceTransportBackend);
 public:
     explicit LibWebRTCIceTransportBackend(rtc::scoped_refptr<webrtc::IceTransportInterface>&&);
     ~LibWebRTCIceTransportBackend();
@@ -52,7 +53,7 @@ public:
 private:
     // RTCIceTransportBackend
     const void* backend() const final { return m_backend.get(); }
-    void registerClient(Client&) final;
+    void registerClient(RTCIceTransportBackendClient&) final;
     void unregisterClient() final;
 
     rtc::scoped_refptr<webrtc::IceTransportInterface> m_backend;
@@ -61,4 +62,4 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(WEB_RTC)
+#endif // ENABLE(WEB_RTC) && USE(LIBWEBRTC)

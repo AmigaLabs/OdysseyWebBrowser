@@ -35,9 +35,10 @@
 #include "ScriptController.h"
 #include "ScriptExecutionContext.h"
 #include <algorithm>
-#include <wtf/IsoMallocInlines.h>
 #include <wtf/MathExtras.h>
 #include <wtf/Scope.h>
+#include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMallocInlines.h>
 
 #if PLATFORM(IOS_FAMILY)
 #include "ScriptController.h"
@@ -45,13 +46,12 @@
 
 namespace WebCore {
 
-WTF_MAKE_ISO_ALLOCATED_IMPL(AudioScheduledSourceNode);
+WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(AudioScheduledSourceNode);
 
 AudioScheduledSourceNode::AudioScheduledSourceNode(BaseAudioContext& context, NodeType type)
     : AudioNode(context, type)
     , ActiveDOMObject(context.scriptExecutionContext())
 {
-    suspendIfNeeded();
 }
 
 void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize, AudioBus& outputBus, size_t& quantumFrameOffset, size_t& nonSilentFramesToProcess, double& startFrameOffset)
@@ -116,7 +116,7 @@ void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize, Aud
     // Zero any initial frames representing silence leading up to a rendering start time in the middle of the quantum.
     if (quantumFrameOffset) {
         for (unsigned i = 0; i < outputBus.numberOfChannels(); ++i)
-            memset(outputBus.channel(i)->mutableData(), 0, sizeof(float) * quantumFrameOffset);
+            zeroSpan(outputBus.channel(i)->mutableSpan().first(quantumFrameOffset));
     }
 
     // Handle silence after we're done playing.
@@ -138,7 +138,7 @@ void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize, Aud
                 nonSilentFramesToProcess -= framesToZero;
 
             for (unsigned i = 0; i < outputBus.numberOfChannels(); ++i)
-                memset(outputBus.channel(i)->mutableData() + zeroStartFrame, 0, sizeof(float) * framesToZero);
+                zeroSpan(outputBus.channel(i)->mutableSpan().subspan(zeroStartFrame, framesToZero));
         }
 
         finish();
@@ -151,10 +151,10 @@ ExceptionOr<void> AudioScheduledSourceNode::startLater(double when)
     ALWAYS_LOG(LOGIDENTIFIER, when);
 
     if (m_playbackState != UNSCHEDULED_STATE)
-        return Exception { InvalidStateError, "Cannot call start() more than once"_s };
+        return Exception { ExceptionCode::InvalidStateError, "Cannot call start() more than once"_s };
 
     if (!std::isfinite(when) || when < 0)
-        return Exception { RangeError, "when value should be positive"_s };
+        return Exception { ExceptionCode::RangeError, "when value should be positive"_s };
 
     context().sourceNodeWillBeginPlayback(*this);
 
@@ -170,10 +170,10 @@ ExceptionOr<void> AudioScheduledSourceNode::stopLater(double when)
     ALWAYS_LOG(LOGIDENTIFIER, when);
 
     if (m_playbackState == UNSCHEDULED_STATE)
-        return Exception { InvalidStateError, "cannot call stop without calling start first."_s };
+        return Exception { ExceptionCode::InvalidStateError, "cannot call stop without calling start first."_s };
 
     if (!std::isfinite(when) || when < 0)
-        return Exception { RangeError, "when value should be positive"_s };
+        return Exception { ExceptionCode::RangeError, "when value should be positive"_s };
 
     m_endTime = when;
 
@@ -200,7 +200,7 @@ void AudioScheduledSourceNode::finish()
     // Heap allocations are forbidden on the audio thread for performance reasons so we need to
     // explicitly allow the following allocation(s).
     DisableMallocRestrictionsForCurrentThreadScope disableMallocRestrictions;
-    callOnMainThread([this, protectedThis = makeRef(*this), pendingActivity = makePendingActivity(*this)] {
+    callOnMainThread([this, protectedThis = Ref { *this }, pendingActivity = makePendingActivity(*this)] {
         if (context().isStopped())
             return;
         this->dispatchEvent(Event::create(eventNames().endedEvent, Event::CanBubble::No, Event::IsCancelable::No));

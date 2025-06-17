@@ -35,6 +35,15 @@
 #include <wtf/MonotonicTime.h>
 #include <wtf/WeakPtr.h>
 
+namespace WebCore {
+class MediaSessionCoordinatorClient;
+}
+
+namespace WTF {
+template<typename T> struct IsDeprecatedWeakRefSmartPointerException;
+template<> struct IsDeprecatedWeakRefSmartPointerException<WebCore::MediaSessionCoordinatorClient> : std::true_type { };
+}
+
 namespace WTF {
 class Logger;
 }
@@ -71,20 +80,20 @@ public:
     virtual void playbackStateChanged(MediaSessionPlaybackState) = 0;
     virtual void trackIdentifierChanged(const String&) = 0;
 
-    void setLogger(const WTF::Logger&, const void*);
+    void setLogger(const Logger&, uint64_t);
     virtual void setClient(WeakPtr<MediaSessionCoordinatorClient> client) { m_client = client;}
 
 protected:
     explicit MediaSessionCoordinatorPrivate() = default;
 
-    const WTF::Logger* loggerPtr() const { return m_logger.get(); }
-    const void* logIdentifier() const { return m_logIdentifier; }
+    const Logger* loggerPtr() const { return m_logger.get(); }
+    uint64_t logIdentifier() const { return m_logIdentifier; }
 
     WeakPtr<MediaSessionCoordinatorClient> client() const { return m_client; }
 
 private:
-    RefPtr<const WTF::Logger> m_logger;
-    const void* m_logIdentifier;
+    RefPtr<const Logger> m_logger;
+    uint64_t m_logIdentifier { 0 };
     WeakPtr<MediaSessionCoordinatorClient> m_client;
 };
 

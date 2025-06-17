@@ -26,6 +26,8 @@
 #include "config.h"
 #include <wtf/ConcurrentPtrHashSet.h>
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+
 namespace WTF {
 
 ConcurrentPtrHashSet::ConcurrentPtrHashSet()
@@ -33,9 +35,7 @@ ConcurrentPtrHashSet::ConcurrentPtrHashSet()
     initialize();
 }
 
-ConcurrentPtrHashSet::~ConcurrentPtrHashSet()
-{
-}
+ConcurrentPtrHashSet::~ConcurrentPtrHashSet() = default;
 
 void ConcurrentPtrHashSet::deleteOldTables()
 {
@@ -208,3 +208,4 @@ void ConcurrentPtrHashSet::Table::initializeStub()
 
 } // namespace WTF
 
+WTF_ALLOW_UNSAFE_BUFFER_USAGE_END

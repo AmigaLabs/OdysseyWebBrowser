@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,10 +28,15 @@
 
 #import "WKSecurityOriginInternal.h"
 #import "WKWebViewInternal.h"
+#import "WebFrameProxy.h"
+#import "WebPageProxy.h"
 #import "_WKFrameHandleInternal.h"
+#import <WebCore/CertificateInfo.h>
 #import <WebCore/WebCoreObjCExtras.h>
 
 @implementation WKFrameInfo
+
+WK_OBJECT_DISABLE_DISABLE_KVC_IVAR_ACCESS;
 
 - (void)dealloc
 {
@@ -61,7 +66,7 @@
 - (WKSecurityOrigin *)securityOrigin
 {
     auto& data = _frameInfo->securityOrigin();
-    auto apiOrigin = API::SecurityOrigin::create(data.protocol, data.host, data.port);
+    auto apiOrigin = API::SecurityOrigin::create(data);
     return retainPtr(wrapper(apiOrigin.get())).autorelease();
 }
 
@@ -89,12 +94,67 @@
 
 - (_WKFrameHandle *)_handle
 {
-    return retainPtr(wrapper(_frameInfo->handle())).autorelease();
+    return wrapper(_frameInfo->handle()).autorelease();
 }
 
 - (_WKFrameHandle *)_parentFrameHandle
 {
-    return retainPtr(wrapper(_frameInfo->parentFrameHandle())).autorelease();
+    return wrapper(_frameInfo->parentFrameHandle()).autorelease();
+}
+
+- (NSUUID *)_documentIdentifier
+{
+    return _frameInfo->documentID()->object();
+}
+
+- (pid_t)_processIdentifier
+{
+    return _frameInfo->processID();
+}
+
+- (BOOL)_isLocalFrame
+{
+    return _frameInfo->isLocalFrame();
+}
+
+- (BOOL)_isFocused
+{
+    return _frameInfo->isFocused();
+}
+
+- (BOOL)_errorOccurred
+{
+    return _frameInfo->errorOccurred();
+}
+
+- (NSString *)_title
+{
+    return _frameInfo->title();
+}
+
+- (BOOL)_isScrollable
+{
+    return _frameInfo->frameInfoData().frameMetrics.isScrollable == WebKit::IsScrollable::Yes;
+}
+
+- (CGSize)_contentSize
+{
+    return (CGSize)_frameInfo->frameInfoData().frameMetrics.contentSize;
+}
+
+- (CGSize)_visibleContentSize
+{
+    return (CGSize)_frameInfo->frameInfoData().frameMetrics.visibleContentSize;
+}
+
+- (CGSize)_visibleContentSizeExcludingScrollbars
+{
+    return (CGSize)_frameInfo->frameInfoData().frameMetrics.visibleContentSizeExcludingScrollbars;
+}
+
+- (SecTrustRef)_serverTrust
+{
+    return _frameInfo->frameInfoData().certificateInfo.trust().get();
 }
 
 @end

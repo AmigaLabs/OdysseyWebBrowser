@@ -22,26 +22,31 @@
 
 #if ENABLE(WEBXR) && USE(OPENXR)
 
-constexpr const char* OPENXR_INPUT_HAND_PATH { "/user/hand/" };
-constexpr const char* OPENXR_INPUT_GRIP_PATH { "/input/grip/pose" };
-constexpr const char* OPENXR_INPUT_AIM_PATH { "/input/aim/pose" };
+#include <wtf/TZoneMallocInlines.h>
+#include <wtf/text/MakeString.h>
+
+constexpr auto OPENXR_INPUT_HAND_PATH { "/user/hand/"_s };
+constexpr auto OPENXR_INPUT_GRIP_PATH { "/input/grip/pose"_s };
+constexpr auto OPENXR_INPUT_AIM_PATH { "/input/aim/pose"_s };
 
 using namespace WebCore;
 
 namespace PlatformXR {
 
-std::unique_ptr<OpenXRInputSource> OpenXRInputSource::create(XrInstance instance, XrSession session, XRHandedness handeness, InputSourceHandle handle)
+WTF_MAKE_TZONE_ALLOCATED_IMPL(OpenXRInputSource);
+
+std::unique_ptr<OpenXRInputSource> OpenXRInputSource::create(XrInstance instance, XrSession session, XRHandedness handedness, InputSourceHandle handle)
 {
-    auto input = std::unique_ptr<OpenXRInputSource>(new OpenXRInputSource(instance, session, handeness, handle));
+    auto input = std::unique_ptr<OpenXRInputSource>(new OpenXRInputSource(instance, session, handedness, handle));
     if (XR_FAILED(input->initialize()))
         return nullptr;
     return input;
 }
 
-OpenXRInputSource::OpenXRInputSource(XrInstance instance, XrSession session, XRHandedness handeness, InputSourceHandle handle)
+OpenXRInputSource::OpenXRInputSource(XrInstance instance, XrSession session, XRHandedness handedness, InputSourceHandle handle)
     : m_instance(instance)
     , m_session(session)
-    , m_handeness(handeness)
+    , m_handedness(handedness)
     , m_handle(handle)
 {
 }
@@ -58,13 +63,13 @@ OpenXRInputSource::~OpenXRInputSource()
 
 XrResult OpenXRInputSource::initialize()
 {
-    String handenessName = handenessToString(m_handeness);
-    m_subactionPathName = OPENXR_INPUT_HAND_PATH + handenessName;
+    String handednessName = handednessToString(m_handedness);
+    m_subactionPathName = makeString(OPENXR_INPUT_HAND_PATH, handednessName);
     RETURN_RESULT_IF_FAILED(xrStringToPath(m_instance, m_subactionPathName.utf8().data(), &m_subactionPath), m_instance);
 
     // Initialize Action Set.
-    String prefix = "input_" + handenessName;
-    String actionSetName = prefix + "_action_set";
+    auto prefix = makeString("input_"_s, handednessName);
+    auto actionSetName = makeString(prefix, "_action_set"_s);
     auto createInfo =  createStructure<XrActionSetCreateInfo, XR_TYPE_ACTION_SET_CREATE_INFO>();
     std::strncpy(createInfo.actionSetName, actionSetName.utf8().data(), XR_MAX_ACTION_SET_NAME_SIZE - 1);
     std::strncpy(createInfo.localizedActionSetName, actionSetName.utf8().data(), XR_MAX_ACTION_SET_NAME_SIZE - 1);
@@ -72,9 +77,9 @@ XrResult OpenXRInputSource::initialize()
     RETURN_RESULT_IF_FAILED(xrCreateActionSet(m_instance, &createInfo, &m_actionSet), m_instance);
 
     // Initialize pose actions and spaces.
-    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_POSE_INPUT, prefix + "_grip", m_gripAction), m_instance);
+    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_POSE_INPUT, makeString(prefix, "_grip"_s), m_gripAction), m_instance);
     RETURN_RESULT_IF_FAILED(createSpaceAction(m_gripAction, m_gripSpace), m_instance);
-    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_POSE_INPUT, prefix + "_pointer", m_pointerAction), m_instance);
+    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_POSE_INPUT, makeString(prefix, "_pointer"_s), m_pointerAction), m_instance);
     RETURN_RESULT_IF_FAILED(createSpaceAction(m_pointerAction, m_pointerSpace), m_instance);
 
     // Initialize button actions.
@@ -87,7 +92,7 @@ XrResult OpenXRInputSource::initialize()
     // Initialize axes.
     for (auto axisType : openXRAxisTypes) {
         XrAction axisAction = XR_NULL_HANDLE;
-        String name = prefix + "_axis_" + axisTypetoString(axisType);
+        auto name = makeString(prefix, "_axis_"_s, axisTypetoString(axisType));
         RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_VECTOR2F_INPUT, name, axisAction), m_instance, false);
         m_axisActions.add(axisType, axisAction);
     }
@@ -99,65 +104,52 @@ XrResult OpenXRInputSource::suggestBindings(SuggestedBindings& bindings) const
 {
     for (auto& profile : openXRInputProfiles) {
         // Suggest binding for pose actions.
-        RETURN_RESULT_IF_FAILED(createBinding(profile.path, m_gripAction, m_subactionPathName + OPENXR_INPUT_GRIP_PATH, bindings), m_instance);
-        RETURN_RESULT_IF_FAILED(createBinding(profile.path, m_pointerAction, m_subactionPathName + OPENXR_INPUT_AIM_PATH, bindings), m_instance);
+        RETURN_RESULT_IF_FAILED(createBinding(profile.path, m_gripAction, makeString(m_subactionPathName, OPENXR_INPUT_GRIP_PATH), bindings), m_instance);
+        RETURN_RESULT_IF_FAILED(createBinding(profile.path, m_pointerAction, makeString(m_subactionPathName, OPENXR_INPUT_AIM_PATH), bindings), m_instance);
 
-        // Suggest binding for button actions.
-        const OpenXRButton* buttons;
-        size_t buttonsSize;
-        if (m_handeness == XRHandedness::Left) {
-            buttons = profile.leftButtons;
-            buttonsSize = profile.leftButtonsSize;
-        } else {
-            buttons = profile.rightButtons;
-            buttonsSize = profile.rightButtonsSize;
-        }
-
-        for (size_t i = 0; i < buttonsSize; ++i) {
-            const auto& button = buttons[i];
+        for (const auto& button : m_handedness == XRHandedness::Left ? profile.leftButtons : profile.rightButtons) {
             const auto& actions = m_buttonActions.get(button.type);
             if (button.press) {
                 ASSERT(actions.press != XR_NULL_HANDLE);
-                RETURN_RESULT_IF_FAILED(createBinding(profile.path, actions.press, m_subactionPathName + button.press, bindings), m_instance);
+                RETURN_RESULT_IF_FAILED(createBinding(profile.path, actions.press, makeString(m_subactionPathName, unsafeSpan(button.press)), bindings), m_instance);
             }
             if (button.touch) {
                 ASSERT(actions.touch != XR_NULL_HANDLE);
-                RETURN_RESULT_IF_FAILED(createBinding(profile.path, actions.touch, m_subactionPathName + button.touch, bindings), m_instance);
+                RETURN_RESULT_IF_FAILED(createBinding(profile.path, actions.touch, makeString(m_subactionPathName, unsafeSpan(button.touch)), bindings), m_instance);
             }
             if (button.value) {
                 ASSERT(actions.value != XR_NULL_HANDLE);
-                RETURN_RESULT_IF_FAILED(createBinding(profile.path, actions.value, m_subactionPathName + button.value, bindings), m_instance);
+                RETURN_RESULT_IF_FAILED(createBinding(profile.path, actions.value, makeString(m_subactionPathName, unsafeSpan(button.value)), bindings), m_instance);
             }
         }
 
         // Suggest binding for axis actions.
-        for (size_t i = 0; i < profile.axesSize; ++i) {
-            const auto& axis = profile.axes[i];
+        for (const auto& axis : profile.axes) {
             auto action = m_axisActions.get(axis.type);
             ASSERT(action != XR_NULL_HANDLE);
-            RETURN_RESULT_IF_FAILED(createBinding(profile.path, action, m_subactionPathName + axis.path, bindings), m_instance);
+            RETURN_RESULT_IF_FAILED(createBinding(profile.path, action, makeString(m_subactionPathName, unsafeSpan(axis.path)), bindings), m_instance);
         }
     }
 
     return XR_SUCCESS;
 }
 
-std::optional<Device::FrameData::InputSource> OpenXRInputSource::getInputSource(XrSpace localSpace, const XrFrameState& frameState) const
+std::optional<FrameData::InputSource> OpenXRInputSource::getInputSource(XrSpace localSpace, const XrFrameState& frameState) const
 {
-    Device::FrameData::InputSource data;
-    data.handeness = m_handeness;
+    FrameData::InputSource data;
+    data.handedness = m_handedness;
     data.handle = m_handle;
     data.targetRayMode = XRTargetRayMode::TrackedPointer;
     data.profiles = m_profiles;
 
     // Pose transforms.
     getPose(m_pointerSpace, localSpace, frameState, data.pointerOrigin);
-    Device::FrameData::InputSourcePose gripPose;
+    FrameData::InputSourcePose gripPose;
     if (XR_SUCCEEDED(getPose(m_gripSpace, localSpace, frameState, gripPose)))
         data.gripOrigin = gripPose;
 
     // Buttons.
-    Vector<std::optional<Device::FrameData::InputSourceButton>> buttons;
+    Vector<std::optional<FrameData::InputSourceButton>> buttons;
     for (auto& type : openXRButtonTypes) 
         buttons.append(getButton(type));
 
@@ -216,8 +208,8 @@ XrResult OpenXRInputSource::updateInteractionProfile()
     m_profiles.clear();
     for (auto& profile : openXRInputProfiles) {
         if (!strncmp(profile.path, buffer, writtenCount)) {
-            for (size_t i = 0; i < profile.profileIdsSize; ++i)
-                m_profiles.append(String::fromUTF8(profile.profileIds[i]));
+            for (const auto& id : profile.profileIds)
+                m_profiles.append(String::fromUTF8(id));
             break;
         }
     }
@@ -250,11 +242,11 @@ XrResult OpenXRInputSource::createAction(XrActionType actionType, const String& 
 
 XrResult OpenXRInputSource::createButtonActions(OpenXRButtonType type, const String& prefix, OpenXRButtonActions& actions) const
 {
-    auto name = prefix + "_button_" + buttonTypeToString(type);
+    auto name = makeString(prefix, "_button_"_s, buttonTypeToString(type));
 
-    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, name + "_press", actions.press), m_instance);
-    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, name + "_touch", actions.touch), m_instance);
-    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_FLOAT_INPUT, name + "_value", actions.value), m_instance);
+    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, makeString(name, "_press"_s), actions.press), m_instance);
+    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_BOOLEAN_INPUT, makeString(name, "_touch"_s), actions.touch), m_instance);
+    RETURN_RESULT_IF_FAILED(createAction(XR_ACTION_TYPE_FLOAT_INPUT, makeString(name, "_value"_s), actions.value), m_instance);
     
     return XR_SUCCESS;
 }
@@ -277,7 +269,7 @@ XrResult OpenXRInputSource::createBinding(const char* profilePath, XrAction acti
     return XR_SUCCESS;
 }
 
-XrResult OpenXRInputSource::getPose(XrSpace space, XrSpace baseSpace, const XrFrameState& frameState, Device::FrameData::InputSourcePose& pose) const
+XrResult OpenXRInputSource::getPose(XrSpace space, XrSpace baseSpace, const XrFrameState& frameState, FrameData::InputSourcePose& pose) const
 {
     auto location = createStructure<XrSpaceLocation, XR_TYPE_SPACE_LOCATION>();
     RETURN_RESULT_IF_FAILED(xrLocateSpace(space, baseSpace, frameState.predictedDisplayTime, &location), m_instance);
@@ -289,13 +281,13 @@ XrResult OpenXRInputSource::getPose(XrSpace space, XrSpace baseSpace, const XrFr
     return XR_SUCCESS;
 }
 
-std::optional<Device::FrameData::InputSourceButton> OpenXRInputSource::getButton(OpenXRButtonType buttonType) const
+std::optional<FrameData::InputSourceButton> OpenXRInputSource::getButton(OpenXRButtonType buttonType) const
 {
     auto it = m_buttonActions.find(buttonType);
     if (it == m_buttonActions.end())
         return std::nullopt;
 
-    Device::FrameData::InputSourceButton result;
+    FrameData::InputSourceButton result;
     bool hasValue = false;
     auto& actions = it->value;
 

@@ -1,7 +1,7 @@
 /*
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2005, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002-2025 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,16 +24,19 @@
 
 #include "CSSParser.h"
 #include "CSSSelector.h"
+#include "CSSSerializationContext.h"
 #include "CSSStyleSheet.h"
+#include "CommonAtomStrings.h"
 #include "Document.h"
 #include "PropertySetCSSStyleDeclaration.h"
 #include "StyleProperties.h"
 #include "StyleRule.h"
+#include <wtf/text/MakeString.h>
 
 namespace WebCore {
 
 CSSPageRule::CSSPageRule(StyleRulePage& pageRule, CSSStyleSheet* parent)
-    : CSSRule(parent)
+    : CSSGroupingRule(pageRule, parent)
     , m_pageRule(pageRule)
 {
 }
@@ -54,17 +57,17 @@ CSSStyleDeclaration& CSSPageRule::style()
 String CSSPageRule::selectorText() const
 {
     if (auto* selector = m_pageRule->selector()) {
-        String pageSpecification = selector->selectorText();
-        if (!pageSpecification.isEmpty() && pageSpecification != starAtom())
-            return makeString("@page ", pageSpecification);
+        if (!selector->selectorText().isEmpty())
+            return selector->selectorText();
     }
-    return "@page"_s;
+    return ""_s;
 }
 
 void CSSPageRule::setSelectorText(const String& selectorText)
 {
     CSSParser parser(parserContext());
-    auto selectorList = parser.parseSelector(selectorText);
+    auto* sheet = parentStyleSheet();
+    auto selectorList = parser.parseSelectorList(selectorText, sheet ? &sheet->contents() : nullptr);
     if (!selectorList)
         return;
 
@@ -75,9 +78,11 @@ void CSSPageRule::setSelectorText(const String& selectorText)
 
 String CSSPageRule::cssText() const
 {
-    if (auto declarations = m_pageRule->properties().asText(); !declarations.isEmpty())
-        return makeString(selectorText(), " { ", declarations, " }");
-    return makeString(selectorText(), " { }");
+    auto selector = selectorText();
+    auto optionalSpace = selector.isEmpty() ? ""_s : " "_s;
+    if (auto declarations = m_pageRule->properties().asText(CSS::defaultSerializationContext()); !declarations.isEmpty())
+        return makeString("@page"_s, optionalSpace, selector, " { "_s, declarations, " }"_s);
+    return makeString("@page"_s, optionalSpace, selector, " { }"_s);
 }
 
 void CSSPageRule::reattach(StyleRuleBase& rule)

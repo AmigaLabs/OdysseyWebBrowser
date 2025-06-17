@@ -30,13 +30,14 @@
 
 #pragma once
 
-#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
-
-#include <wtf/text/WTFString.h>
+#include <wtf/CheckedPtr.h>
+#include <wtf/FastMalloc.h>
 
 namespace WebCore {
 
-class DateTimeChooserClient {
+class DateTimeChooserClient : public CanMakeCheckedPtr<DateTimeChooserClient> {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(DateTimeChooserClient);
 public:
     virtual ~DateTimeChooserClient() = default;
 
@@ -47,5 +48,3 @@ public:
 };
 
 } // namespace WebCore
-
-#endif // ENABLE(DATE_AND_TIME_INPUT_TYPES)

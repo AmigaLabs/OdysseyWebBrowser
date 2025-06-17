@@ -32,33 +32,33 @@
 #include "AXLogger.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
+#include "DocumentInlines.h"
+#include "TextRecognitionOptions.h"
 
 namespace WebCore {
 
-AXImage::AXImage(RenderImage* renderer)
-    : AccessibilityRenderObject(renderer)
+AXImage::AXImage(AXID axID, RenderImage& renderer)
+    : AccessibilityRenderObject(axID, renderer)
 {
 }
 
-Ref<AXImage> AXImage::create(RenderImage* renderer)
+Ref<AXImage> AXImage::create(AXID axID, RenderImage& renderer)
 {
-    return adoptRef(*new AXImage(renderer));
+    return adoptRef(*new AXImage(axID, renderer));
 }
 
-AccessibilityRole AXImage::roleValue() const
+AccessibilityRole AXImage::determineAccessibilityRole()
 {
-    auto ariaRole = ariaRoleAttribute();
-    if (ariaRole != AccessibilityRole::Unknown)
-        return ariaRole;
-
+    if ((m_ariaRole = determineAriaRoleAttribute()) != AccessibilityRole::Unknown)
+        return m_ariaRole;
     return AccessibilityRole::Image;
 }
 
 std::optional<AXCoreObject::AccessibilityChildrenVector> AXImage::imageOverlayElements()
 {
-    AXTRACE("AXImage::imageOverlayElements");
+    AXTRACE("AXImage::imageOverlayElements"_s);
 
-    auto& children = this->children();
+    const auto& children = this->unignoredChildren();
     if (children.size())
         return children;
 
@@ -71,12 +71,12 @@ std::optional<AXCoreObject::AccessibilityChildrenVector> AXImage::imageOverlayEl
     if (!element)
         return std::nullopt;
 
-    page->chrome().client().requestTextRecognition(*element, [] (RefPtr<Element>&& imageOverlayHost) {
+    page->chrome().client().requestTextRecognition(*element, { }, [] (RefPtr<Element>&& imageOverlayHost) {
         if (!imageOverlayHost)
             return;
 
-        if (auto* axObjectCache = imageOverlayHost->document().existingAXObjectCache())
-            axObjectCache->postNotification(imageOverlayHost.get(), AXObjectCache::AXImageOverlayChanged);
+        if (CheckedPtr axObjectCache = imageOverlayHost->document().existingAXObjectCache())
+            axObjectCache->postNotification(imageOverlayHost.get(), AXNotification::ImageOverlayChanged);
     });
 #endif
 

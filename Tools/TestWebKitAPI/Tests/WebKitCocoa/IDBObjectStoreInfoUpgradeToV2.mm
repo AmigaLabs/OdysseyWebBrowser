@@ -25,6 +25,7 @@
 
 #import "config.h"
 
+#import "DeprecatedGlobalValues.h"
 #import "PlatformUtilities.h"
 #import "Test.h"
 #import <WebCore/SQLiteFileSystem.h>
@@ -36,9 +37,6 @@
 #import <WebKit/_WKProcessPoolConfiguration.h>
 #import <WebKit/_WKUserStyleSheet.h>
 #import <wtf/RetainPtr.h>
-
-static bool receivedScriptMessage;
-static RetainPtr<WKScriptMessage> lastScriptMessage;
 
 @interface IDBObjectStoreInfoUpgradeToV2MessageHandler : NSObject <WKScriptMessageHandler>
 @end
@@ -61,9 +59,9 @@ TEST(IndexedDB, IDBObjectStoreInfoUpgradeToV2)
     [configuration.get().websiteDataStore _terminateNetworkProcess];
 
     // Copy database files with old ObjectStoreInfo schema to the database directory.
-    NSURL *url1 = [[NSBundle mainBundle] URLForResource:@"IDBObjectStoreInfoUpgrade" withExtension:@"sqlite3" subdirectory:@"TestWebKitAPI.resources"];
+    NSURL *url1 = [NSBundle.test_resourcesBundle URLForResource:@"IDBObjectStoreInfoUpgrade" withExtension:@"sqlite3"];
 
-    NSString *hash = WebCore::SQLiteFileSystem::computeHashForFileName("objectstoreinfo-upgrade-test");
+    NSString *hash = WebCore::SQLiteFileSystem::computeHashForFileName("objectstoreinfo-upgrade-test"_s);
     NSString *originDirectory = @"~/Library/WebKit/com.apple.WebKit.TestWebKitAPI/WebsiteData/IndexedDB/v1/file__0/";
     NSString *databaseDirectory = [[originDirectory stringByAppendingString:hash] stringByExpandingTildeInPath];
     NSURL *targetURL = [NSURL fileURLWithPath:databaseDirectory];
@@ -74,7 +72,7 @@ TEST(IndexedDB, IDBObjectStoreInfoUpgradeToV2)
 
     RetainPtr<WKWebView> webView = adoptNS([[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 800, 600) configuration:configuration.get()]);
 
-    NSURLRequest *request = [NSURLRequest requestWithURL:[[NSBundle mainBundle] URLForResource:@"IDBObjectStoreInfoUpgradeToV2" withExtension:@"html" subdirectory:@"TestWebKitAPI.resources"]];
+    NSURLRequest *request = [NSURLRequest requestWithURL:[NSBundle.test_resourcesBundle URLForResource:@"IDBObjectStoreInfoUpgradeToV2" withExtension:@"html"]];
     [webView loadRequest:request];
 
     TestWebKitAPI::Util::run(&receivedScriptMessage);

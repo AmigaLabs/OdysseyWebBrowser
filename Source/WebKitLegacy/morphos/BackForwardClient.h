@@ -3,6 +3,7 @@
 #include <WebCore/BackForwardClient.h>
 #include <wtf/HashSet.h>
 #include <wtf/Vector.h>
+#include <wtf/WeakPtr.h>
 
 namespace WebCore {
 	class HistoryItem;
@@ -24,14 +25,17 @@ public:
     }
 	
     void addItem(WTF::Ref<WebCore::HistoryItem>&&) override;
+    void setChildItem(WebCore::BackForwardFrameItemIdentifier, Ref<WebCore::HistoryItem>&&) override;
     void goBack();
     void goForward();
     void goToItem(WebCore::HistoryItem&) override;
+    void goToProvisionalItem(const WebCore::HistoryItem&) override;
+    void clearProvisionalItem(const WebCore::HistoryItem&) override;
 	
     WTF::RefPtr<WebCore::HistoryItem> backItem();
     WTF::RefPtr<WebCore::HistoryItem> currentItem();
     WTF::RefPtr<WebCore::HistoryItem> forwardItem();
-    WTF::RefPtr<WebCore::HistoryItem> itemAtIndex(int) override;
+    WTF::RefPtr<WebCore::HistoryItem> itemAtIndex(int, WebCore::FrameIdentifier) override;
 
     void backListWithLimit(int, HistoryItemVector&);
     void forwardListWithLimit(int, HistoryItemVector&);
@@ -42,7 +46,7 @@ public:
     void setEnabled(bool);
     unsigned backListCount() const final;
     unsigned forwardListCount() const final;
-    bool containsItem(WebCore::HistoryItem*);
+    bool containsItem(const WebCore::HistoryItem&) const final;
 
     void close() override;
     bool closed();
@@ -53,11 +57,12 @@ public:
 private:
     explicit BackForwardClientMorphOS(WebPage *page);
 
-	WebPage *m_page;
+	WeakPtr<WebPage> m_page;
     HistoryItemVector m_entries;
     HistoryItemHashSet m_entryHash;
     unsigned m_current;
     unsigned m_capacity;
+    unsigned m_provisional;
     bool m_closed;
     bool m_enabled;
 };

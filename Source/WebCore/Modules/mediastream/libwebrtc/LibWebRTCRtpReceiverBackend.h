@@ -29,24 +29,25 @@
 #include "LibWebRTCMacros.h"
 #include "RTCRtpReceiverBackend.h"
 #include <webrtc/api/scoped_refptr.h>
+#include <wtf/TZoneMalloc.h>
 
 namespace webrtc {
 class RtpReceiverInterface;
 }
 
 namespace WebCore {
-
+class Document;
 class RealtimeMediaSource;
 
 class LibWebRTCRtpReceiverBackend final : public RTCRtpReceiverBackend {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(LibWebRTCRtpReceiverBackend);
 public:
     explicit LibWebRTCRtpReceiverBackend(rtc::scoped_refptr<webrtc::RtpReceiverInterface>&&);
     ~LibWebRTCRtpReceiverBackend();
 
     webrtc::RtpReceiverInterface* rtcReceiver() { return m_rtcReceiver.get(); }
 
-    Ref<RealtimeMediaSource> createSource();
+    Ref<RealtimeMediaSource> createSource(Document&);
 
 private:
     RTCRtpParameters getParameters() final;

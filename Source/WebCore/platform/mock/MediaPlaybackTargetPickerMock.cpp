@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2022 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,8 +32,11 @@
 #include "Logging.h"
 #include "MediaPlaybackTargetMock.h"
 #include "WebMediaSessionManager.h"
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaPlaybackTargetPickerMock);
 
 static const Seconds timerInterval { 100_ms };
 
@@ -58,10 +61,10 @@ bool MediaPlaybackTargetPickerMock::externalOutputDeviceAvailable()
 Ref<MediaPlaybackTarget> MediaPlaybackTargetPickerMock::playbackTarget()
 {
     LOG(Media, "MediaPlaybackTargetPickerMock::playbackTarget");
-    return WebCore::MediaPlaybackTargetMock::create(m_deviceName, m_state);
+    return WebCore::MediaPlaybackTargetMock::create(MediaPlaybackTargetContextMock { m_deviceName, m_state });
 }
 
-void MediaPlaybackTargetPickerMock::showPlaybackTargetPicker(PlatformView*, const FloatRect&, bool checkActiveRoute, bool useDarkAppearance, bool)
+void MediaPlaybackTargetPickerMock::showPlaybackTargetPicker(PlatformView*, const FloatRect&, bool checkActiveRoute, bool useDarkAppearance)
 {
     if (!client() || m_showingMenu)
         return;
@@ -74,7 +77,7 @@ void MediaPlaybackTargetPickerMock::showPlaybackTargetPicker(PlatformView*, cons
     LOG(Media, "MediaPlaybackTargetPickerMock::showPlaybackTargetPicker - checkActiveRoute = %i, useDarkAppearance = %i", (int)checkActiveRoute, (int)useDarkAppearance);
 
     m_showingMenu = true;
-    callOnMainThread([this, weakThis = makeWeakPtr(*this)] {
+    callOnMainThread([this, weakThis = WeakPtr { *this }] {
         if (!weakThis)
             return;
 
@@ -87,7 +90,7 @@ void MediaPlaybackTargetPickerMock::startingMonitoringPlaybackTargets()
 {
     LOG(Media, "MediaPlaybackTargetPickerMock::startingMonitoringPlaybackTargets");
 
-    callOnMainThread([this, weakThis = makeWeakPtr(*this)] {
+    callOnMainThread([this, weakThis = WeakPtr { *this }] {
         if (!weakThis)
             return;
 
@@ -114,7 +117,7 @@ void MediaPlaybackTargetPickerMock::setState(const String& deviceName, MediaPlay
 {
     LOG(Media, "MediaPlaybackTargetPickerMock::setState - name = %s, state = 0x%x", deviceName.utf8().data(), (unsigned)state);
 
-    callOnMainThread([this, weakThis = makeWeakPtr(*this), state, deviceName] {
+    callOnMainThread([this, weakThis = WeakPtr { *this }, state, deviceName] {
         if (!weakThis)
             return;
 

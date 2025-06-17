@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2019 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2023 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,18 +31,30 @@
 #import "RemoteLayerTreeDrawingAreaProxy.h"
 #import "RemoteLayerTreeViews.h"
 #import "RemoteScrollingCoordinatorProxy.h"
+#import "SystemPreviewController.h"
 #import "UIKitSPI.h"
 #import "WKContentViewInteraction.h"
 #import "WKFullScreenWindowController.h"
 #import "WKWebViewIOS.h"
 #import "WebPageProxy.h"
+#import "WebProcessProxy.h"
 #import "_WKActivatedElementInfoInternal.h"
 #import "_WKTextInputContextInternal.h"
-#import <WebCore/ColorIOS.h>
+#import <WebCore/ColorCocoa.h>
 #import <WebCore/ColorSerialization.h>
 #import <WebCore/ElementContext.h>
+#import <pal/spi/cocoa/QuartzCoreSPI.h>
 #import <wtf/SortedArrayMap.h>
+#import <wtf/text/MakeString.h>
 #import <wtf/text/TextStream.h>
+
+#if HAVE(CORE_ANIMATION_SEPARATED_LAYERS)
+#if USE(APPLE_INTERNAL_SDK)
+#import <WebKitAdditions/SeparatedLayerAdditions.h>
+#else
+static void dumpSeparatedLayerProperties(TextStream&, CALayer *) { }
+#endif
+#endif
 
 @implementation WKWebView (WKTestingIOS)
 
@@ -77,27 +89,14 @@
     [_contentView _willBeginTextInteractionInTextInputContext:context];
 }
 
+- (void)selectWordBackwardForTesting
+{
+    [_contentView selectWordBackwardForTesting];
+}
+
 - (void)_didFinishTextInteractionInTextInputContext:(_WKTextInputContext *)context
 {
     [_contentView _didFinishTextInteractionInTextInputContext:context];
-}
-
-- (void)_requestDocumentContext:(UIWKDocumentRequest *)request completionHandler:(void (^)(UIWKDocumentContext *))completionHandler
-{
-#if HAVE(UI_WK_DOCUMENT_CONTEXT)
-    [_contentView requestDocumentContext:request completionHandler:completionHandler];
-#else
-    completionHandler(nil);
-#endif
-}
-
-- (void)_adjustSelectionWithDelta:(NSRange)deltaRange completionHandler:(void (^)(void))completionHandler
-{
-#if HAVE(UI_WK_DOCUMENT_CONTEXT)
-    [_contentView adjustSelectionWithDelta:deltaRange completionHandler:completionHandler];
-#else
-    completionHandler();
-#endif
 }
 
 - (BOOL)_mayContainEditableElementsInRect:(CGRect)rect
@@ -119,16 +118,9 @@
     [_contentView accessoryTab:NO];
 }
 
-- (void)applyAutocorrection:(NSString *)newString toString:(NSString *)oldString withCompletionHandler:(void (^)(void))completionHandler
-{
-    [_contentView applyAutocorrection:newString toString:oldString withCompletionHandler:[capturedCompletionHandler = makeBlockPtr(completionHandler)] (UIWKAutocorrectionRects *rects) {
-        capturedCompletionHandler();
-    }];
-}
-
 - (void)dismissFormAccessoryView
 {
-    [_contentView accessoryDone];
+    [_contentView dismissFormAccessoryView];
 }
 
 - (NSArray<NSString *> *)_filePickerAcceptedTypeIdentifiers
@@ -178,18 +170,12 @@
 
 - (void)_selectDataListOption:(int)optionIndex
 {
-#if ENABLE(DATALIST_ELEMENT)
     [_contentView _selectDataListOption:optionIndex];
-#endif
 }
 
 - (BOOL)_isShowingDataListSuggestions
 {
-#if ENABLE(DATALIST_ELEMENT)
     return [_contentView isShowingDataListSuggestions];
-#else
-    return NO;
-#endif
 }
 
 - (NSString *)textContentTypeForTesting
@@ -207,63 +193,77 @@
     return _inputViewBoundsInWindow;
 }
 
-- (NSArray<NSValue *> *)_uiTextSelectionRects
-{
-    // Force the selection view to update if needed.
-    [_contentView _updateChangedSelection];
-
-    return [_contentView _uiTextSelectionRects];
-}
-
-- (NSString *)_scrollingTreeAsText
-{
-    WebKit::RemoteScrollingCoordinatorProxy* coordinator = _page->scrollingCoordinatorProxy();
-    if (!coordinator)
-        return @"";
-
-    return coordinator->scrollingTreeAsText();
-}
-
 static String allowListedClassToString(UIView *view)
 {
     static constexpr ComparableASCIILiteral allowedClassesArray[] = {
-        "UIView",
-        "WKBackdropView",
-        "WKCompositingView",
-        "WKContentView",
-        "WKModelView",
-        "WKRemoteView",
-        "WKScrollView",
-        "WKSeparatedModelView"
-        "WKShapeView",
-        "WKSimpleBackdropView",
-        "WKTransformView",
-        "WKUIRemoteView",
-        "WKWebView",
-        "_UILayerHostView",
+        "UIView"_s,
+        "WKBackdropView"_s,
+        "WKCompositingView"_s,
+        "WKContentView"_s,
+        "WKModelView"_s,
+        "WKScrollView"_s,
+        "WKSeparatedImageView"_s,
+        "WKSeparatedModelView"_s,
+        "WKShapeView"_s,
+        "WKSimpleBackdropView"_s,
+        "WKTransformView"_s,
+        "WKUIRemoteView"_s,
+        "WKWebView"_s,
+        "_UILayerHostView"_s,
     };
     static constexpr SortedArraySet allowedClasses { allowedClassesArray };
 
     String classString { NSStringFromClass(view.class) };
     if (allowedClasses.contains(classString))
         return classString;
-    
-    ASSERT(classString != "WKCompositingView");
-    return makeString("<class not in allowed list of classes>");
+
+    return "<class not in allowed list of classes>"_s;
 }
+
+#if HAVE(CORE_ANIMATION_SEPARATED_LAYERS)
+static bool shouldDumpSeparatedDetails(UIView *view)
+{
+    static constexpr ComparableASCIILiteral deniedClassesArray[] = {
+        "WKCompositingView"_s,
+        "WKSeparatedImageView"_s,
+    };
+    static constexpr SortedArraySet deniedClasses { deniedClassesArray };
+
+    String classString { NSStringFromClass(view.class) };
+    if (deniedClasses.contains(classString))
+        return false;
+
+    return true;
+}
+#endif
 
 static void dumpUIView(TextStream& ts, UIView *view)
 {
     auto rectToString = [] (auto rect) {
-        return makeString("[x: ", rect.origin.x, " y: ", rect.origin.x, " width: ", rect.size.width, " height: ", rect.size.height, "]");
+        return makeString("[x: "_s, rect.origin.x, " y: "_s, rect.origin.y, " width: "_s, rect.size.width, " height: "_s, rect.size.height, ']');
     };
 
     auto pointToString = [] (auto point) {
-        return makeString("[x: ", point.x, " y: ", point.x, "]");
+        return makeString("[x: "_s, point.x, " y: "_s, point.x, ']');
     };
 
 
     ts << "view [class: " << allowListedClassToString(view) << "]";
+
+#if ENABLE(OVERLAY_REGIONS_IN_EVENT_REGION)
+    if ([view isKindOfClass:[WKBaseScrollView class]]) {
+        ts.dumpProperty("scrolling behavior", makeString([(WKBaseScrollView *)view _scrollingBehavior]));
+
+        auto rects = [(WKBaseScrollView *)view overlayRegionsForTesting];
+        auto overlaysAsStrings = adoptNS([[NSMutableArray alloc] initWithCapacity:rects.size()]);
+        for (auto rect : rects)
+            [overlaysAsStrings addObject:rectToString(CGRect(rect))];
+
+        [overlaysAsStrings sortUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+        for (NSString *overlayAsString in overlaysAsStrings.get())
+            ts.dumpProperty("overlay region", overlayAsString);
+    }
+#endif
 
     ts.dumpProperty("layer bounds", rectToString(view.layer.bounds));
     
@@ -278,6 +278,18 @@ static void dumpUIView(TextStream& ts, UIView *view)
     
     if (view.layer.anchorPointZ != 0)
         ts.dumpProperty("layer anchorPointZ", makeString(view.layer.anchorPointZ));
+
+    if (view.layer.cornerRadius != 0.0)
+        ts.dumpProperty("layer cornerRadius", makeString(view.layer.cornerRadius));
+
+#if HAVE(CORE_ANIMATION_SEPARATED_LAYERS)
+    if (view.layer.separated) {
+        TextStream::GroupScope scope(ts);
+        ts << "separated";
+        if (shouldDumpSeparatedDetails(view))
+            dumpSeparatedLayerProperties(ts, view.layer);
+    }
+#endif
 
     if (view.subviews.count > 0) {
         TextStream::GroupScope scope(ts);
@@ -302,6 +314,23 @@ static void dumpUIView(TextStream& ts, UIView *view)
     return ts.release();
 }
 
+- (NSString *)_scrollbarState:(unsigned long long)rawScrollingNodeID processID:(unsigned long long)processID isVertical:(bool)isVertical
+{
+    std::optional<WebCore::ScrollingNodeID> scrollingNodeID;
+    if (ObjectIdentifier<WebCore::ProcessIdentifierType>::isValidIdentifier(processID) && ObjectIdentifier<WebCore::ScrollingNodeIDType>::isValidIdentifier(rawScrollingNodeID))
+        scrollingNodeID = WebCore::ScrollingNodeID(ObjectIdentifier<WebCore::ScrollingNodeIDType>(rawScrollingNodeID), ObjectIdentifier<WebCore::ProcessIdentifierType>(processID));
+
+    if (_page->scrollingCoordinatorProxy()->rootScrollingNodeID() == scrollingNodeID) {
+        TextStream ts(TextStream::LineMode::MultipleLine);
+        {
+            TextStream::GroupScope scope(ts);
+            ts << ([_scrollView showsHorizontalScrollIndicator] ? ""_s : "none"_s);
+        }
+        return ts.release();
+    }
+    return _page->scrollbarStateForScrollingNodeID(scrollingNodeID, isVertical);
+}
+
 - (NSNumber *)_stableStateOverride
 {
     // For subclasses to override.
@@ -310,7 +339,9 @@ static void dumpUIView(TextStream& ts, UIView *view)
 
 - (NSDictionary *)_propertiesOfLayerWithID:(unsigned long long)layerID
 {
-    CALayer* layer = downcast<WebKit::RemoteLayerTreeDrawingAreaProxy>(*_page->drawingArea()).layerWithIDForTesting(layerID);
+    if (!layerID)
+        return nil;
+    CALayer* layer = downcast<WebKit::RemoteLayerTreeDrawingAreaProxy>(*_page->drawingArea()).layerWithIDForTesting({ ObjectIdentifier<WebCore::PlatformLayerIdentifierType>(layerID), _page->legacyMainFrameProcess().coreProcessIdentifier() });
     if (!layer)
         return nil;
 
@@ -418,6 +449,16 @@ static void dumpUIView(TextStream& ts, UIView *view)
     return [_contentView imageAnalysisGestureRecognizer];
 }
 
+- (UITapGestureRecognizer *)_singleTapGestureRecognizer
+{
+    return [_contentView singleTapGestureRecognizer];
+}
+
+- (BOOL)_isKeyboardScrollingAnimationRunning
+{
+    return [_contentView isKeyboardScrollingAnimationRunning];
+}
+
 - (void)_simulateElementAction:(_WKElementActionType)actionType atLocation:(CGPoint)location
 {
     [_contentView _simulateElementAction:actionType atLocation:location];
@@ -433,7 +474,7 @@ static void dumpUIView(TextStream& ts, UIView *view)
     [_contentView _simulateTextEntered:text];
 }
 
-- (void)_triggerSystemPreviewActionOnElement:(uint64_t)elementID document:(uint64_t)documentID page:(uint64_t)pageID
+- (void)_triggerSystemPreviewActionOnElement:(uint64_t)elementID document:(NSString*)documentID page:(uint64_t)pageID
 {
 #if USE(SYSTEM_PREVIEW)
     if (_page) {
@@ -457,13 +498,38 @@ static void dumpUIView(TextStream& ts, UIView *view)
         _page->setDeviceHasAGXCompilerServiceForTesting();
 }
 
-- (NSString *)_serializedSelectionCaretBackgroundColorForTesting
+- (void)_resetObscuredInsetsForTesting
 {
-    UIColor *backgroundColor = [[_contentView textInteractionAssistant].selectionView valueForKeyPath:@"caretView.backgroundColor"];
-    if (!backgroundColor)
-        return nil;
+    if (self._haveSetObscuredInsets)
+        [self _resetObscuredInsets];
+}
 
-    return WebCore::serializationForCSS(WebCore::colorFromUIColor(backgroundColor));
+- (BOOL)_hasResizeAssertion
+{
+#if HAVE(UIKIT_RESIZABLE_WINDOWS)
+    if (!_resizeAssertions.isEmpty())
+        return YES;
+#endif
+    return NO;
+}
+
+- (void)_simulateSelectionStart
+{
+    [_contentView _simulateSelectionStart];
+}
+
++ (void)_resetPresentLockdownModeMessage
+{
+#if ENABLE(LOCKDOWN_MODE_API)
+    [self _clearLockdownModeWarningNeeded];
+#endif
+}
+
+- (void)_doAfterNextVisibleContentRectAndStablePresentationUpdate:(void (^)(void))updateBlock
+{
+    [self _doAfterNextVisibleContentRectUpdate:makeBlockPtr([strongSelf = retainPtr(self), updateBlock = makeBlockPtr(updateBlock)] {
+        [strongSelf _doAfterNextStablePresentationUpdate:updateBlock.get()];
+    }).get()];
 }
 
 @end

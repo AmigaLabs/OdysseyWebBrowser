@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2022 Apple Inc. All rights reserved.
+ * Copyright (C) 2022 Jarred Sumner. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,7 +27,7 @@
 function of(/* items... */)
 {
     "use strict";
-    var len = arguments.length;
+    var len = @argumentCount();
 
     if (!@isConstructor(this))
         @throwTypeError("TypedArray.of requires |this| to be a constructor");
@@ -59,6 +60,12 @@ function from(items /* [ , mapfn [ , thisArg ] ] */)
 
     var arrayLike = @toObject(items, "TypedArray.from requires an array-like object - not null or undefined");
 
+    if (mapFn === @undefined) {
+        var fastResult = @typedArrayFromFast(this, arrayLike);
+        if (fastResult)
+            return fastResult;
+    }
+
     var iteratorMethod = items.@@iterator;
     if (!@isUndefinedOrNull(iteratorMethod)) {
         if (!@isCallable(iteratorMethod))
@@ -86,10 +93,10 @@ function from(items /* [ , mapfn [ , thisArg ] ] */)
 
         for (var k = 0; k < count; k++) {
             var value = accumulator[k];
-            if (mapFn)
-                result[k] = thisArg === @undefined ? mapFn(value, k) : mapFn.@call(thisArg, value, k);
-            else
+            if (mapFn === @undefined)
                 result[k] = value;
+            else
+                result[k] = thisArg === @undefined ? mapFn(value, k) : mapFn.@call(thisArg, value, k);
         }
 
         return result;
@@ -103,10 +110,10 @@ function from(items /* [ , mapfn [ , thisArg ] ] */)
 
     for (var k = 0; k < arrayLikeLength; k++) {
         var value = arrayLike[k];
-        if (mapFn)
-            result[k] = thisArg === @undefined ? mapFn(value, k) : mapFn.@call(thisArg, value, k);
-        else
+        if (mapFn === @undefined)
             result[k] = value;
+        else
+            result[k] = thisArg === @undefined ? mapFn(value, k) : mapFn.@call(thisArg, value, k);
     }
 
     return result;

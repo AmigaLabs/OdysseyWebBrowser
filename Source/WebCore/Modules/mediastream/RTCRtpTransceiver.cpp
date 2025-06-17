@@ -34,13 +34,14 @@
 
 #if ENABLE(WEB_RTC)
 
+#include "Logging.h"
 #include "RTCPeerConnection.h"
-#include <wtf/IsoMallocInlines.h>
 #include <wtf/NeverDestroyed.h>
+#include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
-WTF_MAKE_ISO_ALLOCATED_IMPL(RTCRtpTransceiver);
+WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(RTCRtpTransceiver);
 
 RTCRtpTransceiver::RTCRtpTransceiver(Ref<RTCRtpSender>&& sender, Ref<RTCRtpReceiver>&& receiver, std::unique_ptr<RTCRtpTransceiverBackend>&& backend)
     : m_direction(RTCRtpTransceiverDirection::Sendrecv)
@@ -49,6 +50,8 @@ RTCRtpTransceiver::RTCRtpTransceiver(Ref<RTCRtpSender>&& sender, Ref<RTCRtpRecei
     , m_backend(WTFMove(backend))
 {
 }
+
+RTCRtpTransceiver::~RTCRtpTransceiver() = default;
 
 String RTCRtpTransceiver::mid() const
 {
@@ -101,13 +104,13 @@ void RTCRtpTransceiver::disableSendingDirection()
 void RTCRtpTransceiver::setConnection(RTCPeerConnection& connection)
 {
     ASSERT(!m_connection);
-    m_connection = makeWeakPtr(connection);
+    m_connection = connection;
 }
 
 ExceptionOr<void> RTCRtpTransceiver::stop()
 {
     if (!m_connection || m_connection->isClosed())
-        return Exception { InvalidStateError, "RTCPeerConnection is closed"_s };
+        return Exception { ExceptionCode::InvalidStateError, "RTCPeerConnection is closed"_s };
 
     if (m_stopped)
         return { };
@@ -118,7 +121,7 @@ ExceptionOr<void> RTCRtpTransceiver::stop()
     if (m_backend)
         m_backend->stop();
 
-    m_connection->scheduleNegotiationNeededEvent();
+    // No need to call negotiation needed, it will be done by the backend itself.
     return { };
 }
 
@@ -126,6 +129,8 @@ ExceptionOr<void> RTCRtpTransceiver::setCodecPreferences(const Vector<RTCRtpCode
 {
     if (!m_backend)
         return { };
+
+    RELEASE_LOG_INFO(WebRTC, "RTCRtpTransceiver::setCodecPreferences");
     return m_backend->setCodecPreferences(codecs);
 }
 

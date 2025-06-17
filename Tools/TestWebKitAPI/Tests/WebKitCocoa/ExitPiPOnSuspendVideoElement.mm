@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2020-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,6 +28,7 @@
 // We can enable the test for old iOS versions after <rdar://problem/63572534> is fixed.
 #if ENABLE(VIDEO_PRESENTATION_MODE) && (PLATFORM(MAC) || (PLATFORM(IOS_FAMILY) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 140000))
 
+#import "DeprecatedGlobalValues.h"
 #import "PlatformUtilities.h"
 #import "Test.h"
 #import "TestWKWebView.h"
@@ -36,9 +37,6 @@
 #import <WebKit/WKUIDelegatePrivate.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/Seconds.h>
-
-static bool didEnterPiP;
-static bool didExitPiP;
 
 @interface ExitPiPOnSuspendVideoElementUIDelegate : NSObject <WKUIDelegate>
 @end
@@ -57,7 +55,8 @@ static bool didExitPiP;
 
 namespace TestWebKitAPI {
 
-TEST(PictureInPicture, ExitPiPOnSuspendVideoElement)
+// FIXME: Re-enable after webkit.org/b/242014 is resolved
+TEST(PictureInPicture, DISABLED_ExitPiPOnSuspendVideoElement)
 {
     if (!WebCore::supportsPictureInPicture())
         return;
@@ -68,7 +67,7 @@ TEST(PictureInPicture, ExitPiPOnSuspendVideoElement)
     }];
 
     RetainPtr<WKWebViewConfiguration> configuration = adoptNS([[WKWebViewConfiguration alloc] init]);
-    [configuration preferences]._fullScreenEnabled = YES;
+    [configuration preferences].elementFullscreenEnabled = YES;
     [configuration preferences]._allowsPictureInPictureMediaPlayback = YES;
     RetainPtr<TestWKWebView> webView = adoptNS([[TestWKWebView alloc] initWithFrame:NSMakeRect(0, 0, 300, 300) configuration:configuration.get() addToWindow:YES]);
     RetainPtr<ExitPiPOnSuspendVideoElementUIDelegate> handler = adoptNS([[ExitPiPOnSuspendVideoElementUIDelegate alloc] init]);
@@ -83,13 +82,13 @@ TEST(PictureInPicture, ExitPiPOnSuspendVideoElement)
 
     didEnterPiP = false;
     [webView evaluateJavaScript:@"document.getElementById('enter-pip').click()" completionHandler: nil];
-    ASSERT_TRUE(TestWebKitAPI::Util::runFor(&didEnterPiP, 10));
+    ASSERT_TRUE(TestWebKitAPI::Util::runFor(&didEnterPiP, 10_s));
 
     sleep(1_s);
 
     didExitPiP = false;
     [webView synchronouslyLoadHTMLString:@"<body>Hello world</body>"];
-    ASSERT_TRUE(TestWebKitAPI::Util::runFor(&didExitPiP, 10));
+    ASSERT_TRUE(TestWebKitAPI::Util::runFor(&didExitPiP, 10_s));
 }
 
 } // namespace TestWebKitAPI

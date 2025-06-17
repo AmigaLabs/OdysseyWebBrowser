@@ -37,6 +37,7 @@
 #include <wtf/RunLoop.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/Threading.h>
+#include <wtf/WorkQueue.h>
 #include <wtf/threads/BinarySemaphore.h>
 
 namespace WTF {
@@ -65,7 +66,7 @@ bool isMainRunLoop()
 
 void callOnMainRunLoop(Function<void()>&& function)
 {
-    RunLoop::main().dispatch(WTFMove(function));
+    RunLoop::protectedMain()->dispatch(WTFMove(function));
 }
 
 void ensureOnMainRunLoop(Function<void()>&& function)
@@ -73,7 +74,7 @@ void ensureOnMainRunLoop(Function<void()>&& function)
     if (RunLoop::isMain())
         function();
     else
-        RunLoop::main().dispatch(WTFMove(function));
+        RunLoop::protectedMain()->dispatch(WTFMove(function));
 }
 
 void callOnMainThread(Function<void()>&& function)
@@ -85,7 +86,7 @@ void callOnMainThread(Function<void()>&& function)
     }
 #endif
 
-    RunLoop::main().dispatch(WTFMove(function));
+    RunLoop::protectedMain()->dispatch(WTFMove(function));
 }
 
 void ensureOnMainThread(Function<void()>&& function)
@@ -110,7 +111,7 @@ enum class MainStyle : bool {
 };
 
 template <MainStyle mainStyle>
-static void callOnMainAndWait(Function<void()>&& function)
+static void callOnMainAndWait(NOESCAPE Function<void()>&& function)
 {
 
     if (mainStyle == MainStyle::Thread ? isMainThread() : isMainRunLoop()) {
@@ -134,12 +135,12 @@ static void callOnMainAndWait(Function<void()>&& function)
     semaphore.wait();
 }
 
-void callOnMainRunLoopAndWait(Function<void()>&& function)
+void callOnMainRunLoopAndWait(NOESCAPE Function<void()>&& function)
 {
     callOnMainAndWait<MainStyle::RunLoop>(WTFMove(function));
 }
 
-void callOnMainThreadAndWait(Function<void()>&& function)
+void callOnMainThreadAndWait(NOESCAPE Function<void()>&& function)
 {
     callOnMainAndWait<MainStyle::Thread>(WTFMove(function));
 }

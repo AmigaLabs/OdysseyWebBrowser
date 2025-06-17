@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2021-2024 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -39,7 +39,7 @@ namespace TestWebKitAPI {
 TEST(Fullscreen, PointerLeave)
 {
     auto configuration = adoptNS([[WKWebViewConfiguration alloc] init]);
-    [configuration preferences]._fullScreenEnabled = YES;
+    [configuration preferences].elementFullscreenEnabled = YES;
     auto webView = adoptNS([[TestWKWebView alloc] initWithFrame:NSMakeRect(0, 0, 300, 300) configuration:configuration.get() addToWindow:YES]);
 
     bool pointerenter = false;
@@ -59,11 +59,11 @@ TEST(Fullscreen, PointerLeave)
         @"</script>"];
 
     [webView mouseMoveToPoint:NSMakePoint(50, 50) withFlags:0];
-    Util::runFor(&pointerenter, 5);
+    Util::runFor(&pointerenter, 5_s);
 
     [webView objectByEvaluatingJavaScriptWithUserGesture:@"target.webkitRequestFullscreen()"];
-    Util::runFor(&fullscreenchange, 5);
-    Util::runFor(&pointerleave, 5);
+    Util::runFor(&fullscreenchange, 5_s);
+    Util::runFor(&pointerleave, 5_s);
 }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2006-2023 Apple Inc. All rights reserved.
  * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,7 @@
 #include "config.h"
 #include "MIMETypeRegistry.h"
 
+#include "DeprecatedGlobalSettings.h"
 #include "MediaPlayer.h"
 #include "ThreadGlobalData.h"
 #include <wtf/FixedVector.h>
@@ -35,17 +36,16 @@
 #include <wtf/NeverDestroyed.h>
 #include <wtf/SortedArrayMap.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/TZoneMallocInlines.h>
 #include <wtf/Vector.h>
+#include <wtf/text/MakeString.h>
 
 #if USE(CG)
-#include "ImageSourceCG.h"
+#include "ImageBufferUtilitiesCG.h"
 #include "UTIRegistry.h"
+#include "UTIUtilities.h"
 #include <ImageIO/ImageIO.h>
 #include <wtf/RetainPtr.h>
-#endif
-
-#if USE(CG) && PLATFORM(COCOA)
-#include "UTIUtilities.h"
 #endif
 
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
@@ -67,6 +67,8 @@
 
 namespace WebCore {
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MIMETypeRegistryThreadGlobalData);
+
 static String normalizedImageMIMEType(const String&);
 
 // On iOS, we include malformed image MIME types for compatibility with Mail.
@@ -77,87 +79,90 @@ static String normalizedImageMIMEType(const String&);
 // and we fix sniffing so that it corrects items such as image/jpg -> image/jpeg.
 constexpr ComparableCaseFoldingASCIILiteral supportedImageMIMETypeArray[] = {
 #if PLATFORM(IOS_FAMILY)
-    "application/bmp",
-    "application/jpg",
-    "application/png",
-    "application/tif",
-    "application/tiff",
-    "application/x-bmp",
-    "application/x-jpg",
-    "application/x-png",
-    "application/x-tif",
-    "application/x-tiff",
-    "application/x-win-bitmap",
+    "application/bmp"_s,
+    "application/jpg"_s,
+    "application/png"_s,
+    "application/tif"_s,
+    "application/tiff"_s,
+    "application/x-bmp"_s,
+    "application/x-jpg"_s,
+    "application/x-png"_s,
+    "application/x-tif"_s,
+    "application/x-tiff"_s,
+    "application/x-win-bitmap"_s,
 #endif
-#if USE(CG) || ENABLE(APNG)
-    "image/apng",
+    "image/apng"_s,
+#if HAVE(AVIF) || USE(AVIF)
+    "image/avif"_s,
 #endif
-#if USE(AVIF)
-    "image/avif",
-#endif
-    "image/bmp",
+    "image/bmp"_s,
 #if PLATFORM(IOS_FAMILY)
-    "image/gi_",
+    "image/gi_"_s,
 #endif
-    "image/gif",
-#if USE(CG) || USE(OPENJPEG)
-    "image/jp2",
-#endif
-#if PLATFORM(IOS_FAMILY)
-    "image/jp_",
-    "image/jpe_",
-#endif
-    "image/jpeg",
-#if !USE(CG) && USE(OPENJPEG)
-    "image/jpeg2000",
+    "image/gif"_s,
+#if HAVE(HEIC)
+    "image/heic"_s,
+    "image/heic-sequence"_s,
+    "image/heif"_s,
+    "image/heif-sequence"_s,
 #endif
 #if PLATFORM(IOS_FAMILY)
-    "image/ms-bmp",
-    "image/pipeg",
+    "image/jp_"_s,
+    "image/jpe_"_s,
+#endif
+    "image/jpeg"_s,
+    "image/jpg"_s,
+#if HAVE(JPEGXL) || USE(JPEGXL)
+    "image/jxl"_s,
+#endif
+#if PLATFORM(IOS_FAMILY)
+    "image/ms-bmp"_s,
+    "image/pipeg"_s,
 #endif
 #if USE(CG)
-    "image/pjpeg",
+    "image/pjpeg"_s,
 #endif
-    "image/png",
+    "image/png"_s,
 #if PLATFORM(IOS_FAMILY)
-    "image/tif",
+    "image/tif"_s,
 #endif
 #if USE(CG)
-    "image/tiff",
+    "image/tiff"_s,
 #endif
-    "image/vnd.microsoft.icon",
+    "image/vnd.microsoft.icon"_s,
 #if PLATFORM(IOS_FAMILY)
-    "image/vnd.switfview-jpeg",
+    "image/vnd.switfview-jpeg"_s,
 #endif
-#if (USE(CG) && HAVE(WEBP)) || (!USE(CG) && USE(WEBP))
-    "image/webp",
+    "image/webp"_s,
+#if ENABLE(MULTI_REPRESENTATION_HEIC)
+    "image/x-apple-adaptive-glyph"_s,
 #endif
 #if PLATFORM(IOS_FAMILY)
-    "image/x-bmp",
+    "image/x-bmp"_s,
 #endif
-    "image/x-icon",
+    "image/x-icon"_s,
 #if PLATFORM(IOS_FAMILY)
-    "image/x-ms-bmp",
-    "image/x-tif",
-    "image/x-tiff",
-    "image/x-win-bitmap",
-    "image/x-windows-bmp",
+    "image/x-ms-bmp"_s,
+    "image/x-tif"_s,
+    "image/x-tiff"_s,
+    "image/x-win-bitmap"_s,
+    "image/x-windows-bmp"_s,
 #endif
 #if PLATFORM(IOS_FAMILY) || !USE(CG)
-    "image/x-xbitmap",
+    "image/x-xbitmap"_s,
 #endif
 };
 
-template<ASCIISubset subset, unsigned size> static FixedVector<const char*> makeFixedVector(const ComparableASCIISubsetLiteral<subset> (&array)[size])
+template<ASCIISubset subset, unsigned size> static FixedVector<ASCIILiteral> makeFixedVector(const ComparableASCIISubsetLiteral<subset> (&array)[size])
 {
-    FixedVector<const char*> result(std::size(array));
+    FixedVector<ASCIILiteral> result(std::size(array));
     std::transform(std::begin(array), std::end(array), result.begin(), [] (auto literal) {
         return literal.literal;
     });
     return result;
 }
 
-FixedVector<const char*> MIMETypeRegistry::supportedImageMIMETypes()
+FixedVector<ASCIILiteral> MIMETypeRegistry::supportedImageMIMETypes()
 {
     return makeFixedVector(supportedImageMIMETypeArray);
 }
@@ -170,28 +175,28 @@ HashSet<String, ASCIICaseInsensitiveHash>& MIMETypeRegistry::additionalSupported
 
 // https://html.spec.whatwg.org/multipage/scripting.html#javascript-mime-type
 constexpr ComparableLettersLiteral supportedJavaScriptMIMETypeArray[] = {
-    "application/ecmascript",
-    "application/javascript",
-    "application/x-ecmascript",
-    "application/x-javascript",
-    "text/ecmascript",
-    "text/javascript",
-    "text/javascript1.0",
-    "text/javascript1.1",
-    "text/javascript1.2",
-    "text/javascript1.3",
-    "text/javascript1.4",
-    "text/javascript1.5",
-    "text/jscript",
-    "text/livescript",
-    "text/x-ecmascript",
-    "text/x-javascript",
+    "application/ecmascript"_s,
+    "application/javascript"_s,
+    "application/x-ecmascript"_s,
+    "application/x-javascript"_s,
+    "text/ecmascript"_s,
+    "text/javascript"_s,
+    "text/javascript1.0"_s,
+    "text/javascript1.1"_s,
+    "text/javascript1.2"_s,
+    "text/javascript1.3"_s,
+    "text/javascript1.4"_s,
+    "text/javascript1.5"_s,
+    "text/jscript"_s,
+    "text/livescript"_s,
+    "text/x-ecmascript"_s,
+    "text/x-javascript"_s,
 };
 
 HashSet<String, ASCIICaseInsensitiveHash>& MIMETypeRegistry::supportedNonImageMIMETypes()
 {
-    static auto supportedNonImageMIMETypes = makeNeverDestroyed([] {
-        HashSet<String, ASCIICaseInsensitiveHash> supportedNonImageMIMETypes = std::initializer_list<String> {
+    static NeverDestroyed types = [] {
+        HashSet<String, ASCIICaseInsensitiveHash> types = std::initializer_list<String> {
             "text/html"_s,
             "text/xml"_s,
             "text/xsl"_s,
@@ -214,68 +219,68 @@ HashSet<String, ASCIICaseInsensitiveHash>& MIMETypeRegistry::supportedNonImageMI
         // This can result in cross-site scripting vulnerabilities.
         };
         for (auto& type : supportedJavaScriptMIMETypeArray)
-            supportedNonImageMIMETypes.add(type.literal);
+            types.add(type.literal);
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
-        ArchiveFactory::registerKnownArchiveMIMETypes(supportedNonImageMIMETypes);
+        ArchiveFactory::registerKnownArchiveMIMETypes(types);
 #endif
-        return supportedNonImageMIMETypes;
-    }());
-    return supportedNonImageMIMETypes;
+        return types;
+    }();
+    return types;
 }
 
-const HashSet<String, ASCIICaseInsensitiveHash>& MIMETypeRegistry::supportedMediaMIMETypes()
+const HashSet<String>& MIMETypeRegistry::supportedMediaMIMETypes()
 {
-    static const auto supportedMediaMIMETypes = makeNeverDestroyed([] {
-        HashSet<String, ASCIICaseInsensitiveHash> supportedMediaMIMETypes;
+    static NeverDestroyed types = [] {
+        HashSet<String> types;
 #if ENABLE(VIDEO)
-        MediaPlayer::getSupportedTypes(supportedMediaMIMETypes);
+        MediaPlayer::getSupportedTypes(types);
 #endif
-        return supportedMediaMIMETypes;
-    }());
-    return supportedMediaMIMETypes;
+        return types;
+    }();
+    return types;
 }
 
 constexpr ComparableLettersLiteral pdfMIMETypeArray[] = {
-    "application/pdf",
-    "text/pdf",
+    "application/pdf"_s,
+    "text/pdf"_s,
 };
 
-FixedVector<const char*> MIMETypeRegistry::pdfMIMETypes()
+FixedVector<ASCIILiteral> MIMETypeRegistry::pdfMIMETypes()
 {
     return makeFixedVector(pdfMIMETypeArray);
 }
 
 constexpr ComparableLettersLiteral unsupportedTextMIMETypeArray[] = {
-    "text/calendar",
-    "text/directory",
-    "text/ldif",
-    "text/qif",
+    "text/calendar"_s,
+    "text/directory"_s,
+    "text/ldif"_s,
+    "text/qif"_s,
 #if !PLATFORM(IOS_FAMILY)
-    "text/rtf",
+    "text/rtf"_s,
 #endif
-    "text/vcalendar",
-    "text/vcard",
+    "text/vcalendar"_s,
+    "text/vcard"_s,
 #if PLATFORM(IOS_FAMILY)
-    "text/vnd.sun.j2me.app-descriptor",
+    "text/vnd.sun.j2me.app-descriptor"_s,
 #endif
-    "text/x-calendar",
-    "text/x-csv",
-    "text/x-qif",
-    "text/x-vcalendar",
-    "text/x-vcard",
-    "text/x-vcf",
+    "text/x-calendar"_s,
+    "text/x-csv"_s,
+    "text/x-qif"_s,
+    "text/x-vcalendar"_s,
+    "text/x-vcard"_s,
+    "text/x-vcf"_s,
 };
 
-FixedVector<const char*> MIMETypeRegistry::unsupportedTextMIMETypes()
+FixedVector<ASCIILiteral> MIMETypeRegistry::unsupportedTextMIMETypes()
 {
     return makeFixedVector(unsupportedTextMIMETypeArray);
 }
 
-static const HashMap<String, Vector<String>, ASCIICaseInsensitiveHash>& commonMimeTypesMap()
+static const UncheckedKeyHashMap<String, Vector<String>, ASCIICaseInsensitiveHash>& commonMimeTypesMap()
 {
     ASSERT(isMainThread());
-    static NeverDestroyed<HashMap<String, Vector<String>, ASCIICaseInsensitiveHash>> mimeTypesMap = [] {
-        HashMap<String, Vector<String>, ASCIICaseInsensitiveHash> map;
+    static NeverDestroyed<UncheckedKeyHashMap<String, Vector<String>, ASCIICaseInsensitiveHash>> mimeTypesMap = [] {
+        UncheckedKeyHashMap<String, Vector<String>, ASCIICaseInsensitiveHash> map;
         // A table of common media MIME types and file extensions used when a platform's
         // specific MIME type lookup doesn't have a match for a media file extension.
         static constexpr TypeExtensionPair commonMediaTypes[] = {
@@ -364,7 +369,7 @@ static const HashMap<String, Vector<String>, ASCIICaseInsensitiveHash>& commonMi
                 // First type in the vector must always be the one from mimeTypeForExtension,
                 // so we can use the map without also calling mimeTypeForExtension each time.
                 Vector<String> synonyms;
-                String systemType = MIMETypeRegistry::mimeTypeForExtension(extension);
+                String systemType = MIMETypeRegistry::mimeTypeForExtension(StringView(extension));
                 if (!systemType.isEmpty() && type != systemType)
                     synonyms.append(systemType);
                 return synonyms;
@@ -375,15 +380,15 @@ static const HashMap<String, Vector<String>, ASCIICaseInsensitiveHash>& commonMi
     return mimeTypesMap;
 }
 
-static const Vector<String>* typesForCommonExtension(const String& extension)
+static const Vector<String>* typesForCommonExtension(StringView extension)
 {
-    auto mapEntry = commonMimeTypesMap().find(extension);
+    auto mapEntry = commonMimeTypesMap().find<ASCIICaseInsensitiveStringViewHashTranslator>(extension);
     if (mapEntry == commonMimeTypesMap().end())
         return nullptr;
     return &mapEntry->value;
 }
 
-String MIMETypeRegistry::mediaMIMETypeForExtension(const String& extension)
+String MIMETypeRegistry::mediaMIMETypeForExtension(StringView extension)
 {
     auto* vector = typesForCommonExtension(extension);
     if (vector)
@@ -391,21 +396,11 @@ String MIMETypeRegistry::mediaMIMETypeForExtension(const String& extension)
     return mimeTypeForExtension(extension);
 }
 
-#if 0
-void MIMETypeRegistry::reinitializeSupportedMediaMIMETypes()
+String MIMETypeRegistry::mimeTypeForPath(StringView path)
 {
-    if(supportedMediaMIMETypes)
-        delete supportedMediaMIMETypes;
-    initializeSupportedMediaMIMETypes();
-}
-#endif
-
-String MIMETypeRegistry::mimeTypeForPath(const String& path)
-{
-    size_t pos = path.reverseFind('.');
-    if (pos != notFound) {
-        String extension = path.substring(pos + 1);
-        String result = mimeTypeForExtension(extension);
+    auto position = path.reverseFind('.');
+    if (position != notFound) {
+        auto result = mimeTypeForExtension(path.substring(position + 1));
         if (result.length())
             return result;
     }
@@ -421,20 +416,22 @@ bool MIMETypeRegistry::isSupportedImageMIMEType(const String& mimeType)
     // Ensure supportedImageMIMETypeArray matches defaultSupportedImageTypes().
     static std::once_flag onceFlag;
     std::call_once(onceFlag, [] {
-        for (auto& imageType : defaultSupportedImageTypes()) {
+        for (auto& imageType : supportedImageTypes()) {
             auto mimeType = MIMETypeForImageType(imageType);
             ASSERT_IMPLIES(!mimeType.isEmpty(), supportedImageMIMETypeSet.contains(mimeType));
         }
     });
 #endif
-    if (supportedImageMIMETypeSet.contains(mimeType))
+
+    String normalizedMIMEType = normalizedImageMIMEType(mimeType);
+    if (supportedImageMIMETypeSet.contains(normalizedMIMEType))
         return true;
-    return additionalSupportedImageMIMETypes().contains(normalizedImageMIMEType(mimeType));
+    return additionalSupportedImageMIMETypes().contains(normalizedMIMEType);
 }
 
 bool MIMETypeRegistry::isSupportedImageVideoOrSVGMIMEType(const String& mimeType)
 {
-    if (isSupportedImageMIMEType(mimeType) || equalLettersIgnoringASCIICase(mimeType, "image/svg+xml"))
+    if (isSupportedImageMIMEType(mimeType) || equalLettersIgnoringASCIICase(mimeType, "image/svg+xml"_s))
         return true;
 
 #if HAVE(AVASSETREADER)
@@ -467,7 +464,7 @@ std::unique_ptr<MIMETypeRegistryThreadGlobalData> MIMETypeRegistry::createMIMETy
     }
 #else
     HashSet<String, ASCIICaseInsensitiveHash> supportedImageMIMETypesForEncoding = std::initializer_list<String> {
-#if USE(CG) || USE(DIRECT2D)
+#if USE(CG)
         // FIXME: Add Windows support for all the supported UTI's when a way to convert from MIMEType to UTI reliably is found.
         // For now, only support PNG, JPEG and GIF. See <rdar://problem/6095286>.
         "image/png"_s,
@@ -487,6 +484,11 @@ std::unique_ptr<MIMETypeRegistryThreadGlobalData> MIMETypeRegistry::createMIMETy
         "image/ico"_s,
 #elif USE(CAIRO)
         "image/png"_s,
+#elif USE(SKIA)
+        "image/png"_s,
+        "image/jpeg"_s,
+        "image/jpg"_s,
+        "image/webp"_s,
 #endif
     };
 #endif
@@ -506,54 +508,63 @@ bool MIMETypeRegistry::isSupportedJavaScriptMIMEType(const String& mimeType)
     return supportedJavaScriptMIMETypes.contains(mimeType);
 }
 
+bool MIMETypeRegistry::isSupportedWebAssemblyMIMEType(const String& mimeType)
+{
+    return equalLettersIgnoringASCIICase(mimeType, "application/wasm"_s);
+}
+
 bool MIMETypeRegistry::isSupportedStyleSheetMIMEType(const String& mimeType)
 {
-    return equalLettersIgnoringASCIICase(mimeType, "text/css");
+    return equalLettersIgnoringASCIICase(mimeType, "text/css"_s);
 }
 
 bool MIMETypeRegistry::isSupportedFontMIMEType(const String& mimeType)
 {
     static const unsigned fontLength = 5;
-    if (!startsWithLettersIgnoringASCIICase(mimeType, "font/"))
+    if (!startsWithLettersIgnoringASCIICase(mimeType, "font/"_s))
         return false;
     auto subtype = StringView { mimeType }.substring(fontLength);
-    return equalLettersIgnoringASCIICase(subtype, "woff")
-        || equalLettersIgnoringASCIICase(subtype, "woff2")
-        || equalLettersIgnoringASCIICase(subtype, "otf")
-        || equalLettersIgnoringASCIICase(subtype, "ttf")
-        || equalLettersIgnoringASCIICase(subtype, "sfnt");
+    return equalLettersIgnoringASCIICase(subtype, "woff"_s)
+        || equalLettersIgnoringASCIICase(subtype, "woff2"_s)
+        || equalLettersIgnoringASCIICase(subtype, "otf"_s)
+        || equalLettersIgnoringASCIICase(subtype, "ttf"_s)
+        || equalLettersIgnoringASCIICase(subtype, "sfnt"_s);
 }
 
 bool MIMETypeRegistry::isTextMediaPlaylistMIMEType(const String& mimeType)
 {
-    if (startsWithLettersIgnoringASCIICase(mimeType, "application/")) {
+    if (startsWithLettersIgnoringASCIICase(mimeType, "application/"_s)) {
         static const unsigned applicationLength = 12;
         auto subtype = StringView { mimeType }.substring(applicationLength);
-        return equalLettersIgnoringASCIICase(subtype, "vnd.apple.mpegurl")
-            || equalLettersIgnoringASCIICase(subtype, "mpegurl")
-            || equalLettersIgnoringASCIICase(subtype, "x-mpegurl");
+        return equalLettersIgnoringASCIICase(subtype, "vnd.apple.mpegurl"_s)
+            || equalLettersIgnoringASCIICase(subtype, "mpegurl"_s)
+            || equalLettersIgnoringASCIICase(subtype, "x-mpegurl"_s);
     }
 
-    if (startsWithLettersIgnoringASCIICase(mimeType, "audio/")) {
+    if (startsWithLettersIgnoringASCIICase(mimeType, "audio/"_s)) {
         static const unsigned audioLength = 6;
         auto subtype = StringView { mimeType }.substring(audioLength);
-        return equalLettersIgnoringASCIICase(subtype, "mpegurl")
-            || equalLettersIgnoringASCIICase(subtype, "x-mpegurl");
+        return equalLettersIgnoringASCIICase(subtype, "mpegurl"_s)
+            || equalLettersIgnoringASCIICase(subtype, "x-mpegurl"_s);
     }
 
     return false;
 }
 
+// https://mimesniff.spec.whatwg.org/#json-mime-type
 bool MIMETypeRegistry::isSupportedJSONMIMEType(const String& mimeType)
 {
     if (mimeType.isEmpty())
         return false;
 
-    if (equalLettersIgnoringASCIICase(mimeType, "application/json"))
+    if (equalLettersIgnoringASCIICase(mimeType, "application/json"_s))
+        return true;
+
+    if (equalLettersIgnoringASCIICase(mimeType, "text/json"_s))
         return true;
 
     // When detecting +json ensure there is a non-empty type / subtype preceeding the suffix.
-    if (mimeType.endsWithIgnoringASCIICase("+json") && mimeType.length() >= 8) {
+    if (mimeType.endsWithIgnoringASCIICase("+json"_s) && mimeType.length() >= 8) {
         size_t slashPosition = mimeType.find('/');
         if (slashPosition != notFound && slashPosition > 0 && slashPosition <= mimeType.length() - 6)
             return true;
@@ -578,7 +589,7 @@ bool MIMETypeRegistry::isSupportedMediaMIMEType(const String& mimeType)
 
 bool MIMETypeRegistry::isSupportedTextTrackMIMEType(const String& mimeType)
 {
-    return equalLettersIgnoringASCIICase(mimeType, "text/vtt");
+    return equalLettersIgnoringASCIICase(mimeType, "text/vtt"_s);
 }
 
 bool MIMETypeRegistry::isUnsupportedTextMIMEType(const String& mimeType)
@@ -591,10 +602,10 @@ bool MIMETypeRegistry::isTextMIMEType(const String& mimeType)
 {
     return isSupportedJavaScriptMIMEType(mimeType)
         || isSupportedJSONMIMEType(mimeType) // Render JSON as text/plain.
-        || (startsWithLettersIgnoringASCIICase(mimeType, "text/")
-            && !equalLettersIgnoringASCIICase(mimeType, "text/html")
-            && !equalLettersIgnoringASCIICase(mimeType, "text/xml")
-            && !equalLettersIgnoringASCIICase(mimeType, "text/xsl"));
+        || (startsWithLettersIgnoringASCIICase(mimeType, "text/"_s)
+            && !equalLettersIgnoringASCIICase(mimeType, "text/html"_s)
+            && !equalLettersIgnoringASCIICase(mimeType, "text/xml"_s)
+            && !equalLettersIgnoringASCIICase(mimeType, "text/xsl"_s));
 }
 
 static inline bool isValidXMLMIMETypeChar(UChar c)
@@ -604,12 +615,13 @@ static inline bool isValidXMLMIMETypeChar(UChar c)
         || c == '-' || c == '.' || c == '^' || c == '_' || c == '`' || c == '{' || c == '|' || c == '}' || c == '~';
 }
 
+// https://mimesniff.spec.whatwg.org/#xml-mime-type
 bool MIMETypeRegistry::isXMLMIMEType(const String& mimeType)
 {
-    if (equalLettersIgnoringASCIICase(mimeType, "text/xml") || equalLettersIgnoringASCIICase(mimeType, "application/xml") || equalLettersIgnoringASCIICase(mimeType, "text/xsl"))
+    if (equalLettersIgnoringASCIICase(mimeType, "text/xml"_s) || equalLettersIgnoringASCIICase(mimeType, "application/xml"_s))
         return true;
 
-    if (!mimeType.endsWithIgnoringASCIICase("+xml"))
+    if (!mimeType.endsWithIgnoringASCIICase("+xml"_s))
         return false;
 
     size_t slashPosition = mimeType.find('/');
@@ -629,35 +641,14 @@ bool MIMETypeRegistry::isXMLMIMEType(const String& mimeType)
 
 bool MIMETypeRegistry::isXMLEntityMIMEType(StringView mimeType)
 {
-    return equalLettersIgnoringASCIICase(mimeType, "text/xml-external-parsed-entity")
-        || equalLettersIgnoringASCIICase(mimeType, "application/xml-external-parsed-entity");
-}
-
-bool MIMETypeRegistry::isJavaAppletMIMEType(const String& mimeType)
-{
-    // Since this set is very limited and is likely to remain so we won't bother with the overhead
-    // of using a hash set.
-    // Any of the MIME types below may be followed by any number of specific versions of the JVM,
-    // which is why we use startsWith()
-    return startsWithLettersIgnoringASCIICase(mimeType, "application/x-java-applet")
-        || startsWithLettersIgnoringASCIICase(mimeType, "application/x-java-bean")
-        || startsWithLettersIgnoringASCIICase(mimeType, "application/x-java-vm");
+    return equalLettersIgnoringASCIICase(mimeType, "text/xml-external-parsed-entity"_s)
+        || equalLettersIgnoringASCIICase(mimeType, "application/xml-external-parsed-entity"_s);
 }
 
 bool MIMETypeRegistry::isPDFMIMEType(const String& mimeType)
 {
     static constexpr SortedArraySet set { pdfMIMETypeArray };
     return set.contains(mimeType);
-}
-
-bool MIMETypeRegistry::isPostScriptMIMEType(const String& mimeType)
-{
-    return equalLettersIgnoringASCIICase(mimeType, "application/postscript");
-}
-
-bool MIMETypeRegistry::isPDFOrPostScriptMIMEType(const String& mimeType)
-{
-    return isPDFMIMEType(mimeType) || isPostScriptMIMEType(mimeType);
 }
 
 bool MIMETypeRegistry::canShowMIMEType(const String& mimeType)
@@ -673,7 +664,12 @@ bool MIMETypeRegistry::canShowMIMEType(const String& mimeType)
         return true;
 #endif
 
-    if (startsWithLettersIgnoringASCIICase(mimeType, "text/"))
+#if ENABLE(MODEL_ELEMENT)
+    if (isSupportedModelMIMEType(mimeType) && DeprecatedGlobalSettings::modelDocumentEnabled())
+        return true;
+#endif
+
+    if (startsWithLettersIgnoringASCIICase(mimeType, "text/"_s))
         return !isUnsupportedTextMIMEType(mimeType);
 
     return false;
@@ -685,82 +681,87 @@ const String& defaultMIMEType()
     return defaultMIMEType;
 }
 
-constexpr ComparableLettersLiteral systemPreviewMIMETypeArray[] = {
-    "model/usd", // Unofficial, but supported because we documented this.
-    "model/vnd.pixar.usd", // Unofficial, but supported because we documented this.
-    "model/vnd.reality",
-    "model/vnd.usdz+zip", // The official type: https://www.iana.org/assignments/media-types/model/vnd.usdz+zip
+constexpr ComparableLettersLiteral usdMIMETypeArray[] = {
+    "model/usd"_s, // Unofficial, but supported because we documented this.
+    "model/vnd.pixar.usd"_s, // Unofficial, but supported because we documented this.
+    "model/vnd.reality"_s,
+    "model/vnd.usdz+zip"_s, // The official type: https://www.iana.org/assignments/media-types/model/vnd.usdz+zip
 };
 
-FixedVector<const char*> MIMETypeRegistry::systemPreviewMIMETypes()
+FixedVector<ASCIILiteral> MIMETypeRegistry::usdMIMETypes()
 {
-    return makeFixedVector(systemPreviewMIMETypeArray);
+    return makeFixedVector(usdMIMETypeArray);
 }
 
-bool MIMETypeRegistry::isSystemPreviewMIMEType(const String& mimeType)
+bool MIMETypeRegistry::isUSDMIMEType(const String& mimeType)
 {
-    static constexpr SortedArraySet systemPreviewMIMETypeSet { systemPreviewMIMETypeArray };
-    return systemPreviewMIMETypeSet.contains(mimeType);
+    static constexpr SortedArraySet usdMIMETypeSet { usdMIMETypeArray };
+    return usdMIMETypeSet.contains(mimeType);
+}
+
+bool MIMETypeRegistry::isSupportedModelMIMEType(const String& mimeType)
+{
+    return MIMETypeRegistry::isUSDMIMEType(mimeType);
 }
 
 // FIXME: Not great that CURL needs this concept; other platforms do not.
 static String normalizedImageMIMEType(const String& mimeType)
 {
 #if USE(CURL)
-    return mimeType;
-#else
     // FIXME: Since this is only used in isSupportedImageMIMEType, we should consider removing the non-image types below.
     static constexpr std::pair<ComparableLettersLiteral, ASCIILiteral> mimeTypeAssociationArray[] = {
-        { "application/ico", "image/vnd.microsoft.icon"_s },
-        { "application/java", "application/java-archive"_s },
-        { "application/x-java-archive", "application/java-archive"_s },
-        { "application/x-zip-compressed", "application/zip"_s },
-        { "audio/flac", "audio/x-flac"_s },
-        { "audio/m4a", "audio/mp4"_s },
-        { "audio/mid", "audio/midi"_s },
-        { "audio/mp3", "audio/mpeg"_s },
-        { "audio/mpeg3", "audio/mpeg"_s },
-        { "audio/mpegurl", "audio/x-mpegurl"_s },
-        { "audio/mpg", "audio/mpeg"_s },
-        { "audio/mpg3", "audio/mpeg"_s },
-        { "audio/qcp", "audio/qcelp"_s },
-        { "audio/sp-midi", "audio/midi"_s },
-        { "audio/vnd.qcelp", "audio/qcelp"_s },
-        { "audio/vnd.qcp", "audio/qcelp"_s },
-        { "audio/vnd.wave", "audio/x-wav"_s },
-        { "audio/wav", "audio/x-wav"_s },
-        { "audio/x-aac", "audio/aac"_s },
-        { "audio/x-amr", "audio/amr"_s },
-        { "audio/x-m4a", "audio/mp4"_s },
-        { "audio/x-mid", "audio/midi"_s },
-        { "audio/x-midi", "audio/midi"_s },
-        { "audio/x-mp3", "audio/mpeg"_s },
-        { "audio/x-mp4", "audio/mp4"_s },
-        { "audio/x-mpeg", "audio/mpeg"_s },
-        { "audio/x-mpeg3", "audio/mpeg"_s },
-        { "audio/x-mpg", "audio/mpeg"_s },
-        { "image/ico", "image/vnd.microsoft.icon"_s },
-        { "image/icon", "image/vnd.microsoft.icon"_s },
-        { "image/jpg", "image/jpeg"_s },
-        { "image/pjpeg", "image/jpeg"_s },
-        { "image/vnd.rim.png", "image/png"_s },
-        { "image/x-bitmap", "image/bmp"_s },
-        { "image/x-bmp", "image/bmp"_s },
-        { "image/x-icon", "image/vnd.microsoft.icon"_s },
-        { "image/x-ms-bitmap", "image/bmp"_s },
-        { "image/x-ms-bmp", "image/bmp"_s },
-        { "image/x-png", "image/png"_s },
-        { "image/x-windows-bmp", "image/bmp"_s },
-        { "text/cache-manifest", "text/plain"_s },
-        { "text/ico", "image/vnd.microsoft.icon"_s },
-        { "video/3gp", "video/3gpp"_s },
-        { "video/avi", "video/x-msvideo"_s },
-        { "video/x-m4v", "video/mp4"_s },
-        { "video/x-quicktime", "video/quicktime"_s },
+        { "application/ico"_s, "image/vnd.microsoft.icon"_s },
+        { "application/java"_s, "application/java-archive"_s },
+        { "application/x-java-archive"_s, "application/java-archive"_s },
+        { "application/x-zip-compressed"_s, "application/zip"_s },
+        { "audio/flac"_s, "audio/x-flac"_s },
+        { "audio/m4a"_s, "audio/mp4"_s },
+        { "audio/mid"_s, "audio/midi"_s },
+        { "audio/mp3"_s, "audio/mpeg"_s },
+        { "audio/mpeg3"_s, "audio/mpeg"_s },
+        { "audio/mpegurl"_s, "audio/x-mpegurl"_s },
+        { "audio/mpg"_s, "audio/mpeg"_s },
+        { "audio/mpg3"_s, "audio/mpeg"_s },
+        { "audio/qcp"_s, "audio/qcelp"_s },
+        { "audio/sp-midi"_s, "audio/midi"_s },
+        { "audio/vnd.qcelp"_s, "audio/qcelp"_s },
+        { "audio/vnd.qcp"_s, "audio/qcelp"_s },
+        { "audio/vnd.wave"_s, "audio/x-wav"_s },
+        { "audio/wav"_s, "audio/x-wav"_s },
+        { "audio/x-aac"_s, "audio/aac"_s },
+        { "audio/x-amr"_s, "audio/amr"_s },
+        { "audio/x-m4a"_s, "audio/mp4"_s },
+        { "audio/x-mid"_s, "audio/midi"_s },
+        { "audio/x-midi"_s, "audio/midi"_s },
+        { "audio/x-mp3"_s, "audio/mpeg"_s },
+        { "audio/x-mp4"_s, "audio/mp4"_s },
+        { "audio/x-mpeg"_s, "audio/mpeg"_s },
+        { "audio/x-mpeg3"_s, "audio/mpeg"_s },
+        { "audio/x-mpg"_s, "audio/mpeg"_s },
+        { "image/ico"_s, "image/vnd.microsoft.icon"_s },
+        { "image/icon"_s, "image/vnd.microsoft.icon"_s },
+        { "image/jpg"_s, "image/jpeg"_s },
+        { "image/pjpeg"_s, "image/jpeg"_s },
+        { "image/vnd.rim.png"_s, "image/png"_s },
+        { "image/x-bitmap"_s, "image/bmp"_s },
+        { "image/x-bmp"_s, "image/bmp"_s },
+        { "image/x-icon"_s, "image/vnd.microsoft.icon"_s },
+        { "image/x-ms-bitmap"_s, "image/bmp"_s },
+        { "image/x-ms-bmp"_s, "image/bmp"_s },
+        { "image/x-png"_s, "image/png"_s },
+        { "image/x-windows-bmp"_s, "image/bmp"_s },
+        { "text/cache-manifest"_s, "text/plain"_s },
+        { "text/ico"_s, "image/vnd.microsoft.icon"_s },
+        { "video/3gp"_s, "video/3gpp"_s },
+        { "video/avi"_s, "video/x-msvideo"_s },
+        { "video/x-m4v"_s, "video/mp4"_s },
+        { "video/x-quicktime"_s, "video/quicktime"_s },
     };
     static constexpr SortedArrayMap associationMap { mimeTypeAssociationArray };
     auto normalizedType = associationMap.tryGet(mimeType);
     return normalizedType ? *normalizedType : mimeType;
+#else
+    return mimeType;
 #endif
 }
 
@@ -785,7 +786,7 @@ String MIMETypeRegistry::preferredImageMIMETypeForEncoding(const Vector<String>&
 {
     auto allowedMIMETypes = MIMETypeRegistry::allowedMIMETypes(mimeTypes, extensions);
 
-    auto position = allowedMIMETypes.findMatching([](const auto& mimeType) {
+    auto position = allowedMIMETypes.findIf([](const auto& mimeType) {
         return MIMETypeRegistry::isSupportedImageMIMETypeForEncoding(mimeType);
     });
     
@@ -829,4 +830,32 @@ Vector<String> MIMETypeRegistry::allowedFileExtensions(const Vector<String>& mim
     return allowedFileExtensions;
 }
 
+bool MIMETypeRegistry::isJPEGMIMEType(const String& mimeType)
+{
+#if USE(CG)
+    auto destinationUTI = utiFromImageBufferMIMEType(mimeType);
+    if (!destinationUTI)
+        return false;
+    return CFEqual(destinationUTI.get(), jpegUTI());
+#else
+    return mimeType == "image/jpeg"_s || mimeType == "image/jpg"_s;
+#endif
+}
+
+bool MIMETypeRegistry::isWebArchiveMIMEType(const String& mimeType)
+{
+    using MIMETypeHashSet = HashSet<String, ASCIICaseInsensitiveHash>;
+    static NeverDestroyed<MIMETypeHashSet> webArchiveMIMETypes {
+        MIMETypeHashSet {
+            "application/x-webarchive"_s,
+            "application/x-mimearchive"_s,
+            "multipart/related"_s,
+#if PLATFORM(GTK)
+            "message/rfc822"_s,
+#endif
+        }
+    };
+
+    return webArchiveMIMETypes.get().isValidValue(mimeType) ? webArchiveMIMETypes.get().contains(mimeType) : false;
+}
 } // namespace WebCore

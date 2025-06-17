@@ -27,8 +27,9 @@
 
 #import "DOMNodeInternal.h"
 #import <WebCore/Document.h>
-#import <WebCore/Frame.h>
+#import <WebCore/FrameDestructionObserverInlines.h>
 #import <WebCore/JSNode.h>
+#import <WebCore/LocalFrame.h>
 #import <WebCore/ScriptController.h>
 #import <WebCore/WebScriptObjectPrivate.h>
 #import <WebCore/runtime_root.h>
@@ -113,12 +114,12 @@ void removeDOMWrapper(DOMObjectInternal* impl)
     WebCore::Node *nodeImpl = core(n);
 
     // Dig up Interpreter and ExecState.
-    WebCore::Frame *frame = nodeImpl->document().frame();
+    auto* frame = nodeImpl->document().frame();
     if (!frame)
         return;
 
     // The global object which should own this node - FIXME: does this need to be isolated-world aware?
-    WebCore::JSDOMGlobalObject* globalObject = frame->script().globalObject(WebCore::mainThreadNormalWorld());
+    auto* globalObject = frame->script().globalObject(WebCore::mainThreadNormalWorldSingleton());
 
     // Get (or create) a cached JS object for the DOM node.
     JSC::JSObject *scriptImp = asObject(WebCore::toJS(globalObject, globalObject, nodeImpl));

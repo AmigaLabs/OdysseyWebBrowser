@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2007-2022 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,8 +29,15 @@
 #import "config.h"
 #import <wtf/FileSystem.h>
 
-#import <wtf/SoftLinking.h>
 #import <sys/resource.h>
+#import <wtf/SoftLinking.h>
+#import <wtf/StdLibExtras.h>
+#import <wtf/cocoa/TypeCastsCocoa.h>
+#import <wtf/text/StringCommon.h>
+
+#if HAVE(APFS_CACHEDELETE_PURGEABLE)
+#import <apfs/apfs_fsctl.h>
+#endif
 
 typedef struct _BOMCopier* BOMCopier;
 
@@ -40,6 +47,7 @@ SOFT_LINK(Bom, BOMCopierFree, void, (BOMCopier copier), (copier))
 SOFT_LINK(Bom, BOMCopierCopyWithOptions, int, (BOMCopier copier, const char* fromObj, const char* toObj, CFDictionaryRef options), (copier, fromObj, toObj, options))
 
 #define kBOMCopierOptionCreatePKZipKey CFSTR("createPKZip")
+#define kBOMCopierOptionExtractPKZipKey CFSTR("extractPKZip")
 #define kBOMCopierOptionSequesterResourcesKey CFSTR("sequesterResources")
 #define kBOMCopierOptionKeepParentKey CFSTR("keepParent")
 #define kBOMCopierOptionCopyResourcesKey CFSTR("copyResources")
@@ -66,60 +74,88 @@ namespace FileSystemImpl {
 String createTemporaryZipArchive(const String& path)
 {
     String temporaryFile;
-    
-    RetainPtr<NSFileCoordinator> coordinator = adoptNS([[NSFileCoordinator alloc] initWithFilePresenter:nil]);
+
+    RetainPtr coordinator = adoptNS([[NSFileCoordinator alloc] initWithFilePresenter:nil]);
     [coordinator coordinateReadingItemAtURL:[NSURL fileURLWithPath:path] options:NSFileCoordinatorReadingWithoutChanges error:nullptr byAccessor:[&](NSURL *newURL) mutable {
         CString archivePath([NSTemporaryDirectory() stringByAppendingPathComponent:@"WebKitGeneratedFileXXXXXX"].fileSystemRepresentation);
-        if (mkstemp(archivePath.mutableData()) == -1)
+        int fd = mkostemp(archivePath.mutableSpanIncludingNullTerminator().data(), O_CLOEXEC);
+        if (fd == -1)
             return;
-        
-        NSDictionary *options = @{
-            (__bridge id)kBOMCopierOptionCreatePKZipKey : @YES,
-            (__bridge id)kBOMCopierOptionSequesterResourcesKey : @YES,
-            (__bridge id)kBOMCopierOptionKeepParentKey : @YES,
-            (__bridge id)kBOMCopierOptionCopyResourcesKey : @YES,
+        close(fd);
+
+        auto *options = @{
+            bridge_id_cast(kBOMCopierOptionCreatePKZipKey): @YES,
+            bridge_id_cast(kBOMCopierOptionSequesterResourcesKey): @YES,
+            bridge_id_cast(kBOMCopierOptionKeepParentKey): @YES,
+            bridge_id_cast(kBOMCopierOptionCopyResourcesKey): @YES,
         };
-        
-        BOMCopier copier = BOMCopierNew();
-        if (!BOMCopierCopyWithOptions(copier, newURL.path.fileSystemRepresentation, archivePath.data(), (__bridge CFDictionaryRef)options))
-            temporaryFile = String::fromUTF8(archivePath);
+
+        auto copier = BOMCopierNew();
+        if (!BOMCopierCopyWithOptions(copier, newURL.path.fileSystemRepresentation, archivePath.data(), bridge_cast(options)))
+            temporaryFile = String::fromUTF8(archivePath.span());
         BOMCopierFree(copier);
     }];
-    
+
     return temporaryFile;
 }
 
-String openTemporaryFile(const String& prefix, PlatformFileHandle& platformFileHandle, const String& suffix)
+String extractTemporaryZipArchive(const String& path)
 {
-    platformFileHandle = invalidPlatformFileHandle;
+    String temporaryDirectory = createTemporaryDirectory(@"WebKitExtractedArchive");
+    if (!temporaryDirectory)
+        return nullString();
+
+    RetainPtr coordinator = adoptNS([[NSFileCoordinator alloc] initWithFilePresenter:nil]);
+    [coordinator coordinateReadingItemAtURL:[NSURL fileURLWithPath:path] options:NSFileCoordinatorReadingWithoutChanges error:nullptr byAccessor:[&](NSURL *newURL) mutable {
+        auto *options = @{
+            bridge_id_cast(kBOMCopierOptionExtractPKZipKey): @YES,
+            bridge_id_cast(kBOMCopierOptionSequesterResourcesKey): @YES,
+            bridge_id_cast(kBOMCopierOptionCopyResourcesKey): @YES,
+        };
+
+        auto copier = BOMCopierNew();
+        if (BOMCopierCopyWithOptions(copier, newURL.path.fileSystemRepresentation, fileSystemRepresentation(temporaryDirectory).data(), bridge_cast(options)))
+            temporaryDirectory = nullString();
+        BOMCopierFree(copier);
+    }];
+
+    auto *contentsOfTemporaryDirectory = [NSFileManager.defaultManager contentsOfDirectoryAtPath:temporaryDirectory error:nil];
+    if (contentsOfTemporaryDirectory.count == 1) {
+        auto *subdirectoryPath = [temporaryDirectory stringByAppendingPathComponent:contentsOfTemporaryDirectory.firstObject];
+        BOOL isDirectory;
+        if ([NSFileManager.defaultManager fileExistsAtPath:subdirectoryPath isDirectory:&isDirectory] && isDirectory)
+            temporaryDirectory = subdirectoryPath;
+    }
+
+    return temporaryDirectory;
+}
+
+std::pair<String, PlatformFileHandle> openTemporaryFile(StringView prefix, StringView suffix)
+{
+    PlatformFileHandle platformFileHandle = invalidPlatformFileHandle;
 
     Vector<char> temporaryFilePath(PATH_MAX);
     if (!confstr(_CS_DARWIN_USER_TEMP_DIR, temporaryFilePath.data(), temporaryFilePath.size()))
-        return String();
+        return { String(), invalidPlatformFileHandle };
 
     // Shrink the vector.
-    temporaryFilePath.shrink(strlen(temporaryFilePath.data()));
+    temporaryFilePath.shrink(strlenSpan(temporaryFilePath.span()));
 
-    // FIXME: Change to a runtime assertion that the path ends with a slash once <rdar://problem/23579077> is
-    // fixed in all iOS Simulator versions that we use.
-    if (temporaryFilePath.last() != '/')
-        temporaryFilePath.append('/');
+    ASSERT(temporaryFilePath.last() == '/');
 
     // Append the file name.
-    CString prefixUTF8 = prefix.utf8();
-    temporaryFilePath.append(prefixUTF8.data(), prefixUTF8.length());
-    temporaryFilePath.append("XXXXXX", 6);
+    temporaryFilePath.append(prefix.utf8().span());
+    temporaryFilePath.append("XXXXXX"_span);
     
     // Append the file name suffix.
     CString suffixUTF8 = suffix.utf8();
-    temporaryFilePath.append(suffixUTF8.data(), suffixUTF8.length());
-    temporaryFilePath.append('\0');
+    temporaryFilePath.append(suffixUTF8.spanIncludingNullTerminator());
 
-    platformFileHandle = mkstemps(temporaryFilePath.data(), suffixUTF8.length());
+    platformFileHandle = mkostemps(temporaryFilePath.data(), suffixUTF8.length(), O_CLOEXEC);
     if (platformFileHandle == invalidPlatformFileHandle)
-        return String();
+        return { nullString(), invalidPlatformFileHandle };
 
-    return String::fromUTF8(temporaryFilePath.data());
+    return { String::fromUTF8(temporaryFilePath.data()), platformFileHandle };
 }
 
 NSString *createTemporaryDirectory(NSString *directoryPrefix)
@@ -132,23 +168,31 @@ NSString *createTemporaryDirectory(NSString *directoryPrefix)
         return nil;
 
     NSString *tempDirectoryComponent = [directoryPrefix stringByAppendingString:@"-XXXXXXXX"];
-    const char* tempDirectoryCString = [[tempDirectory stringByAppendingPathComponent:tempDirectoryComponent] fileSystemRepresentation];
-    if (!tempDirectoryCString)
+    auto tempDirectorySpanIncludingNullTerminator = unsafeSpanIncludingNullTerminator([[tempDirectory stringByAppendingPathComponent:tempDirectoryComponent] fileSystemRepresentation]);
+    if (tempDirectorySpanIncludingNullTerminator.empty())
         return nil;
 
-    const size_t length = strlen(tempDirectoryCString);
+    const size_t length = tempDirectorySpanIncludingNullTerminator.size() - 1;
     ASSERT(length <= MAXPATHLEN);
     if (length > MAXPATHLEN)
         return nil;
 
-    const size_t lengthPlusNullTerminator = length + 1;
-    Vector<char, MAXPATHLEN + 1> path(lengthPlusNullTerminator);
-    memcpy(path.data(), tempDirectoryCString, lengthPlusNullTerminator);
+    Vector<char, MAXPATHLEN + 1> path(tempDirectorySpanIncludingNullTerminator.size());
+    memcpySpan(path.mutableSpan(), tempDirectorySpanIncludingNullTerminator);
 
     if (!mkdtemp(path.data()))
         return nil;
 
     return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path.data() length:length];
+}
+
+std::pair<PlatformFileHandle, CString> createTemporaryFileInDirectory(const String& directory, const String& suffix)
+{
+    auto fsSuffix = fileSystemRepresentation(suffix);
+    auto templatePath = pathByAppendingComponents(directory, { StringView { "XXXXXX"_s }, StringView { suffix } });
+    auto fsTemplatePath = fileSystemRepresentation(templatePath);
+    int fd = mkstemps(fsTemplatePath.mutableSpanIncludingNullTerminator().data(), fsSuffix.length());
+    return { fd, WTFMove(fsTemplatePath) };
 }
 
 #ifdef IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES
@@ -210,17 +254,62 @@ bool isSafeToUseMemoryMapForPath(const String& path)
     return true;
 }
 
-void makeSafeToUseMemoryMapForPath(const String& path)
+bool makeSafeToUseMemoryMapForPath(const String& path)
 {
     if (isSafeToUseMemoryMapForPath(path))
-        return;
+        return true;
     
     NSError *error = nil;
     BOOL success = [[NSFileManager defaultManager] setAttributes:@{ NSFileProtectionKey: NSFileProtectionCompleteUnlessOpen } ofItemAtPath:path error:&error];
-    ASSERT(!error);
-    ASSERT_UNUSED(success, success);
+    if (error || !success) {
+        WTFLogAlways("makeSafeToUseMemoryMapForPath(%s) failed with error %@", path.utf8().data(), error);
+        return false;
+    }
+    return true;
 }
 #endif
+
+bool setExcludedFromBackup(const String& path, bool excluded)
+{
+    if (path.isEmpty())
+        return false;
+
+    NSError *error;
+    if (![[NSURL fileURLWithPath:(NSString *)path isDirectory:YES] setResourceValue:[NSNumber numberWithBool:excluded] forKey:NSURLIsExcludedFromBackupKey error:&error]) {
+        LOG_ERROR("Cannot exclude path '%s' from backup with error '%@'", path.utf8().data(), error.localizedDescription);
+        return false;
+    }
+
+    return true;
+}
+
+bool markPurgeable(const String& path)
+{
+    CString fileSystemPath = fileSystemRepresentation(path);
+    if (fileSystemPath.isNull())
+        return false;
+
+#if HAVE(APFS_CACHEDELETE_PURGEABLE)
+    uint64_t flags = APFS_MARK_PURGEABLE | APFS_PURGEABLE_DATA_TYPE | APFS_PURGEABLE_MARK_CHILDREN;
+    return !fsctl(fileSystemPath.data(), APFSIOC_MARK_PURGEABLE, &flags, 0);
+#else
+    return false;
+#endif
+}
+
+NSString *systemDirectoryPath()
+{
+    static NeverDestroyed<RetainPtr<NSString>> path = ^{
+#if PLATFORM(IOS_FAMILY_SIMULATOR)
+        char *simulatorRoot = getenv("SIMULATOR_ROOT");
+        return simulatorRoot ? [NSString stringWithFormat:@"%s/System/", simulatorRoot] : @"/System/";
+#else
+        return @"/System/";
+#endif
+    }();
+
+    return path.get().get();
+}
 
 } // namespace FileSystemImpl
 } // namespace WTF

@@ -35,9 +35,11 @@
 #import <wtf/cocoa/VectorCocoa.h>
 #import <wtf/text/WTFString.h>
 
+#import <pal/cf/CoreMediaSoftLink.h>
+
 IGNORE_WARNINGS_BEGIN("nullability-completeness")
 
-SOFT_LINK_FRAMEWORK(AVKit)
+SOFTLINK_AVKIT_FRAMEWORK()
 SOFT_LINK_CLASS_OPTIONAL(AVKit, AVTouchBarMediaSelectionOption)
 
 using WebCore::MediaSelectionOption;
@@ -244,14 +246,14 @@ using WebCore::PlaybackSessionInterfaceMac;
         model->selectLegibleMediaOption(index != NSNotFound ? index : UINT64_MAX);
 }
 
-static AVTouchBarMediaSelectionOptionType toAVTouchBarMediaSelectionOptionType(MediaSelectionOption::Type type)
+static AVTouchBarMediaSelectionOptionType toAVTouchBarMediaSelectionOptionType(MediaSelectionOption::LegibleType type)
 {
     switch (type) {
-    case MediaSelectionOption::Type::Regular:
+    case MediaSelectionOption::LegibleType::Regular:
         return AVTouchBarMediaSelectionOptionTypeRegular;
-    case MediaSelectionOption::Type::LegibleOff:
+    case MediaSelectionOption::LegibleType::LegibleOff:
         return AVTouchBarMediaSelectionOptionTypeLegibleOff;
-    case MediaSelectionOption::Type::LegibleAuto:
+    case MediaSelectionOption::LegibleType::LegibleAuto:
         return AVTouchBarMediaSelectionOptionTypeLegibleAuto;
     }
 
@@ -262,7 +264,7 @@ static AVTouchBarMediaSelectionOptionType toAVTouchBarMediaSelectionOptionType(M
 static RetainPtr<NSArray> mediaSelectionOptions(const Vector<MediaSelectionOption>& options)
 {
     return createNSArray(options, [] (auto& option) {
-        return adoptNS([allocAVTouchBarMediaSelectionOptionInstance() initWithTitle:option.displayName type:toAVTouchBarMediaSelectionOptionType(option.type)]);
+        return adoptNS([allocAVTouchBarMediaSelectionOptionInstance() initWithTitle:option.displayName type:toAVTouchBarMediaSelectionOptionType(option.legibleType)]);
     });
 }
 
@@ -341,13 +343,8 @@ static RetainPtr<NSArray> mediaSelectionOptions(const Vector<MediaSelectionOptio
     if (!_playbackSessionInterfaceMac)
         return;
 
-    if (auto* model = _playbackSessionInterfaceMac->playbackSessionModel()) {
-        BOOL isCurrentlyPlaying = model->isPlaying();
-        if (!isCurrentlyPlaying && _playing)
-            model->sendRemoteCommand(WebCore::PlatformMediaSession::RemoteControlCommandType::PlayCommand, { });
-        else if (isCurrentlyPlaying && !_playing)
-            model->sendRemoteCommand(WebCore::PlatformMediaSession::RemoteControlCommandType::PauseCommand, { });
-    }
+    if (auto* model = _playbackSessionInterfaceMac->playbackSessionModel(); model && model->isPlaying() != _playing)
+        model->sendRemoteCommand(_playing ? WebCore::PlatformMediaSession::RemoteControlCommandType::PlayCommand : WebCore::PlatformMediaSession::RemoteControlCommandType::PauseCommand, { });
 }
 
 - (BOOL)isPlaying
@@ -423,6 +420,19 @@ static RetainPtr<NSArray> mediaSelectionOptions(const Vector<MediaSelectionOptio
     if (auto* model = _playbackSessionInterfaceMac->playbackSessionModel())
         model->togglePictureInPicture();
 }
+
+- (void)enterInWindow
+{
+    if (auto* model = _playbackSessionInterfaceMac->playbackSessionModel())
+        model->enterInWindowFullscreen();
+}
+
+- (void)exitInWindow
+{
+    if (auto* model = _playbackSessionInterfaceMac->playbackSessionModel())
+        model->exitInWindowFullscreen();
+}
+
 
 IGNORE_WARNINGS_END
 

@@ -19,12 +19,16 @@
 
 #include "config.h"
 #include "OpenXRLayer.h"
+#include <wtf/TZoneMallocInlines.h>
 
 #if ENABLE(WEBXR) && USE(OPENXR)
 
 using namespace WebCore;
 
 namespace PlatformXR {
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(OpenXRLayer);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(OpenXRLayerProjection);
 
 // OpenXRLayerProjection
 
@@ -57,13 +61,16 @@ OpenXRLayerProjection::OpenXRLayerProjection(UniqueRef<OpenXRSwapchain>&& swapch
 {
 }
 
-std::optional<Device::FrameData::LayerData> OpenXRLayerProjection::startFrame()
+std::optional<FrameData::LayerData> OpenXRLayerProjection::startFrame()
 {
     auto texture = m_swapchain->acquireImage();
     if (!texture)
         return std::nullopt;
 
-    return Device::FrameData::LayerData { *texture };
+    return FrameData::LayerData {
+        .framebufferSize = m_swapchain->size(),
+        .opaqueTexture = *texture
+    };
 }
 
 XrCompositionLayerBaseHeader* OpenXRLayerProjection::endFrame(const Device::Layer& layer, XrSpace space, const Vector<XrView>& frameViews)

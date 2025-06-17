@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2021 Apple Inc. All rights reserved.
+ * Copyright (C) 2008-2023 Apple Inc. All rights reserved.
  * Copyright (C) 2014 Adobe Systems Incorporated. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,17 +30,15 @@
 #include "config.h"
 #include "ImageData.h"
 
+#include <JavaScriptCore/GenericTypedArrayViewInlines.h>
 #include <JavaScriptCore/JSCInlines.h>
 #include <wtf/text/TextStream.h>
 
 namespace WebCore {
 
-static CheckedUint32 computeDataSize(const IntSize& size)
+static CheckedUint32 computeDataSize(const IntSize& size, ImageDataStorageFormat storageFormat)
 {
-    CheckedUint32 checkedDataSize = 4;
-    checkedDataSize *= static_cast<unsigned>(size.width());
-    checkedDataSize *= static_cast<unsigned>(size.height());
-    return checkedDataSize;
+    return PixelBuffer::computePixelComponentCount(toPixelFormat(storageFormat), size);
 }
 
 PredefinedColorSpace ImageData::computeColorSpace(std::optional<ImageDataSettings> settings, PredefinedColorSpace defaultColorSpace)
@@ -50,113 +48,117 @@ PredefinedColorSpace ImageData::computeColorSpace(std::optional<ImageDataSetting
     return defaultColorSpace;
 }
 
-Ref<ImageData> ImageData::create(PixelBuffer&& pixelBuffer)
+static ImageDataStorageFormat computeStorageFormat(std::optional<ImageDataSettings> settings, ImageDataStorageFormat defaultStorageFormat = ImageDataStorageFormat::Uint8)
 {
-    auto colorSpace = toPredefinedColorSpace(pixelBuffer.format().colorSpace);
-    return adoptRef(*new ImageData(pixelBuffer.size(), pixelBuffer.takeData(), *colorSpace));
+    return settings ? settings->storageFormat : defaultStorageFormat;
 }
 
-RefPtr<ImageData> ImageData::create(std::optional<PixelBuffer>&& pixelBuffer)
+Ref<ImageData> ImageData::create(Ref<ByteArrayPixelBuffer>&& pixelBuffer, std::optional<ImageDataStorageFormat> overridingStorageFormat)
+{
+    auto colorSpace = toPredefinedColorSpace(pixelBuffer->format().colorSpace);
+    return adoptRef(*new ImageData(pixelBuffer->size(), pixelBuffer->takeData(), *colorSpace, overridingStorageFormat));
+}
+
+RefPtr<ImageData> ImageData::create(RefPtr<ByteArrayPixelBuffer>&& pixelBuffer, std::optional<ImageDataStorageFormat> overridingStorageFormat)
 {
     if (!pixelBuffer)
         return nullptr;
-    return create(WTFMove(*pixelBuffer));
+    return create(pixelBuffer.releaseNonNull(), overridingStorageFormat);
 }
 
-RefPtr<ImageData> ImageData::create(const IntSize& size)
+RefPtr<ImageData> ImageData::create(const IntSize& size, PredefinedColorSpace colorSpace, ImageDataStorageFormat imageDataStorageFormat)
 {
-    auto dataSize = computeDataSize(size);
+    auto dataSize = computeDataSize(size, ImageDataStorageFormat::Uint8);
     if (dataSize.hasOverflowed())
         return nullptr;
-    auto byteArray = Uint8ClampedArray::tryCreateUninitialized(dataSize);
-    if (!byteArray)
+    auto array = ImageDataArray::tryCreate(dataSize, ImageDataStorageFormat::Uint8);
+    if (!array)
         return nullptr;
-    return adoptRef(*new ImageData(size, byteArray.releaseNonNull(), PredefinedColorSpace::SRGB));
+    return adoptRef(*new ImageData(size, WTFMove(*array), colorSpace, imageDataStorageFormat));
 }
 
-RefPtr<ImageData> ImageData::create(const IntSize& size, Ref<Uint8ClampedArray>&& byteArray, PredefinedColorSpace colorSpace)
+RefPtr<ImageData> ImageData::create(const IntSize& size, ImageDataArray&& array, PredefinedColorSpace colorSpace)
 {
-    auto dataSize = computeDataSize(size);
-    if (dataSize.hasOverflowed() || dataSize != byteArray->length())
+    auto dataSize = computeDataSize(size, array.storageFormat());
+    if (dataSize.hasOverflowed() || dataSize != array.length())
         return nullptr;
-
-    return adoptRef(*new ImageData(size, WTFMove(byteArray), colorSpace));
+    return adoptRef(*new ImageData(size, WTFMove(array), colorSpace));
 }
 
-ExceptionOr<Ref<ImageData>> ImageData::createUninitialized(unsigned rows, unsigned pixelsPerRow, PredefinedColorSpace defaultColorSpace, std::optional<ImageDataSettings> settings)
+
+ExceptionOr<Ref<ImageData>> ImageData::create(unsigned sw, unsigned sh, PredefinedColorSpace defaultColorSpace, std::optional<ImageDataSettings> settings, std::span<const uint8_t> optionalBytes)
 {
-    IntSize size(rows, pixelsPerRow);
-    auto dataSize = computeDataSize(size);
+    if (!sw || !sh)
+        return Exception { ExceptionCode::IndexSizeError };
+
+    IntSize size(sw, sh);
+    auto storageFormat = computeStorageFormat(settings);
+    auto dataSize = computeDataSize(size, storageFormat);
     if (dataSize.hasOverflowed())
-        return Exception { RangeError, "Cannot allocate a buffer of this size"_s };
+        return Exception { ExceptionCode::RangeError, "Cannot allocate a buffer of this size"_s };
 
-    auto byteArray = Uint8ClampedArray::tryCreateUninitialized(dataSize);
-    if (!byteArray) {
+    auto array = ImageDataArray::tryCreate(dataSize, storageFormat, optionalBytes);
+    if (!array) {
         // FIXME: Does this need to be a "real" out of memory error with setOutOfMemoryError called on it?
-        return Exception { RangeError, "Out of memory"_s };
+        return Exception { ExceptionCode::RangeError, "Out of memory"_s };
     }
 
-    auto colorSpace = computeColorSpace(settings, defaultColorSpace);
-    return adoptRef(*new ImageData(size, byteArray.releaseNonNull(), colorSpace));
+    auto colorSpace = ImageData::computeColorSpace(settings, defaultColorSpace);
+    return adoptRef(*new ImageData(size, WTFMove(*array), colorSpace));
 }
 
 ExceptionOr<Ref<ImageData>> ImageData::create(unsigned sw, unsigned sh, std::optional<ImageDataSettings> settings)
 {
-    if (!sw || !sh)
-        return Exception { IndexSizeError };
-
-    IntSize size(sw, sh);
-    auto dataSize = computeDataSize(size);
-    if (dataSize.hasOverflowed())
-        return Exception { RangeError, "Cannot allocate a buffer of this size"_s };
-
-    auto byteArray = Uint8ClampedArray::tryCreateUninitialized(dataSize);
-    if (!byteArray) {
-        // FIXME: Does this need to be a "real" out of memory error with setOutOfMemoryError called on it?
-        return Exception { RangeError, "Out of memory"_s };
-    }
-    byteArray->zeroFill();
-
-    auto colorSpace = computeColorSpace(settings);
-    return adoptRef(*new ImageData(size, byteArray.releaseNonNull(), colorSpace));
+    return create(sw, sh, PredefinedColorSpace::SRGB, settings);
 }
 
-ExceptionOr<Ref<ImageData>> ImageData::create(Ref<Uint8ClampedArray>&& byteArray, unsigned sw, std::optional<unsigned> sh, std::optional<ImageDataSettings> settings)
+ExceptionOr<Ref<ImageData>> ImageData::create(ImageDataArray&& array, unsigned sw, std::optional<unsigned> sh, std::optional<ImageDataSettings> settings)
 {
-    unsigned length = byteArray->length();
+    auto length = array.length();
     if (!length || length % 4)
-        return Exception { InvalidStateError, "Length is not a non-zero multiple of 4"_s };
+        return Exception { ExceptionCode::InvalidStateError, "Length is not a non-zero multiple of 4"_s };
 
-    length /= 4;
-    if (!sw || length % sw)
-        return Exception { IndexSizeError, "Length is not a multiple of sw"_s };
+    auto pixels = length / 4;
+    if (!sw || pixels % sw)
+        return Exception { ExceptionCode::IndexSizeError, "Length is not a multiple of sw"_s };
 
-    unsigned height = length / sw;
+    Checked<int, RecordOverflow> height = pixels / sw;
+    if (height.hasOverflowed())
+        return Exception { ExceptionCode::IndexSizeError, "Computed height is too big"_s };
+
     if (sh && sh.value() != height)
-        return Exception { IndexSizeError, "sh value is not equal to height"_s };
+        return Exception { ExceptionCode::IndexSizeError, "sh value is not equal to height"_s };
 
-    IntSize size(sw, height);
-    auto dataSize = computeDataSize(size);
-    if (dataSize.hasOverflowed() || dataSize != byteArray->length())
-        return Exception { RangeError };
+    IntSize size(sw, height.value());
+    auto dataSize = computeDataSize(size, computeStorageFormat(settings));
+    if (dataSize.hasOverflowed() || dataSize != length)
+        return Exception { ExceptionCode::RangeError };
 
     auto colorSpace = computeColorSpace(settings);
-    return adoptRef(*new ImageData(size, WTFMove(byteArray), colorSpace));
+    return adoptRef(*new ImageData(size, WTFMove(array), colorSpace));
 }
 
-ImageData::ImageData(const IntSize& size, Ref<JSC::Uint8ClampedArray>&& data, PredefinedColorSpace colorSpace)
+ImageData::ImageData(const IntSize& size, ImageDataArray&& data, PredefinedColorSpace colorSpace)
     : m_size(size)
     , m_data(WTFMove(data))
     , m_colorSpace(colorSpace)
 {
 }
 
+ImageData::ImageData(const IntSize& size, ImageDataArray&& data, PredefinedColorSpace colorSpace, std::optional<ImageDataStorageFormat> overridingStorageFormat)
+    : m_size(size)
+    , m_data(WTFMove(data), overridingStorageFormat)
+    , m_colorSpace(colorSpace)
+{
+}
+
 ImageData::~ImageData() = default;
 
-PixelBuffer ImageData::pixelBuffer() const
+Ref<ByteArrayPixelBuffer> ImageData::pixelBuffer() const
 {
+    Ref uint8Data = m_data.asUint8ClampedArray();
     PixelBufferFormat format { AlphaPremultiplication::Unpremultiplied, PixelFormat::RGBA8, toDestinationColorSpace(m_colorSpace) };
-    return { format, m_size, m_data.get() };
+    return ByteArrayPixelBuffer::create(format, m_size, uint8Data.get());
 }
 
 TextStream& operator<<(TextStream& ts, const ImageData& imageData)

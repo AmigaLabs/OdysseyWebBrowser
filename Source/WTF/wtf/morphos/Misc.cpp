@@ -5,6 +5,7 @@
 #include <proto/dos.h>
 #include <dos/dos.h>
 #include <exec/system.h>
+#include <exec/tasks.h>
 #include <proto/exec.h>
 #include "Platform.h"
 
@@ -45,6 +46,11 @@ bool HasAltivec::hasAltivec()
 {
 	static HasAltivec __hs;
 	return m_hasAltivec;
+}
+
+uint32_t morphosGetCurrentProcessID()
+{
+    return FindTask(0)->tc_ETask->UniqueID;
 }
 
 }

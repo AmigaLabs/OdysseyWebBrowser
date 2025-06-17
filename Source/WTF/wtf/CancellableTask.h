@@ -26,6 +26,7 @@
 #pragma once
 
 #include <wtf/Function.h>
+#include <wtf/RefCountedAndCanMakeWeakPtr.h>
 #include <wtf/UniqueRef.h>
 #include <wtf/WeakPtr.h>
 
@@ -33,33 +34,46 @@ namespace WTF {
 
 class CancellableTask;
 
-class TaskCancellationGroup : public CanMakeWeakPtr<TaskCancellationGroup> {
+class TaskCancellationGroupImpl final : public RefCountedAndCanMakeWeakPtr<TaskCancellationGroupImpl> {
 public:
-    TaskCancellationGroup() : m_impl(makeUniqueRef<Impl>()) { }
+    static Ref<TaskCancellationGroupImpl> create()
+    {
+        return adoptRef(*new TaskCancellationGroupImpl);
+    }
+    void cancel() { weakPtrFactory().revokeAll(); }
+    bool hasPendingTask() const { return weakPtrFactory().weakPtrCount(); }
+
+private:
+    TaskCancellationGroupImpl() = default;
+};
+
+class TaskCancellationGroupHandle {
+public:
+    bool isCancelled() const { return !m_impl; }
+    void clear() { m_impl = nullptr; }
+private:
+    friend class TaskCancellationGroup;
+    explicit TaskCancellationGroupHandle(TaskCancellationGroupImpl& impl)
+        : m_impl(impl)
+    {
+    }
+    WeakPtr<TaskCancellationGroupImpl> m_impl;
+};
+
+class TaskCancellationGroup {
+public:
+    TaskCancellationGroup()
+        : m_impl(TaskCancellationGroupImpl::create())
+    {
+    }
     void cancel() { m_impl->cancel(); }
     bool hasPendingTask() const { return m_impl->hasPendingTask(); }
 
 private:
     friend class CancellableTask;
-    class Impl : public CanMakeWeakPtr<Impl> {
-        WTF_MAKE_FAST_ALLOCATED;
-    public:
-        void cancel() { weakPtrFactory().revokeAll(); }
-        bool hasPendingTask() const { return weakPtrFactory().weakPtrCount(); }
-    };
+    TaskCancellationGroupHandle createHandle() { return TaskCancellationGroupHandle { m_impl }; }
 
-    class Handle {
-    public:
-        bool isCancelled() const { return !m_impl; }
-        void clear() { m_impl = nullptr; }
-    private:
-        friend class TaskCancellationGroup;
-        explicit Handle(Impl& impl) : m_impl(makeWeakPtr(impl)) { }
-        WeakPtr<Impl> m_impl;
-    };
-    Handle createHandle() { return Handle { m_impl }; }
-
-    UniqueRef<Impl> m_impl;
+    Ref<TaskCancellationGroupImpl> m_impl;
 };
 
 class CancellableTask {
@@ -68,7 +82,7 @@ public:
     void operator()();
 
 private:
-    TaskCancellationGroup::Handle m_cancellationGroup;
+    TaskCancellationGroupHandle m_cancellationGroup;
     Function<void()> m_task;
 };
 

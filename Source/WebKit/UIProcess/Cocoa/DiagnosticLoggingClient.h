@@ -23,14 +23,11 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef DiagnosticLoggingClient_h
-#define DiagnosticLoggingClient_h
-
-#import "WKFoundation.h"
+#pragma once
 
 #import "APIDiagnosticLoggingClient.h"
-#import <WebCore/DiagnosticLoggingDomain.h>
-#import <WebCore/DiagnosticLoggingResultType.h>
+#import "WKFoundation.h"
+#import <wtf/TZoneMalloc.h>
 #import <wtf/WeakObjCPtr.h>
 
 @class WKWebView;
@@ -39,7 +36,7 @@
 namespace WebKit {
 
 class DiagnosticLoggingClient final : public API::DiagnosticLoggingClient {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_TZONE_ALLOCATED(DiagnosticLoggingClient);
 public:
     explicit DiagnosticLoggingClient(WKWebView *);
 
@@ -54,6 +51,8 @@ private:
     void logDiagnosticMessageWithEnhancedPrivacy(WebPageProxy*, const String& message, const String& description) override;
     void logDiagnosticMessageWithValueDictionary(WebPageProxy*, const String& message, const String& description, Ref<API::Dictionary>&&) override;
     void logDiagnosticMessageWithDomain(WebPageProxy*, const String& message, WebCore::DiagnosticLoggingDomain) override;
+
+    bool isWebKitDiagnosticLoggingClient() const final { return true; }
 
     WKWebView *m_webView;
     WeakObjCPtr<id <_WKDiagnosticLoggingDelegate>> m_delegate;
@@ -70,5 +69,6 @@ private:
 
 } // WebKit
 
-#endif // DiagnosticLoggingClient_h
-
+SPECIALIZE_TYPE_TRAITS_BEGIN(WebKit::DiagnosticLoggingClient) \
+    static bool isType(const API::DiagnosticLoggingClient& client) { return client.isWebKitDiagnosticLoggingClient(); } \
+SPECIALIZE_TYPE_TRAITS_END()

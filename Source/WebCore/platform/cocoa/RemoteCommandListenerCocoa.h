@@ -29,25 +29,27 @@
 
 #if PLATFORM(COCOA)
 
-#include <wtf/WeakPtr.h>
+#include <wtf/ThreadSafeWeakPtr.h>
 
 namespace WebCore {
 
-class RemoteCommandListenerCocoa : public RemoteCommandListener, public CanMakeWeakPtr<RemoteCommandListenerCocoa> {
+class RemoteCommandListenerCocoa : public RemoteCommandListener, public ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr<RemoteCommandListenerCocoa> {
 public:
-    static std::unique_ptr<RemoteCommandListenerCocoa> create(RemoteCommandListenerClient&);
+    static Ref<RemoteCommandListenerCocoa> create(RemoteCommandListenerClient&);
     RemoteCommandListenerCocoa(RemoteCommandListenerClient&);
     virtual ~RemoteCommandListenerCocoa();
+
+    void ref() const final { return ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr<RemoteCommandListenerCocoa>::ref(); }
+    void deref() const { return ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr<RemoteCommandListenerCocoa>::deref(); }
 
 private:
     void updateSupportedCommands() final;
 
     void* m_commandHandler { nullptr };
 
-    const RemoteCommandsSet& defaultCommands();
     RemoteCommandsSet m_currentCommands;
 };
 
 }
 
-#endif // PLATFORM(MAC)
+#endif // PLATFORM(COCOA)

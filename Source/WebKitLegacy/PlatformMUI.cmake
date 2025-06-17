@@ -1,3 +1,5 @@
+add_definitions(-DUSE_CAIRO=1 -DUSE_CURL=1 -DWEBKIT_EXPORTS=1 -DUSE_SYSTEM_MALLOC)
+
 list(APPEND WebKitLegacy_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/platform/mui"
     "${WEBCORE_DIR}/platform/bal"

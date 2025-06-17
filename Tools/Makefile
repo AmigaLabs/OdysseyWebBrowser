@@ -1,3 +1,10 @@
+ifneq ($(USE_WORKSPACE),NO)
+
+include ../Makefile.shared
+SCHEME = All WebKit Tools
+
+else
+
 MODULES = DumpRenderTree WebKitTestRunner MiniBrowser ../Source/ThirdParty/gtest/xcode TestWebKitAPI
 
 TO_LOWER = $(shell echo $(1) | tr [:upper:] [:lower:])
@@ -51,5 +58,4 @@ analyze:
 clean:
 	@$(build_target_for_each_module)
 
-installsrc:
-	@true
+endif # USE_WORKSPACE
