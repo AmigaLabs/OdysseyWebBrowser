@@ -140,7 +140,7 @@ inline void vmValidatePhysical(void* p, size_t vmSize)
 inline void* tryVMAllocate(size_t vmSize, VMTag usage = VMTag::Malloc)
 {
     vmValidate(vmSize);
-#if BOS(MORPHOS)
+#if BOS(MORPHOS) || BOS(AMIGAOS)
 	(void)usage;
     void* result = memalign(vmPageSize(), vmSize);
     if (result == NULL)
@@ -164,7 +164,7 @@ inline void* vmAllocate(size_t vmSize, VMTag usage = VMTag::Malloc)
 inline void vmDeallocate(void* p, size_t vmSize)
 {
     vmValidate(p, vmSize);
-#if BOS(MORPHOS)
+#if BOS(MORPHOS) || BOS(AMIGAOS)
     free(p);
 #else
     munmap(p, vmSize);
@@ -174,7 +174,7 @@ inline void vmDeallocate(void* p, size_t vmSize)
 inline void vmRevokePermissions(void* p, size_t vmSize)
 {
     vmValidate(p, vmSize);
-#if !BOS(MORPHOS)
+#if !BOS(MORPHOS) && !BOS(AMIGAOS)
     mprotect(p, vmSize, PROT_NONE);
 #endif
 }
@@ -184,7 +184,7 @@ inline void vmZeroAndPurge(void* p, size_t vmSize, VMTag usage = VMTag::Malloc)
     vmValidate(p, vmSize);
     // MAP_ANON guarantees the memory is zeroed. This will also cause
     // page faults on accesses to this range following this call.
-#if BOS(MORPHOS)
+#if BOS(MORPHOS) || BOS(AMIGAOS)
 	(void)usage;
     if (p)
         memset(p, 0, vmSize);
@@ -202,7 +202,7 @@ inline void* tryVMAllocate(size_t vmAlignment, size_t vmSize, VMTag usage = VMTa
     vmValidate(vmSize);
     vmValidate(vmAlignment);
 
-#if BOS(MORPHOS)
+#if BOS(MORPHOS) || BOS(AMIGAOS)
 	(void)usage;
     char* aligned = static_cast<char*>(memalign(vmAlignment, vmSize));
 #else
@@ -244,7 +244,7 @@ inline void vmDeallocatePhysicalPages(void* p, size_t vmSize)
     SYSCALL(madvise(p, vmSize, MADV_FREE_REUSABLE));
 #elif BOS(FREEBSD)
     SYSCALL(madvise(p, vmSize, MADV_FREE));
-#elif BOS(MORPHOS)
+#elif BOS(MORPHOS) || BOS(AMIGAOS)
     // do nothing
 #else
     SYSCALL(madvise(p, vmSize, MADV_DONTNEED));

@@ -8,16 +8,6 @@
 extern "C" {
 #endif
 
-
-// int stccpy(char *p, const char *q, int n)
-// {
-//    char *t = p;
-//    while ((*p++ = *q++) && --n > 0);
-//    p[-1] = '\0';
-//    return p - t;
-// }
-
-
 Object * STDARGS VARARGS68K DoSuperNew(struct IClass *cl, Object * obj, ...)
 {
         Object *rc;
@@ -34,7 +24,7 @@ Object * STDARGS VARARGS68K DoSuperNew(struct IClass *cl, Object * obj, ...)
         return rc;
 }
 
-#define AllocVecShared(size, flags)  AllocVecTags((size), AVT_Type, MEMF_SHARED, AVT_Lock, FALSE, ((flags)&MEMF_CLEAR) ? AVT_ClearWithValue : TAG_IGNORE, 0, TAG_DONE)
+#define AllocVecShared(size, flags) AllocVecTags((size), AVT_Type, MEMF_SHARED, AVT_Lock, FALSE, ((flags)&MEMF_CLEAR) ? AVT_ClearWithValue : TAG_IGNORE, 0, TAG_DONE)
 
 static LONG do_alpha(LONG a, LONG v)
 {
@@ -113,6 +103,36 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
   return pixels;
 }
 
+APTR ARGB2BGRA(APTR src, ULONG stride, ULONG height)
+{
+    APTR _return = AllocVecTags(stride * height, AVT_Type, MEMF_SHARED, TAG_DONE);
+    ULONG * dstptr = (ULONG *)_return;
+    ULONG * srcptr = (ULONG *)src;
+    ULONG x, y, pixelsperline = stride / 4, srcval, dstval;
+
+    for (y = 0; y < height; y++)
+        for (x = 0; x < pixelsperline; x++)
+        {
+            srcval = (*srcptr);
+            dstval = 0;
+            dstval |= ((srcval & 0x000000FF) >> 0)  << 24;
+            dstval |= ((srcval & 0x0000FF00) >> 8)  << 16;
+            dstval |= ((srcval & 0x00FF0000) >> 16) << 8;
+            dstval |= ((srcval & 0xFF000000) >> 24) << 0;
+
+            (*dstptr) = dstval;
+            srcptr++;
+            dstptr++;
+        }
+
+
+    return _return;
+}
+
+void ARGB2BGRAFREE(APTR dst)
+{
+    FreeVec(dst);
+}
 
 #ifdef __cplusplus
 }

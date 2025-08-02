@@ -609,6 +609,7 @@ void Thread::destructTLS(void* data)
 #if !HAVE(FAST_TLS)
     ASSERT(s_key != InvalidThreadSpecificKey);
     threadSpecificSet(s_key, thread);
+    FindTask(NULL)->tc_UserData = NULL;
 #else
     _pthread_setspecific_direct(WTF_THREAD_DATA_KEY, thread);
     pthread_key_init_np(WTF_THREAD_DATA_KEY, &destructTLS);

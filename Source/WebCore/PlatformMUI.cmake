@@ -13,6 +13,7 @@ list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/platform/graphics/opengl"
     "${WEBCORE_DIR}/platform/network/curl"
     "${WEBCORE_DIR}/platform/mui"
+    "${WEBCORE_DIR}/platform/morphos"
     "${WEBCORE_DIR}/platform/bal"
     "${WEBCORE_DIR}/platform/mediacapabilities"
     "${WEBKITLEGACY_DIR}/mui/UI"

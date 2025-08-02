@@ -43,7 +43,7 @@
 struct Data
 {
     cairo_surface_t *surface;
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     APTR bgra;
 #endif
     ULONG imagecount;
@@ -127,7 +127,7 @@ DEFNEW
                 data->imagecount  = cairo_image_surface_get_width(data->surface) / cairo_image_surface_get_height(data->surface);
                 data->imageheight = cairo_image_surface_get_height(data->surface);
                 data->imagewidth  = data->imageheight;
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
                 data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
                         cairo_image_surface_get_stride(data->surface),data->imageheight);
 #endif
@@ -166,7 +166,7 @@ DEFDISP
         cairo_surface_destroy (data->surface);
     }
 
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     if(data->bgra)
     {
         ARGB2BGRAFREE(data->bgra);

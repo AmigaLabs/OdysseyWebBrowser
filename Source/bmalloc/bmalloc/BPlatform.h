@@ -100,6 +100,10 @@
 #define BOS_MORPHOS 1
 #endif
 
+#ifdef __amigaos4__
+#define BOS_AMIGAOS4 1
+#endif
+
 /* ==== Feature decision macros: these define feature choices for a particular port. ==== */
 
 #define BENABLE(WTF_FEATURE) (defined BENABLE_##WTF_FEATURE && BENABLE_##WTF_FEATURE)

@@ -1495,9 +1495,10 @@ DEFSMETHOD(OWBWindow_LoadURL)
         }
 
         // Close history and restore its global state (a bit heavy to reload whole list...)
-        // TODO: Is this needed for OS4? This crashes the browser loading
-#ifndef __amigaos4__        
-        DoMethod((Object *) getv(data->addressbargroup, MA_AddressBarGroup_PopString), MUIM_Popstring_Close, FALSE);
+        // WARNING: This hack is needed for OS4 since MUIM_Popstring_Close crash the app if MUI window is not shown
+#ifdef __amigaos4__
+        if (getv(obj, MUIA_Window_Open))
+            DoMethod((Object *) getv(data->addressbargroup, MA_AddressBarGroup_PopString), MUIM_Popstring_Close, FALSE);
 #endif
 
         if(getv(app, MA_OWBApp_URLCompletionType) & MV_OWBApp_URLCompletionType_Popup)

@@ -63,7 +63,7 @@ struct Data
     ULONG isfolder;
     STRPTR url;
     cairo_surface_t *surface;
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     APTR bgra;
 #endif
     cairo_t *cr;
@@ -134,7 +134,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
                     if(data->surface)
                     {
                         cairo_surface_destroy(data->surface);
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
                         if (data->bgra)
                         {
                             ARGB2BGRAFREE(data->bgra);
@@ -231,7 +231,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                                 cairo_restore(data->cr);
 
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
                                 data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
                                         cairo_image_surface_get_stride(data->surface),
                                         cairo_image_surface_get_height(data->surface));
@@ -302,7 +302,7 @@ DEFDISP
         data->url = NULL;
     }
 
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     if(data->bgra)
     {
         ARGB2BGRAFREE(data->bgra);

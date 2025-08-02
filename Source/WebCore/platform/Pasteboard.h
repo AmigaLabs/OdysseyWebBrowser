@@ -45,7 +45,7 @@ OBJC_CLASS NSArray;
 #endif
 
 #if PLATFORM(GTK) || OS(MORPHOS) || OS(AMIGAOS)
-#include "morphos/SelectionData.h"
+#include "SelectionData.h"
 #endif
 
 #if PLATFORM(WIN)

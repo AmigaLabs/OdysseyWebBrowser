@@ -43,7 +43,7 @@ enum class ThrottlingReason : uint8_t {
     NonInteractedCrossOriginFrame   = 1 << 3,
 };
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 constexpr const Seconds FullSpeedAnimationInterval { 30_ms };
 constexpr const Seconds HalfSpeedThrottlingAnimationInterval { 60_ms };
 constexpr const Seconds AggressiveThrottlingAnimationInterval { 10_s };

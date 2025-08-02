@@ -226,7 +226,7 @@ void SlotVisitor::appendJSCellOrAuxiliary(HeapCell* heapCell)
 
 void SlotVisitor::appendSlow(JSCell* cell, Dependency dependency)
 {
-#if !OS(MORPHOS) // && !OS(AMIGAOS) // TODO: Check this
+#if !OS(MORPHOS) && !OS(AMIGAOS) // TODO: Check this
     if (UNLIKELY(m_heapAnalyzer))
         m_heapAnalyzer->analyzeEdge(m_currentCell, cell, rootMarkReason());
 #endif
@@ -406,7 +406,7 @@ ALWAYS_INLINE void SlotVisitor::visitChildren(const JSCell* cell)
         cell->methodTable(vm())->visitChildren(const_cast<JSCell*>(cell), *this);
         break;
     }
-#if !OS(MORPHOS) // && !OS(AMIGAOS) // TODO: Check this
+#if !OS(MORPHOS) && !OS(AMIGAOS) // TODO: Check this
     if (UNLIKELY(m_heapAnalyzer)) {
         if (m_isFirstVisit)
             m_heapAnalyzer->analyzeNode(const_cast<JSCell*>(cell));

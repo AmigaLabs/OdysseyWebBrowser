@@ -841,6 +841,10 @@ String String::fromUTF8(const LChar* stringStart, size_t length)
 
 String String::fromUTF8ReplacingInvalidSequences(const LChar* characters, size_t length)
 {
+#ifdef OS(AMIGAOS)    
+    if (!characters)
+        return String();
+#endif        
     return fromUTF8Impl<true>(characters, length);
 }
 

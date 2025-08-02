@@ -3275,7 +3275,7 @@ static void fix_scanline(struct RastPort *rp, int y, int width, int minalpha)
     int i;
 
 #if OS(AMIGAOS)
-    ReadPixelArray(rp, 0, y, buff, 0, 0, 0, PIXF_A8R8G8B8, width, 1);
+    ReadPixelArray(rp, 0, y, buff, 0, 0, 0, PIXF_R8G8B8A8, width, 1);
 #else
     ReadPixelArray(buff, 0, 0, 0, rp, 0, y, width, 1, RECTFMT_RGBA);
 #endif /* OS(AMIGAOS) */
@@ -3353,7 +3353,7 @@ DEFMMETHOD(CreateDragImage)
 #if OS(AROS)
             WritePixelArray(src, 0,0, stride, &rp, 0, 0, width, height, RECTFMT_BGRA32);
 #elif OS(AMIGAOS)
-            WritePixelArray(src, 0,0, stride, PIXF_R8G8B8A8, &rp, 0, 0, width, height);
+            WritePixelArray(src, 0,0, stride, PIXF_A8R8G8B8, &rp, 0, 0, width, height);
 #else
             WritePixelArray(src, 0,0, stride, &rp, 0, 0, width, height, RECTFMT_ARGB);
 #endif

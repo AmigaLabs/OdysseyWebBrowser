@@ -56,7 +56,7 @@
 #endif
 #include <unistd.h>
 #endif
-#if BOS(MORPHOS)
+#if BOS(MORPHOS) || BOS(AMIGAOS)
 #include <exec/memory.h>
 #include <proto/exec.h>
 #endif
@@ -184,7 +184,7 @@ static size_t computeAvailableMemory()
     if (pages == -1 || pageSize == -1)
         return availableMemoryGuess;
     return pages * pageSize;
-#elif BOS(MORPHOS)
+#elif BOS(MORPHOS) || BOS(AMIGAOS)
     size_t multiple = 128 * bmalloc::MB;
 
     // Round up the memory size to a multiple of 128MB because max_mem may not be exactly 512MB
@@ -205,7 +205,7 @@ size_t availableMemory()
     return availableMemory;
 }
 
-#if BPLATFORM(IOS_FAMILY) || BOS(LINUX) || BOS(FREEBSD) || BOS(MORPHOS)
+#if BPLATFORM(IOS_FAMILY) || BOS(LINUX) || BOS(FREEBSD) || BOS(MORPHOS) || BOS(AMIGAOS)
 MemoryStatus memoryStatus()
 {
 #if BPLATFORM(IOS_FAMILY)
@@ -236,7 +236,7 @@ MemoryStatus memoryStatus()
         memoryFootprint = static_cast<size_t>(info.ki_rssize) * vmPageSize();
 
     double percentInUse = static_cast<double>(memoryFootprint) / static_cast<double>(availableMemory());
-#elif BOS(MORPHOS)
+#elif BOS(MORPHOS) || BOS(AMIGAOS)
     // Note that this is global memory usage. There is no way to get the
     // amount of memory allocated by a task. Either way, this is probably
     // what we want anyway.

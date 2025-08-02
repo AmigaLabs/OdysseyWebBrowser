@@ -10,6 +10,18 @@ typedef ULONG STACKIPTR;
 #define AllocVecTaskPooled(x) AllocVec(x,MEMF_PRIVATE)
 #define FreeVecTaskPooled(x) FreeVec(x)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+APTR ARGB2BGRA(APTR src, ULONG stride, ULONG height);
+VOID ARGB2BGRAFREE(APTR dst);
+
+#ifdef __cplusplus
+}
+
+#endif
+
 #else
 #ifdef __cplusplus
 extern "C" {

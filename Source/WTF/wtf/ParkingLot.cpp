@@ -420,14 +420,14 @@ void ensureHashtableSize(unsigned numThreads)
     unlockHashtable(bucketsToUnlock);
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) // || OS(AMIGAOS) // Check this
 // A bit ugly but avoid a deadlock at app exit. If the thread is cancelled it already holds
 // the parkingLock. In this case the TLS destructors would result in a deadlock. Avoid this
 // by adding a thread-cancellation cleanup handler that unlocks the lock. - Piru
 ThreadData* myThreadData();
 static void parkinglockunlocker(void *arg)
 {
-    printf("parkinglockunlocker called for thread %p\n", Thread::current());
+    //printf("parkinglockunlocker called for thread %p\n", Thread::current());
     ThreadData* me = myThreadData();
     me->parkingLock.unlock();
 }
@@ -445,7 +445,7 @@ ThreadData::ThreadData()
     }
 
     ensureHashtableSize(currentNumThreads);
-#if OS(MORPHOS)
+#if OS(MORPHOS) // || OS(AMIGAOS) // Check this
     pthread_cleanup_push(parkinglockunlocker, NULL);
 #endif
 }

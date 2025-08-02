@@ -36,7 +36,7 @@ init: ## Initialize the build folder and run cmake
 build: ## Build Odyssey Web Browser
 	@echo "${CCPINK}${CCBOLD}\n-> Building Odyssey Web Browser...\n${CCEND}"
 	@cd build && \
-		make -j$(shell nproc --ignore=2)
+		make -j$(shell nproc --ignore=4)
 
 
 # .PHONY: build-jsc
