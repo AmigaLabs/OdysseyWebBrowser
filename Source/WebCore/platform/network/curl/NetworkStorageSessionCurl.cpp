@@ -40,8 +40,10 @@ namespace WebCore {
 
 static String defaultCookieJarPath()
 {
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
 	return "PROGDIR:Cache/cookie.jar.db";
+#elif OS(AMIGAOS)
+    return "PROGDIR:Conf/cookies.db";
 #else
     static const char* defaultFileName = "cookie.jar.db";
 #if PLATFORM(MUI)

@@ -153,6 +153,8 @@ struct Device			*TimerBase		= NULL;
 struct TimerIFace		*ITimer			= NULL;
 struct MsgPort			*TimerMP		= NULL;
 struct TimeRequest		*TimerIO		= NULL;
+
+struct AHIIFace 		*IAHI 			= NULL;
 #else
 struct Library * IconBase = NULL;
 struct Library * MUIMasterBase = NULL;

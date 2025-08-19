@@ -223,7 +223,8 @@ std::optional<Result> decode(const URL& url, Mode mode)
 void shutdown()
 {
     /// EVIL!!!!! but triggers completion of detached thread
-    delete &decodeQueue();
+    if (FindTask("org.webkit.DataURLDecoder") != NULL)
+        delete &decodeQueue();
 }
 #endif
 

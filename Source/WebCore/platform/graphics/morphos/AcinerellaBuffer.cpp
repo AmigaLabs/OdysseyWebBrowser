@@ -76,6 +76,7 @@ public:
 			m_bufferSize = 0;
 			m_redirectCount = 0;
 			m_isPaused = false;
+			m_length = 0;
 		}
 
 		m_request = ResourceRequest(m_url);
@@ -148,7 +149,7 @@ public:
 				{
 					auto buffer = m_buffer.front();
 					int write = std::min(int(buffer->size() - m_bufferRead), sizeLeft);
-
+					
 					memcpy(outBuffer + sizeWritten, buffer->data() + m_bufferRead, write);
 					m_bufferRead += write;
 					m_bufferPositionAbs += write;
@@ -549,7 +550,7 @@ public:
 			DP(dprintf("%s(%p): read from %d, size %d\n", __PRETTY_FUNCTION__, this, int(m_bufferPositionAbs), 0));
 			return 0;
 		}
-		
+
 		DP(dprintf("%s(%p): read failed!\n", __PRETTY_FUNCTION__, this));
 		return -1;
 	}

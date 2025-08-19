@@ -1482,7 +1482,7 @@ DEFMMETHOD(Show)
                                   TAG_DONE);
             }
         }
-#elif OS(AMIGAOS)
+#elif ENABLE(VIDEO) && OS(AMIGAOS)
 		// Video: recompute vlayer offset whenever window size changes
 		if(data->video_element)
 		{

@@ -86,6 +86,10 @@
 #include <wtf/ThreadingPrimitives.h>
 #endif
 
+#ifdef __amigaos4__    
+#undef Screen
+#endif
+
 namespace JSC {
 class CallFrame;
 class InputCursor;

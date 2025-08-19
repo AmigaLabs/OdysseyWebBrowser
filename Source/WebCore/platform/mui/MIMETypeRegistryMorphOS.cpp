@@ -57,7 +57,9 @@ static const ExtensionMap extensionMap [] = {
     { imageJpeg, "jpg" },
     { imageJpeg, "jfif" },
     { imageJpeg, "pjpeg" },
+#if USE(WEBP)
     { "image/webp", "webp" },
+#endif    
     { "image/bmp", "bmp" },
     { "application/xhtml+xml", "xhtml" },
     { "application/x-javascript", "js" },

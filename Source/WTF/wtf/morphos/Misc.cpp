@@ -14,6 +14,7 @@ extern "C" void Fail(unsigned char *)
 	// TODO
 }
 
+#ifndef __amigaos4__
 extern "C" char *realpath(const char *file_name, char *resolved_name)
 {
 	BPTR l = Lock(file_name, ACCESS_READ);
@@ -29,6 +30,7 @@ extern "C" char *realpath(const char *file_name, char *resolved_name)
 
 	return nullptr;
 }
+#endif
 
 namespace WTF {
 

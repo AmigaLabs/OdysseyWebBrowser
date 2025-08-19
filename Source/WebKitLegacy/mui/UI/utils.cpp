@@ -922,7 +922,8 @@ bool rexx_send(char *hostname, char *cmd)
                     {
                         if (answer->rm_Result2)
                         {
-                            strncpy (RESULT,(char *)answer->rm_Result2, RESULT_LEN);
+                            strncpy (RESULT,(char *)answer->rm_Result2, RESULT_LEN - 1);
+                            RESULT[RESULT_LEN - 1] = '\0';
                             DeleteArgstring ((char *)answer->rm_Result2);
                         }
                         else

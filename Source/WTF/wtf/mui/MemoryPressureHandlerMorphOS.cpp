@@ -28,10 +28,9 @@
 #include <proto/exec.h>
 #include <exec/memory.h>
 
-extern "C" { void dprintf(const char *,...); }
 
 namespace WebKit {
-	extern void reactOnMemoryPressureInWebKit();
+	void reactOnMemoryPressureInWebKit();
 }
 
 namespace WTF {
@@ -76,7 +75,7 @@ void MemoryPressureHandler::morphosMeasurementTimerFired()
 	{
         setUnderMemoryPressure(true);
         releaseMemory(Critical::Yes);
-        WebKit::reactOnMemoryPressureInWebKit();
+        //WebKit::reactOnMemoryPressureInWebKit();
         return;
 	}
 }

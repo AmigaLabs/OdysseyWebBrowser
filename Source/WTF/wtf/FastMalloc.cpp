@@ -61,6 +61,10 @@ extern "C" { void _oomCrash() { std::abort(); }; void oomCrash() __attribute__((
 #define CRASH oomCrash
 #endif
 
+#if OS(AMIGAOS)
+#include <malloc.h>
+#endif
+
 namespace WTF {
 
 #if ASSERT_ENABLED
@@ -209,7 +213,7 @@ void fastAlignedFree(void* p)
     _aligned_free(p);
 }
 
-#elif OS(MORPHOS) || OS(AMIGAOS)
+#elif OS(MORPHOS)
 
 void* fastAlignedMalloc(size_t alignment, size_t size)
 {
@@ -229,6 +233,31 @@ void *tryFastAlignedMalloc(size_t alignment, size_t size)
 void fastAlignedFree(void *p)
 {
 	free(p);
+}
+
+#elif OS(MORPHOS) || OS(AMIGAOS)
+
+void* fastAlignedMalloc(size_t alignment, size_t size)
+{
+    ASSERT_IS_WITHIN_LIMIT(size);
+	void* p = memalign(alignment, size);
+	if (UNLIKELY(!p))
+		CRASH();
+	return p;
+}
+
+void *tryFastAlignedMalloc(size_t alignment, size_t size)
+{
+    FAIL_IF_EXCEEDS_LIMIT(size);
+    return memalign(alignment, size);
+}
+
+void fastAlignedFree(void *p)
+{
+    if (p) {
+	    free(p);
+        p = NULL;
+    }
 }
 
 #else

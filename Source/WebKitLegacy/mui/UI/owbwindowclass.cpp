@@ -1498,8 +1498,8 @@ DEFSMETHOD(OWBWindow_LoadURL)
         // WARNING: This hack is needed for OS4 since MUIM_Popstring_Close crash the app if MUI window is not shown
 #ifdef __amigaos4__
         if (getv(obj, MUIA_Window_Open))
-            DoMethod((Object *) getv(data->addressbargroup, MA_AddressBarGroup_PopString), MUIM_Popstring_Close, FALSE);
 #endif
+            DoMethod((Object *) getv(data->addressbargroup, MA_AddressBarGroup_PopString), MUIM_Popstring_Close, FALSE);
 
         if(getv(app, MA_OWBApp_URLCompletionType) & MV_OWBApp_URLCompletionType_Popup)
         {
