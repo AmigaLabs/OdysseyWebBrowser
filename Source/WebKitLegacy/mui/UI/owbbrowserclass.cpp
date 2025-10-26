@@ -1725,6 +1725,7 @@ DEFMMETHOD(Draw)
 #if USE_MORPHOS_SURFACE
             // XXX: implement
 #else
+
             if(src && data->rp_offscreen.BitMap)
             {
                 WritePixelArrayAlpha(src, data->plugin_update_x, data->plugin_update_y, stride, &data->rp_offscreen, data->update_x, data->update_y, data->update_width, data->update_height, 0xffffffff);

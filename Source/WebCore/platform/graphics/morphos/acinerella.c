@@ -443,7 +443,11 @@ int CALL_CONVT ac_open(lp_ac_instance pacInstance, void *sender,
 		return -1;
 	}
 
+#ifdef OS(AMIGAOS)	
+	av_log_set_level(AV_LOG_DEBUG);
+#else
 	av_log_set_level(AV_LOG_QUIET);
+#endif	
 	av_log_set_callback(&__av_log_default_callback);
 
 	// Reference at the underlying lp_ac_data instance

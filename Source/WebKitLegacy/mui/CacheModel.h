@@ -1,5 +1,5 @@
 /*
- *
+ * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,20 +23,34 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "CurlSSLHandle.h"
-#include <wtf/RetainPtr.h>
+#pragma once
 
-namespace WebCore {
+#include <stdint.h>
+#include <wtf/Forward.h>
+#include <wtf/Seconds.h>
 
-void CurlSSLHandle::platformInitialize()
-{
-#ifndef __amigaos4__
-    String caCertPath = "ENV:SYS/Certificates/ca-bundle.crt";
-#else
-    String caCertPath = "PROGDIR:curl-ca-bundle.crt";
-#endif    
-    setCACertPath(WTFMove(caCertPath));
-}
+namespace WebKit {
 
-}
+enum class CacheModel : uint8_t {
+    DocumentViewer,
+    DocumentBrowser,
+    PrimaryWebBrowser
+};
+
+void calculateMemoryCacheSizes(CacheModel, unsigned& cacheTotalCapacity, unsigned& cacheMinDeadCapacity, unsigned& cacheMaxDeadCapacity, Seconds& deadDecodedDataDeletionInterval, unsigned& pageCacheCapacity);
+void calculateURLCacheSizes(CacheModel, uint64_t diskFreeSize, unsigned& urlCacheMemoryCapacity, uint64_t& urlCacheDiskCapacity);
+
+} // namespace WebKit
+
+namespace WTF {
+
+template<> struct EnumTraits<WebKit::CacheModel> {
+    using values = EnumValues<
+    WebKit::CacheModel,
+    WebKit::CacheModel::DocumentViewer,
+    WebKit::CacheModel::DocumentBrowser,
+    WebKit::CacheModel::PrimaryWebBrowser
+    >;
+};
+
+} // namespace WTF

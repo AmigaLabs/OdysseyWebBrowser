@@ -272,7 +272,7 @@ private:
     OSObjectPtr<dispatch_queue_t> m_dispatchQueue;
 #endif
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) //|| OS(AMIGAOS)
     RunLoop::Timer<MemoryPressureHandler> m_morphosMeasurementTimer;
     void morphosMeasurementTimerFired();
 #endif

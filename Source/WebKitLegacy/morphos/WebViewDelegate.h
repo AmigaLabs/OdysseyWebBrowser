@@ -5,11 +5,15 @@
 #include <WebCore/IntRect.h>
 #include <WebCore/FrameLoaderClient.h>
 #include <WebCore/ContextMenuItem.h>
+#if !OS(AMIGAOS)
 #include <WebCore/MediaPlayerMorphOS.h>
+#endif
 #include <WebCore/NotificationClient.h>
 
 #define EP_PROFILING 0
+#if !OS(AMIGAOS)
 #include <libeventprofiler.h>
+#endif
 
 namespace WebCore {
 	class Page;

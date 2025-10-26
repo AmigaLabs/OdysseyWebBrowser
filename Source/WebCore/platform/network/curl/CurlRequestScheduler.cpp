@@ -78,8 +78,7 @@ CurlRequestScheduler::CurlRequestScheduler(long maxConnects, long maxTotalConnec
     , m_maxTotalConnections(maxTotalConnections)
     , m_maxHostConnections(maxHostConnections)
 {
-    printf("CurlRequestScheduler created with maxConnects: %ld, maxTotalConnections: %ld, maxHostConnections: %ld\n",
-        m_maxConnects, m_maxTotalConnections, m_maxHostConnections);
+
 }
 
 bool CurlRequestScheduler::add(CurlRequestSchedulerClient* client)
@@ -158,7 +157,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
 
 void CurlRequestScheduler::wakeUpThreadIfPossible()
 {
-#if !PLATFORM(MUI)
+#if !PLATFORM(MUI) // || OS(AMIGAOS)
     Locker locker { m_multiHandleMutex };
     if (!m_curlMultiHandle)
         return;
@@ -170,7 +169,7 @@ void CurlRequestScheduler::wakeUpThreadIfPossible()
 void CurlRequestScheduler::stopThreadIfNoMoreJobRunning()
 {
     ASSERT(!isMainThread());
-#if !PLATFORM(MUI)
+#if !PLATFORM(MUI) // || OS(AMIGAOS)
     /* Keep the original curlThread running until browser quits */
     Locker locker { m_mutex };
     if (m_activeJobs.size() || m_taskQueue.size())
@@ -184,6 +183,16 @@ void CurlRequestScheduler::stopThreadIfNoMoreJobRunning()
 void CurlRequestScheduler::stopCurlThread()
 {
 	stopThread();
+}
+
+void CurlRequestScheduler::setMaxTotalConnections(long val)
+{
+    m_maxTotalConnections = val;
+    Locker locker { m_multiHandleMutex };
+    m_curlMultiHandle.emplace();
+    m_curlMultiHandle->setMaxTotalConnections(val);
+    m_curlMultiHandle.reset();
+    /* TODO: need to change in m_curlMultiHandle to take effect without need to restart Odyssey */
 }
 
 CurlStreamID CurlRequestScheduler::createStream(const URL& url, CurlStream::Client& client)
@@ -288,7 +297,7 @@ void CurlRequestScheduler::workerThread()
 
         executeTasks();
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) // || OS(AMIGAOS)
         const int selectTimeoutMS = INT_MAX;
         CURLMcode mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
         if (mc != CURLM_OK)

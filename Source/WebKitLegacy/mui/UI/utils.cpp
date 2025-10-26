@@ -576,22 +576,8 @@ char *utf8_to_local(const char *in)
 #if OS(AROS)
     {
         ULONG dataConvertedLength;
-        STRPTR dataConverted = CodesetsUTF8ToStr(CSA_Source, (IPTR) in, CSA_DestLenPtr, (IPTR) &dataConvertedLength,
-                TAG_END);
-
-        if(dataConverted)
-        {
-            char * _ret = strdup(dataConverted);
-            CodesetsFreeA(dataConverted, NULL);
-            return _ret;
-        }
-    }
-#endif
-#if OS(AMIGAOS)
-    {
-        ULONG dataConvertedLength;
         STRPTR dataConverted = CodesetsUTF8ToStr(
-                        CSA_Source, (IPTR) in,
+                        CSA_Source, (IPTR) in, 
                         CSA_DestLenPtr, (IPTR) &dataConvertedLength,
                         TAG_END);
 
@@ -656,7 +642,7 @@ char *local_to_utf8(const char *in)
         }
     }
 #endif
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     {
         struct codeset *utfCodeset = CodesetsFindA("UTF-8", NULL);
         ULONG dataConvertedLength;

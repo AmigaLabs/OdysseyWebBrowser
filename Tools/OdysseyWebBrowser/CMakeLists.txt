@@ -49,6 +49,7 @@ set(OdysseyWebBrowser_LIBRARIES
     -lpixman-1
     -lfontconfig
     -lnghttp2
+    -llzma
     -lpthread
     -lunistring
     ${ZLIB_LIBRARIES}    

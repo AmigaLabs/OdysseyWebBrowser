@@ -88,7 +88,7 @@
 #define WTF_CPU_PPC 1
 #define WTF_CPU_KNOWN 1
 #endif
-#ifdef __MORPHOS__
+#if defined(__MORPHOS__) || defined(__amigaos4__)
 #ifdef __cplusplus
 namespace WTF {
 class HasAltivec {

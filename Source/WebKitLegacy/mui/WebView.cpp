@@ -126,6 +126,7 @@
 #include <WebCore/LibWebRTCProvider.h>
 #include <WebCore/Logging.h>
 #include <WebCore/MemoryCache.h>
+#include <WebCore/MemoryRelease.h>
 #include <WebCore/MIMETypeRegistry.h>
 #include <WebCore/MediaRecorderProvider.h>
 #include <WebCore/NotImplemented.h>
@@ -380,6 +381,14 @@ WebView::WebView()
     setScheduledScrollOffset(IntPoint(0, 0));
 
     initializeStaticObservers();
+
+#if 0 //OS(AMIGAOS)
+    auto& memoryPressureHandler = MemoryPressureHandler::singleton();
+    memoryPressureHandler.setLowMemoryHandler([] (Critical critical, Synchronous synchronous) {
+        WebCore::releaseMemory(critical, synchronous);
+    });    
+    memoryPressureHandler.install();
+#endif
 
     WebCore::ObserverServiceData::createObserverService()->registerObserver("PopupMenuShow", m_webViewObserver);
     WebCore::ObserverServiceData::createObserverService()->registerObserver("PopupMenuHide", m_webViewObserver);

@@ -1,5 +1,6 @@
 /*
- *
+ * Copyright (C) 2017 Igalia S.L.
+ * Copyright (C) 2019 Sony Interactive Entertainment Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,19 +25,20 @@
  */
 
 #include "config.h"
-#include "CurlSSLHandle.h"
-#include <wtf/RetainPtr.h>
+#include "ResourceUsageOverlay.h"
+
+#if ENABLE(RESOURCE_USAGE)
 
 namespace WebCore {
 
-void CurlSSLHandle::platformInitialize()
+void ResourceUsageOverlay::platformInitialize()
 {
-#ifndef __amigaos4__
-    String caCertPath = "ENV:SYS/Certificates/ca-bundle.crt";
-#else
-    String caCertPath = "PROGDIR:curl-ca-bundle.crt";
-#endif    
-    setCACertPath(WTFMove(caCertPath));
+}
+
+void ResourceUsageOverlay::platformDestroy()
+{
 }
 
 }
+
+#endif

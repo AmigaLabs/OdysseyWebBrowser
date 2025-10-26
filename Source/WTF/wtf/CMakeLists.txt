@@ -579,6 +579,10 @@ if (CMAKE_CXX_COMPILER MATCHES ".*ppc-morphos.*")
   list(APPEND WTF_LIBRARIES "-lsyscall -laboxstubs")
 endif ()
 
+if ("${PORT}" STREQUAL "MUI")
+  list(APPEND WTF_LIBRARIES "-lpthread -athread=native")
+endif ()
+
 WEBKIT_FRAMEWORK_DECLARE(WTF)
 WEBKIT_INCLUDE_CONFIG_FILES_IF_EXISTS()
 

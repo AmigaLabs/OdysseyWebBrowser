@@ -37,7 +37,11 @@
 #include <proto/muimaster.h>
 #include <clib/alib_protos.h>
 #include <libraries/gadtools.h>
+#ifndef __amigaos4__
 #include <aros-overrides.h>
+#else
+#include <aos4funcs_api.h>
+#endif
 
 #include <cstdio>
 

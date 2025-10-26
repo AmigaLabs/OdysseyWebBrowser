@@ -24,8 +24,6 @@ Object * STDARGS VARARGS68K DoSuperNew(struct IClass *cl, Object * obj, ...)
         return rc;
 }
 
-#define AllocVecShared(size, flags) AllocVecTags((size), AVT_Type, MEMF_SHARED, AVT_Lock, FALSE, ((flags)&MEMF_CLEAR) ? AVT_ClearWithValue : TAG_IGNORE, 0, TAG_DONE)
-
 static LONG do_alpha(LONG a, LONG v)
 {
   LONG tmp  = (a*v);
@@ -40,7 +38,7 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
   {
     ULONG *buf;
 
-    if((buf = (ULONG *)AllocVecShared(width * 4, MEMF_ANY)) != NULL)
+    if((buf = (ULONG *)malloc(width * 4)) != NULL)
     {
       ULONG x, y;
 
@@ -52,12 +50,16 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
         ULONG *spix;
         ULONG *dpix;
 
-        //ReadPixelArray(buf, 0, 0, width * 4, rp, destx, desty + y, width, 1, RECTFMT_ARGB);
         ReadPixelArray(rp, destx, desty + y, (uint8 *)buf, 0, 0, width * 4, PIXF_A8R8G8B8, width, 1);
-
 
         spix = (ULONG *)((ULONG)src + (srcy + y) * srcmod + srcx * sizeof(ULONG));
         dpix = buf;
+
+        // Prefetch the first cache lines of source and destination
+        if (width > 8) {
+          __builtin_prefetch(spix + 8, 0, 3);  // Read prefetch, high locality
+          __builtin_prefetch(dpix + 8, 1, 3);  // Write prefetch, high locality
+        }
 
         for(x = 0; x < width; x++)
         {
@@ -66,10 +68,22 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
           srcpix = *spix++;
           dstpix = *dpix;
 
+          // Prefetch ahead in the loop (8 pixels ahead)
+          if (x + 8 < width) {
+            __builtin_prefetch(spix + 8, 0, 3);
+            __builtin_prefetch(dpix + 8, 1, 3);
+          }
+
+          // Convert from big-endian to host byte order if needed
+          // Assuming PIXF_A8R8G8B8 might be in different endianness
+          //srcpix = __builtin_bswap32(srcpix);
+          //dstpix = __builtin_bswap32(dstpix);
+
+          // Extract components - now in consistent byte order
           a = (srcpix >> 24) & 0xff;
           r = (srcpix >> 16) & 0xff;
           g = (srcpix >> 8) & 0xff;
-          b = (srcpix >> 0) & 0xff;
+          b = srcpix & 0xff;
 
           a = a - globalalpha;
 
@@ -77,26 +91,34 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
           {
             ULONG dest_r, dest_g, dest_b;
 
+            // Extract destination components
             dest_r = (dstpix >> 16) & 0xff;
             dest_g = (dstpix >> 8) & 0xff;
-            dest_b = (dstpix >> 0) & 0xff;
+            dest_b = dstpix & 0xff;
 
+            // Alpha blending calculations
             dest_r += do_alpha(a, r - dest_r);
             dest_g += do_alpha(a, g - dest_g);
             dest_b += do_alpha(a, b - dest_b);
 
-            dstpix = 0xff000000 | dest_r << 16 | dest_g << 8 | dest_b;
+            // Recompose pixel and convert back to original byte order
+            dstpix = (0xffUL << 24) | (dest_r << 16) | (dest_g << 8) | dest_b;
+            dstpix = __builtin_bswap32(dstpix);
+          }
+          else
+          {
+            // If no alpha blending needed, convert back to original byte order
+            dstpix = __builtin_bswap32(dstpix);
           }
 
           *dpix++ = dstpix;
           pixels++;
         }
 
-        //WritePixelArray(buf, 0, 0, width * 4, rp, destx, desty + y, width, 1, RECTFMT_ARGB);
-        WritePixelArray((uint8 *)buf,0,0,width *4, PIXF_A8R8G8B8,rp,destx, desty + y, width, 1);
+        WritePixelArray((uint8 *)buf, 0, 0, width * 4, PIXF_A8R8G8B8, rp, destx, desty + y, width, 1);
       }
 
-      FreeVec(buf);
+      free(buf);
     }
   }
 
@@ -105,7 +127,7 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
 
 APTR ARGB2BGRA(APTR src, ULONG stride, ULONG height)
 {
-    APTR _return = AllocVecTags(stride * height, AVT_Type, MEMF_SHARED, TAG_DONE);
+    APTR _return = malloc(stride * height);
     ULONG * dstptr = (ULONG *)_return;
     ULONG * srcptr = (ULONG *)src;
     ULONG x, y, pixelsperline = stride / 4, srcval, dstval;
@@ -131,7 +153,8 @@ APTR ARGB2BGRA(APTR src, ULONG stride, ULONG height)
 
 void ARGB2BGRAFREE(APTR dst)
 {
-    FreeVec(dst);
+  if (dst)
+    free(dst);
 }
 
 #ifdef __cplusplus

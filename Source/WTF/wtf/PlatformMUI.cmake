@@ -8,17 +8,19 @@ list(APPEND WTF_SOURCES
     mui/LanguageMorphOS.cpp
     generic/MemoryFootprintGeneric.cpp
     generic/MainThreadGeneric.cpp
-    generic/MemoryPressureHandlerGeneric.cpp
 )
 if (AROS)
     list(APPEND WTF_SOURCES 
         mui/execallocator.cpp
         OSAllocatorAROS.cpp
+        generic/MemoryPressureHandlerGeneric.cpp
     )
 endif()
 if (AmigaOS4)
     list(APPEND WTF_SOURCES 
         OSAllocatorAmigaOS.cpp
-        morphos/OS4Misc.cpp
+        mui/OS4Misc.cpp
+        generic/MemoryPressureHandlerGeneric.cpp
+#        mui/MemoryPressureHandlerMorphOS.cpp
     )
 endif()

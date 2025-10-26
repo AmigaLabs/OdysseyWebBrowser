@@ -235,7 +235,7 @@ void fastAlignedFree(void *p)
 	free(p);
 }
 
-#elif OS(MORPHOS) || OS(AMIGAOS)
+#elif OS(AMIGAOS)
 
 void* fastAlignedMalloc(size_t alignment, size_t size)
 {

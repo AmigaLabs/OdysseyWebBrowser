@@ -102,6 +102,7 @@
 #include "DataURLDecoder.h"
 #include <WebCore/AsyncFileStream.h>
 #include <WebCore/BlobRegistryImpl.h>
+#include <WebCore/CurlRequestScheduler.h>
 #include <wtf/text/StringToIntegerConversion.h>
 
 namespace JSC {
@@ -1010,15 +1011,22 @@ DEFNEW
     NEWLIST(&urlsetting_list);
     NEWLIST(&family_list);
 
-	#if !OS(AMIGAOS)
     installClipboardMonitor();
-    #endif
 
     menus_init();
 
     JSC::initialize();
     WTF::initializeMainThread();
     WebPlatformStrategies::initialize();
+
+#if 0 //OS(AMIGAOS)
+    auto& memoryPressureHandler = MemoryPressureHandler::singleton();
+    memoryPressureHandler.setLowMemoryHandler([] (Critical critical, Synchronous synchronous) {
+        WebCore::releaseMemory(critical, synchronous);
+    });    
+    memoryPressureHandler.install();
+    printf("Memory Pressure Handler installed\n");
+#endif
 
     /* Task that is used to signal main loop for processing of RunLoop based work */
     owb_timer_should_exit = 0;
@@ -1210,9 +1218,7 @@ DEFDISP
     }
 #endif
 
-    #if !OS(AMIGAOS)
     removeClipboardMonitor();
-    #endif
     //kprintf("OWBApp: Ok, calling supermethod\n");
 
     WebCore::DOMWindow::dispatchAllPendingUnloadEvents();
@@ -1224,16 +1230,12 @@ DEFDISP
     WebCore::shutdownBlobRegistryImpl();
     /* !!! Manually call save as destructors for static objects are not getting called (where saveIndex is called) !!! */
     CurlCacheManager::singleton().saveIndex();
-
-#if !OS(AMIGAOS)    
     GCController::singleton().garbageCollectNow();
-#endif
     //    FontCache::singleton().invalidate(); // trashes memory like fuck on https://testdrive-archive.azurewebsites.net/Graphics/CanvasPinball/default.html
     MemoryCache::singleton().setDisabled(true);
 
-#if !OS(AMIGAOS)    
     delete &commonVM(); /* This looks weird, but it stops JSC Heap Collector Thread */
-#endif    
+
 #if 0
 // broken 2.34.6
 #if ENABLE(JIT)
@@ -2390,12 +2392,8 @@ void prefs_update(Object *obj, struct Data *data)
     /* Needed in ResourceHandleManager::sharedInstance() */
     stccpy(data->certificate_path, (char *) getv(data->prefswin, MA_OWBApp_CertificatePath), sizeof(data->certificate_path));
 
-// broken 2.24
     int activeconnections = (int) getv(data->prefswin, MA_OWBApp_ActiveConnections);
-#if 0
-// broken 2.18
-    ResourceHandleManager::setMaxConnections(activeconnections);
-#endif
+    CurlContext::singleton().scheduler().setMaxTotalConnections(activeconnections);
     stccpy(data->useragent, (char *) getv(data->prefswin, MA_OWBApp_UserAgent), sizeof(data->useragent));
 #if 0
 // broken 2.18

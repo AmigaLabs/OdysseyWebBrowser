@@ -370,6 +370,7 @@ DEFMMETHOD(Draw)
         if(data->url && cairo_surface_status(data->surface) == CAIRO_STATUS_SUCCESS)
         {
             stride = cairo_image_surface_get_stride(data->surface);
+            
 #if OS(AROS)
             src = (unsigned char *)data->bgra;
 #else

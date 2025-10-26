@@ -962,8 +962,12 @@ DEFNEW
 
                                 Child, HGroup,
                                     Child, MakeLabel(GSI(MSG_PREFSWINDOW_SECURITY_CERTIFICATE_PATH)),
+#ifndef __amigaos4__
                                     Child, str_certificatepath = (Object *) MakeFileString(GSI(MSG_PREFSWINDOW_SECURITY_CERTIFICATE_PATH), "ENV:SYS/Certificates/ca-bundle.crt", MAKE_ID('S','S','C','P')),
-                                End,
+#else
+                                    Child, str_certificatepath = (Object *) MakeFileString(GSI(MSG_PREFSWINDOW_SECURITY_CERTIFICATE_PATH), "PROGDIR:curl-ca-bundle.crt", MAKE_ID('S','S','C','P')),
+#endif
+                                    End,
                                 Child, ColGroup(3),
                                     Child, ch_ignoresslerrors = (Object *) MakePrefsCheck(GSI(MSG_PREFSWINDOW_SECURITY_IGNORE_SSL_ERRORS), FALSE, MAKE_ID('S','S','I','E')),
                                     Child, LLabel(GSI(MSG_PREFSWINDOW_SECURITY_IGNORE_SSL_ERRORS)),

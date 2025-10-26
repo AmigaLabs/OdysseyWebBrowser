@@ -100,6 +100,11 @@
 #include <wtf/PlatformEnablePlayStation.h>
 #endif
 
+#if PLATFORM(AMIGAOS)
+#error
+#include <wtf/PlatformEnableAmigaOS.h>
+#endif
+
 /* ---------  ENABLE macro defaults --------- */
 
 /* Do not use PLATFORM() tests in this section ! */

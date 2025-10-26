@@ -46,7 +46,7 @@ class DOMTimer final : public RefCounted<DOMTimer>, public SuspendableTimerBase 
 public:
     WEBCORE_EXPORT virtual ~DOMTimer();
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
     static Seconds defaultMinimumInterval() { return 20_ms; }
     static Seconds defaultAlignmentInterval() { return 0_s; }
     static Seconds defaultAlignmentIntervalInLowPowerMode() { return 60_ms; }

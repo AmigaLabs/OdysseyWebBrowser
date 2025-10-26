@@ -219,7 +219,9 @@ void Acinerella::selectStream()
 #if OS(AROS)
 	UQUAD clock = 2000000000;
 #endif
-
+#if OS(AMIGAOS)
+	#error 
+#endif
 	for (auto info : hls->streams())
 	{
 		if (info.m_height > 720 || info.m_fps > 30)

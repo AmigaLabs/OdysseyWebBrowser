@@ -97,7 +97,7 @@ public:
     String(StaticStringImpl*);
 
 #if OS(MORPHOS) || OS(AMIGAOS)
-       String(const char * characters, unsigned length, unsigned mib);
+    String(const char * characters, unsigned length, unsigned mib);
 #endif
 
     // Construct a string from a constant string literal.

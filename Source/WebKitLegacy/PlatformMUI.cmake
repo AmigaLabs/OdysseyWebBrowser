@@ -183,6 +183,8 @@ list(APPEND WebKitLegacy_SOURCES
 if (AmigaOS4)
     list(APPEND WebKitLegacy_SOURCES
         mui/UI/aos4funcs.cpp
+#        mui/CacheModel.cpp
+        mui/WebProcess.cpp
     )
 endif()
 

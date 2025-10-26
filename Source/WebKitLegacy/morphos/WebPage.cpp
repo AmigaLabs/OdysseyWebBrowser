@@ -158,10 +158,12 @@
 
 #include <proto/graphics.h>
 #include <proto/exec.h>
-#include <proto/cybergraphics.h>
 #include <proto/intuition.h>
 #include <proto/layers.h>
+#if !OS(AMIGAOS)
+#include <proto/cybergraphics.h>
 #include <cybergraphx/cybergraphics.h>
+#endif
 #include <proto/graphics.h>
 #include <proto/dos.h>
 #include <dos/dos.h>

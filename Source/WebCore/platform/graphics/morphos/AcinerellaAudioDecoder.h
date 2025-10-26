@@ -68,6 +68,7 @@ protected:
 
 protected:
 	Library        *m_ahiBase = nullptr;
+
 	MsgPort        *m_ahiPort = nullptr;
 	AHIRequest     *m_ahiIO = nullptr;
 	AHIAudioCtrl   *m_ahiControl = nullptr;
