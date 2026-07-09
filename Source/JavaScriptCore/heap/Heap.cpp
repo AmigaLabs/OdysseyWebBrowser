@@ -428,6 +428,17 @@ void Heap::lastChanceToFinalize()
         RELEASE_ASSERT(m_lastServedTicket <= m_lastGrantedTicket);
         isCollecting = m_lastServedTicket < m_lastGrantedTicket;
     }
+#if OS(AMIGAOS)
+    // On AmigaOS4, collectInMutatorThread() is disabled (it crashes due to a null
+    // stackOrigin). This means waitForCollector() deadlocks when an in-progress GC
+    // tries to stop the world. Pre-signal the collector thread to stop so that
+    // notifyThreadStopping() will unblock waitForCollector() via ParkingLot::unparkAll.
+    if (isCollecting) {
+        Locker locker { *m_threadLock };
+        m_threadShouldStop = true;
+        m_threadCondition->notifyOne(locker);
+    }
+#endif
     if (isCollecting) {
         dataLogIf(Options::logGC(), "...]\n");
         
@@ -442,6 +453,15 @@ void Heap::lastChanceToFinalize()
     }
     dataLogIf(Options::logGC(), "3");
 
+#if OS(AMIGAOS)
+    // If waitForCollector() exited early because m_threadIsStopping was set (the
+    // collector was force-stopped), clear the pending request state so the
+    // RELEASE_ASSERTs below do not fire.
+    if (m_threadIsStopping) {
+        m_requests.clear();
+        m_lastServedTicket = m_lastGrantedTicket;
+    }
+#endif
     RELEASE_ASSERT(m_requests.isEmpty());
     RELEASE_ASSERT(m_lastServedTicket == m_lastGrantedTicket);
     
@@ -1888,7 +1908,7 @@ void Heap::waitForCollector(const Func& func)
         // do the collection.
         relinquishConn();
 
-        if (done) {
+        if (done || m_threadIsStopping) {
             clearMutatorWaiting(); // Clean up just in case.
             return;
         }

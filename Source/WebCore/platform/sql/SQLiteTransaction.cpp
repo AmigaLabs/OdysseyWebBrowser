@@ -88,7 +88,7 @@ void SQLiteTransaction::commit()
 
 void SQLiteTransaction::rollback()
 {
-#if !OS(MORPHOS) && !OS(AMIGAOS)
+#if !OS(MORPHOS) // && !OS(AMIGAOS) // Check this
     // We do not use the 'm_inProgress = m_db.executeCommand("ROLLBACK")' construct here,
     // because m_inProgress should always be set to false after a ROLLBACK, and
     // m_db.executeCommand("ROLLBACK") can sometimes harmlessly fail, thus returning

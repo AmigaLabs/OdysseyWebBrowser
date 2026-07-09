@@ -65,5 +65,6 @@ JSC::JSValue toJS(JSC::JSGlobalObject*, JSDOMGlobalObject*, const IDBKeyData&);
 std::optional<JSC::JSValue> deserializeIDBValueWithKeyInjection(JSC::JSGlobalObject&, const IDBValue&, const IDBKeyData&, const std::optional<IDBKeyPath>&);
 
 void callOnIDBSerializationThreadAndWait(Function<void(JSC::JSGlobalObject&)>&&);
+void shutdownIDBSerializationThread();
 
 }

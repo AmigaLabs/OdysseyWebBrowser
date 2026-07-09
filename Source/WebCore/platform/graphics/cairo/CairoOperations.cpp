@@ -50,6 +50,10 @@
 #include "ShadowBlur.h"
 #include <algorithm>
 #include <cairo.h>
+#if OS(AMIGAOS) && USE(FREETYPE)
+#include <cairo-ft.h>
+#include <freetype/ftcolor.h>
+#endif
 
 namespace WebCore {
 namespace Cairo {
@@ -307,6 +311,78 @@ static void drawGlyphsToContext(cairo_t* context, cairo_scaled_font_t* scaledFon
         }
         cairo_set_font_options(context, fontOptionsSmoothing.get());
     }
+
+#if OS(AMIGAOS) && USE(FREETYPE)
+    // On AmigaOS4 (big-endian PPC), Cairo 1.14.x cannot render COLR (color vector) glyphs:
+    // the base glyph has no outline in the glyf table, so Cairo would render nothing.
+    // Decompose COLR v0 glyphs into their palette-colored outline layers using FreeType
+    // and render each layer separately as a regular (monochrome) glyph with the layer color.
+    {
+        CairoFtFaceLocker locker(scaledFont);
+        FT_Face face = locker.ftFace();
+        if (face && FT_HAS_COLOR(face)) {
+            // Get current foreground color from the Cairo source pattern.
+            double fgR = 0, fgG = 0, fgB = 0, fgA = 1;
+            cairo_pattern_t* src = cairo_get_source(context);
+            if (cairo_pattern_get_type(src) == CAIRO_PATTERN_TYPE_SOLID)
+                cairo_pattern_get_rgba(src, &fgR, &fgG, &fgB, &fgA);
+
+            // Get CPAL palette 0 (the default palette).
+            FT_Color* palette = nullptr;
+            FT_Palette_Data paletteData = {};
+            FT_Palette_Data_Get(face, &paletteData);
+            if (paletteData.num_palette_entries > 0)
+                FT_Palette_Select(face, 0, &palette);
+
+            cairo_save(context);
+            for (const auto& glyph : glyphs) {
+                FT_LayerIterator iterator = { 0, 0, nullptr };
+                FT_UInt layerGlyphIndex = 0;
+                FT_UInt layerColorIndex = 0;
+                bool hasLayers = !!FT_Get_Color_Glyph_Layer(face,
+                    static_cast<FT_UInt>(glyph.index),
+                    &layerGlyphIndex, &layerColorIndex, &iterator);
+
+                if (!hasLayers) {
+                    // Not a COLR base glyph — render normally with foreground color.
+                    cairo_set_source_rgba(context, fgR, fgG, fgB, fgA);
+                    cairo_show_glyphs(context, &glyph, 1);
+                    continue;
+                }
+
+                // Render each COLR layer as an outline glyph with its palette color.
+                while (hasLayers) {
+                    double r = fgR, g = fgG, b = fgB, a = fgA;
+                    if (layerColorIndex != 0xFFFF && palette &&
+                        layerColorIndex < paletteData.num_palette_entries) {
+                        FT_Color c = palette[layerColorIndex];
+                        r = c.red   / 255.0;
+                        g = c.green / 255.0;
+                        b = c.blue  / 255.0;
+                        a = c.alpha / 255.0;
+                    }
+                    cairo_glyph_t layerGlyph = { layerGlyphIndex, glyph.x, glyph.y };
+                    cairo_set_source_rgba(context, r, g, b, a);
+                    cairo_show_glyphs(context, &layerGlyph, 1);
+
+                    hasLayers = !!FT_Get_Color_Glyph_Layer(face,
+                        static_cast<FT_UInt>(glyph.index),
+                        &layerGlyphIndex, &layerColorIndex, &iterator);
+                }
+            }
+            // Restore original source color.
+            cairo_set_source(context, src);
+            cairo_restore(context);
+
+            if (syntheticBoldOffset) {
+                cairo_translate(context, syntheticBoldOffset, 0);
+                drawGlyphsToContext(context, scaledFont, 0, glyphs, fontSmoothingMode);
+                cairo_set_matrix(context, &originalTransform);
+            }
+            return;
+        }
+    }
+#endif // OS(AMIGAOS) && USE(FREETYPE)
 
     cairo_show_glyphs(context, glyphs.data(), glyphs.size());
 
@@ -922,8 +998,22 @@ void drawSurface(GraphicsContextCairo& platformContext, cairo_surface_t* surface
 
         // We use a subsurface here so that we don't end up sampling outside the originalSrcRect rectangle.
         // See https://bugs.webkit.org/show_bug.cgi?id=58309
+#if OS(AMIGAOS)
+        // On AmigaOS4 (big-endian PPC), cairo_surface_create_for_rectangle() creates a subsurface
+        // with a device offset that Cairo 1.14.x's bilinear filter mishandles, causing R/B channel
+        // swaps in scaled images. Copy the pixels into a standalone surface instead.
+        patternSurface = adoptRef(cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+            expandedSrcRect.width(), expandedSrcRect.height()));
+        {
+            auto copyCtx = adoptRef(cairo_create(patternSurface.get()));
+            cairo_set_source_surface(copyCtx.get(), surface, -expandedSrcRect.x(), -expandedSrcRect.y());
+            cairo_set_operator(copyCtx.get(), CAIRO_OPERATOR_SOURCE);
+            cairo_paint(copyCtx.get());
+        }
+#else
         patternSurface = adoptRef(cairo_surface_create_for_rectangle(surface, expandedSrcRect.x(),
             expandedSrcRect.y(), expandedSrcRect.width(), expandedSrcRect.height()));
+#endif
 
         leftPadding = static_cast<float>(expandedSrcRect.x()) - floorf(srcRect.x());
         topPadding = static_cast<float>(expandedSrcRect.y()) - floorf(srcRect.y());
@@ -938,10 +1028,20 @@ void drawSurface(GraphicsContextCairo& platformContext, cairo_surface_t* surface
         break;
     case InterpolationQuality::Medium:
     case InterpolationQuality::Default:
+#if OS(AMIGAOS)
+        // Cairo 1.14.x's bilinear filter has a big-endian byte-order bug that
+        // swaps R/B channels in scaled images on PPC. Use nearest-neighbor instead.
+        cairo_pattern_set_filter(pattern.get(), CAIRO_FILTER_NEAREST);
+#else
         cairo_pattern_set_filter(pattern.get(), CAIRO_FILTER_GOOD);
+#endif
         break;
     case InterpolationQuality::High:
+#if OS(AMIGAOS)
+        cairo_pattern_set_filter(pattern.get(), CAIRO_FILTER_NEAREST);
+#else
         cairo_pattern_set_filter(pattern.get(), CAIRO_FILTER_BEST);
+#endif
         break;
     }
     cairo_pattern_set_extend(pattern.get(), CAIRO_EXTEND_PAD);

@@ -422,7 +422,7 @@ void ensureHashtableSize(unsigned numThreads)
     unlockHashtable(bucketsToUnlock);
 }
 
-#if OS(MORPHOS) // || OS(AMIGAOS) // Check this
+#if OS(MORPHOS) || OS(AMIGAOS) // Check this
 // A bit ugly but avoid a deadlock at app exit. If the thread is cancelled it already holds
 // the parkingLock. In this case the TLS destructors would result in a deadlock. Avoid this
 // by adding a thread-cancellation cleanup handler that unlocks the lock. - Piru
@@ -447,7 +447,7 @@ ThreadData::ThreadData()
     }
 
     ensureHashtableSize(currentNumThreads);
-#if OS(MORPHOS) // || OS(AMIGAOS) // Check this
+#if OS(MORPHOS) || OS(AMIGAOS) // Check this
     pthread_cleanup_push(parkinglockunlocker, NULL);
 #endif
 }
@@ -610,7 +610,7 @@ NEVER_INLINE ParkingLot::ParkResult ParkingLot::parkConditionallyImpl(
     {
         MutexLocker locker(me->parkingLock);
         while (me->address && timeout.nowWithSameClock() < timeout) {
-#if OS(MORPHOS) // || OS(AMIGAOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
             if (!me->parkingCondition.timedWait(
                 me->parkingLock, timeout.approximateWallTime())) {
                 // Usually this happens when the application is terminating.

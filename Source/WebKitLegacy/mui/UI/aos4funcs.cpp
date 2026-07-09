@@ -30,29 +30,29 @@ static LONG do_alpha(LONG a, LONG v)
   return ((tmp<<8) + tmp + 32768)>>16;
 }
 
-ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, struct RastPort *rp, UWORD destx, UWORD desty, UWORD width, UWORD height, ULONG globalalpha)
+uint32_t _WritePixelArrayAlpha(APTR src, uint16_t srcx, uint16_t srcy, uint16_t srcmod, struct RastPort *rp, uint16_t destx, uint16_t desty, uint16_t width, uint16_t height, uint32_t globalalpha)
 {
-  ULONG pixels = 0;
+  uint32_t pixels = 0;
 
   if(width > 0 && height > 0)
   {
-    ULONG *buf;
+    uint32_t *buf;
 
-    if((buf = (ULONG *)malloc(width * 4)) != NULL)
+    if((buf = (uint32_t *)malloc(width * 4)) != NULL)
     {
-      ULONG x, y;
+      uint32_t x, y;
 
       // Incorrect but cant bother with alpha channel math for now
       globalalpha = 255 - (globalalpha >> 24);
 
       for(y = 0; y < height; y++)
       {
-        ULONG *spix;
-        ULONG *dpix;
+        uint32_t *spix;
+        uint32_t *dpix;
 
         ReadPixelArray(rp, destx, desty + y, (uint8 *)buf, 0, 0, width * 4, PIXF_A8R8G8B8, width, 1);
 
-        spix = (ULONG *)((ULONG)src + (srcy + y) * srcmod + srcx * sizeof(ULONG));
+        spix = (uint32_t *)((uint32_t)src + (srcy + y) * srcmod + srcx * sizeof(uint32_t));
         dpix = buf;
 
         // Prefetch the first cache lines of source and destination
@@ -63,7 +63,7 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
 
         for(x = 0; x < width; x++)
         {
-          ULONG srcpix, dstpix, a, r, g, b;
+          uint32_t srcpix, dstpix, a, r, g, b;
 
           srcpix = *spix++;
           dstpix = *dpix;
@@ -89,7 +89,7 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
 
           if(a > 0)
           {
-            ULONG dest_r, dest_g, dest_b;
+            uint32_t dest_r, dest_g, dest_b;
 
             // Extract destination components
             dest_r = (dstpix >> 16) & 0xff;
@@ -101,14 +101,12 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
             dest_g += do_alpha(a, g - dest_g);
             dest_b += do_alpha(a, b - dest_b);
 
-            // Recompose pixel and convert back to original byte order
+            // Recompose pixel in the same ARGB layout used by ReadPixelArray/WritePixelArray.
             dstpix = (0xffUL << 24) | (dest_r << 16) | (dest_g << 8) | dest_b;
-            dstpix = __builtin_bswap32(dstpix);
           }
           else
           {
-            // If no alpha blending needed, convert back to original byte order
-            dstpix = __builtin_bswap32(dstpix);
+            // Keep the original pixel unchanged.
           }
 
           *dpix++ = dstpix;
@@ -125,12 +123,12 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
   return pixels;
 }
 
-APTR ARGB2BGRA(APTR src, ULONG stride, ULONG height)
+APTR ARGB2BGRA(APTR src, uint32_t stride, uint32_t height)
 {
     APTR _return = malloc(stride * height);
-    ULONG * dstptr = (ULONG *)_return;
-    ULONG * srcptr = (ULONG *)src;
-    ULONG x, y, pixelsperline = stride / 4, srcval, dstval;
+    uint32_t * dstptr = (uint32_t *)_return;
+    uint32_t * srcptr = (uint32_t *)src;
+    uint32_t x, y, pixelsperline = stride / 4, srcval, dstval;
 
     for (y = 0; y < height; y++)
         for (x = 0; x < pixelsperline; x++)

@@ -242,11 +242,17 @@ RefPtr<Font> FontCache::systemFallbackForCharacters(const FontDescription& descr
 {
     auto addResult = systemFallbackCache().ensure(FallbackFontDescriptionKey(description, preferColoredFont), [&description, preferColoredFont]() -> std::unique_ptr<CachedFontSet> {
         RefPtr<FcPattern> pattern = adoptRef(FcPatternCreate());
-        FcPatternAddBool(pattern.get(), FC_SCALABLE, FcTrue);
 #ifdef FC_COLOR
-        if (preferColoredFont == PreferColoredFont::Yes)
+        if (preferColoredFont == PreferColoredFont::Yes) {
+            // Color emoji fonts (e.g. Noto Color Emoji) use CBDT/CBLC bitmap tables
+            // and fontconfig marks them as scalable=False. Do NOT add FC_SCALABLE here
+            // when searching for a colored font, otherwise they will be excluded.
             FcPatternAddBool(pattern.get(), FC_COLOR, FcTrue);
+        } else {
+            FcPatternAddBool(pattern.get(), FC_SCALABLE, FcTrue);
+        }
 #else
+        FcPatternAddBool(pattern.get(), FC_SCALABLE, FcTrue);
         UNUSED_VARIABLE(preferColoredFont);
 #endif
         if (!configurePatternForFontDescription(pattern.get(), description))

@@ -134,7 +134,7 @@ struct Data
     Object *statusbar;
     Object *progressgauge;
     Object *progressgroup;
-#if OS(AMIGAOS)
+#if 0
 // broken 2.24
     Object *networkledsgroup;
 #endif
@@ -312,7 +312,7 @@ DEFNEW
     Object *panelgroup, *panelbalance;
     Object *pagegroup, *pagetitles;
     Object *zoneimage, *secureimage, *privatebrowsingimage, *userscriptimage;
-#if OS(AMIGAOS)
+#if 0
 //broken 2.24
     Object *networkledsgroup;
 #endif
@@ -433,7 +433,7 @@ DEFNEW
                             End,
                         End,
 
-#if OS(AMIGAOS)
+#if 0
 // broken 2.24
                     Child, networkledsgroup = (Object *) NewObject(getnetworkledsgroupclass(), NULL, TAG_DONE),
 #endif
@@ -472,7 +472,7 @@ DEFNEW
         data->userscriptimage = userscriptimage;
         data->progressgauge   = progressgauge;
         data->progressgroup   = progressgroup;
-#if OS(AMIGAOS)
+#if 0
 // broken 2.24
         data->networkledsgroup = networkledsgroup;
 #endif
@@ -858,7 +858,7 @@ DEFGET
         }
         return TRUE;
 
-#if OS(AMIGAOS)
+#if 0
 // broken 2.24
         case MA_OWBWindow_NetworkLedsGroup:
         {
@@ -1528,7 +1528,9 @@ DEFSMETHOD(OWBWindow_LoadURL)
 
                 if(fileContent)
                 {
-                    String content = fileContent;
+                    // Use fromUTF8 so multi-byte sequences (emoji, etc.) are
+                    // decoded correctly instead of as Latin-1.
+                    String content = String::fromUTF8(fileContent);
 
                     widget->webView->mainFrame()->loadHTMLString(content.utf8().data(), "about:");
 

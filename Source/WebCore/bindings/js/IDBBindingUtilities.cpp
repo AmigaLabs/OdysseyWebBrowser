@@ -571,15 +571,15 @@ private:
     Thread& m_thread;
 };
 
+static NeverDestroyed<MessageQueue<Function<void(JSC::JSGlobalObject&)>>> idbSerializationQueue;
+static std::once_flag idbSerializationThreadFlag;
+
 void callOnIDBSerializationThreadAndWait(Function<void(JSC::JSGlobalObject&)>&& function)
 {
-    static NeverDestroyed<MessageQueue<Function<void(JSC::JSGlobalObject&)>>> queue;
-    static std::once_flag createThread;
-
-    std::call_once(createThread, [] {
+    std::call_once(idbSerializationThreadFlag, [] {
         Thread::create("IndexedDB Serialization", [] {
             IDBSerializationContext serializationContext;
-            while (auto function = queue->waitForMessage()) {
+            while (auto function = idbSerializationQueue->waitForMessage()) {
                 AutodrainedPool pool;
                 (*function)(serializationContext.globalObject());
             }
@@ -591,8 +591,16 @@ void callOnIDBSerializationThreadAndWait(Function<void(JSC::JSGlobalObject&)>&& 
         function(globalObject);
         semaphore.signal();
     };
-    queue->append(makeUnique<Function<void(JSC::JSGlobalObject&)>>(WTFMove(newFuntion)));
+    idbSerializationQueue->append(makeUnique<Function<void(JSC::JSGlobalObject&)>>(WTFMove(newFuntion)));
     semaphore.wait();
+}
+
+void shutdownIDBSerializationThread()
+{
+    // Kill the queue so the IndexedDB Serialization thread exits its waitForMessage() loop.
+    // On AmigaOS4 (and other platforms where killing threads is not possible), the main
+    // process must not exit before all threads have terminated.
+    idbSerializationQueue->kill();
 }
 
 } // namespace WebCore

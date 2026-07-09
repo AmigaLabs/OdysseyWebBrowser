@@ -26,6 +26,24 @@
 #include "config.h"
 #include "XMLDocumentParserScope.h"
 
+#if ENABLE(XSLT)
+#ifdef xmlGenericError
+#undef xmlGenericError
+#endif
+#ifdef xmlStructuredError
+#undef xmlStructuredError
+#endif
+#ifdef xmlGenericErrorContext
+#undef xmlGenericErrorContext
+#endif
+
+extern "C" {
+    XMLPUBVAR xmlGenericErrorFunc xmlGenericError;
+    XMLPUBVAR xmlStructuredErrorFunc xmlStructuredError;
+    XMLPUBVAR void* xmlGenericErrorContext;
+}
+#endif
+
 namespace WebCore {
 
 CachedResourceLoader* XMLDocumentParserScope::currentCachedResourceLoader = nullptr;

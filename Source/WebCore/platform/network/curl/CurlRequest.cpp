@@ -231,7 +231,7 @@ void CurlRequest::runOnMainThread(Function<void()>&& task)
     if (m_messageQueue)
         m_messageQueue->append(makeUnique<Function<void()>>(WTFMove(task)));
     else
-        ensureOnMainThread(WTFMove(task));
+        callOnMainThread(WTFMove(task));
 }
 
 void CurlRequest::runOnWorkerThreadIfRequired(Function<void()>&& task)

@@ -157,7 +157,10 @@ void CurlRequestScheduler::startOrWakeUpThread()
 
 void CurlRequestScheduler::wakeUpThreadIfPossible()
 {
-#if !PLATFORM(MUI) // || OS(AMIGAOS)
+#if !PLATFORM(MUI)
+    // curl_multi_wakeup() does not work reliably on AmigaOS/MorphOS/AROS
+    // (internal socketpair/pipe mechanism may block with clib4).
+    // Instead we rely on a short poll timeout in the worker loop.
     Locker locker { m_multiHandleMutex };
     if (!m_curlMultiHandle)
         return;
@@ -312,7 +315,7 @@ void CurlRequestScheduler::workerThread()
         if (mc != CURLM_OK)
             break;
 
-        const int selectTimeoutMS = 100;
+        const int selectTimeoutMS = 10;
         mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
         if (mc != CURLM_OK)
             break;
