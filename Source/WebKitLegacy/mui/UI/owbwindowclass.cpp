@@ -1558,6 +1558,10 @@ DEFSMETHOD(OWBWindow_LoadURL)
         {
             widget->webView->mainFrame()->loadURL(url.utf8().data());
         }
+        else if(kurl.protocolIs("file"))
+        {
+            widget->webView->mainFrame()->loadURL(url.utf8().data());
+        }
         // Google for sentences or words
         else if(kurl.string().find(':') == notFound && (kurl.string().find(' ') != notFound || kurl.string().find('.') == notFound))
         {
@@ -1694,16 +1698,30 @@ DEFTMETHOD(OWBWindow_OpenLocalFile)
 
     if(file)
     {
-        ULONG size = strlen(file) + strlen("file:///") + 1;
-        char *uri = (char *) malloc(size);
-
-        if(uri)
+        /* Use Lock+NameFromLock to get the absolute path including volume name,
+         * then build a proper file:/// URL. Without this, paths like "bookmarks.html"
+         * (without volume) would cause AmigaOS to look for a "bookmarks.html:" volume. */
+        BPTR lock = Lock(file, ACCESS_READ);
+        if(lock)
         {
-            stccpy(uri, "file:///", size);
-            strncat(uri, file, size);
-
-            DoMethod(obj, MM_OWBWindow_LoadURL, uri, NULL);
-            free(uri);
+            char absolutePath[1024];
+            if(NameFromLock(lock, absolutePath, sizeof(absolutePath)))
+            {
+                ULONG size = strlen(absolutePath) + strlen("file:///") + 1;
+                char *uri = (char *) malloc(size);
+                if(uri)
+                {
+                    snprintf(uri, size, "file:///%s", absolutePath);
+                    DoMethod(obj, MM_OWBWindow_LoadURL, uri, NULL);
+                    free(uri);
+                }
+            }
+            UnLock(lock);
+        }
+        else
+        {
+            /* Lock failed, fall back to raw path — LoadURL will try its best */
+            DoMethod(obj, MM_OWBWindow_LoadURL, file, NULL);
         }
         FreeVecTaskPooled(file);
     }

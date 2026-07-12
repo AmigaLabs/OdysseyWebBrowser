@@ -242,6 +242,24 @@ void CurlRequest::runOnWorkerThreadIfRequired(Function<void()>&& task)
         task();
 }
 
+bool CurlRequest::needToInvokeDidReceiveResponse() const
+{
+    Locker locker { m_notifyStateMutex };
+    return m_didReceiveResponse && !m_didNotifyResponse;
+}
+
+bool CurlRequest::needToInvokeDidCancelTransfer() const
+{
+    Locker locker { m_notifyStateMutex };
+    return m_didNotifyResponse && !m_didReturnFromNotify && m_actionAfterInvoke == Action::FinishTransfer;
+}
+
+bool CurlRequest::isWaitingForDidReceiveResponseCompletion() const
+{
+    Locker locker { m_notifyStateMutex };
+    return m_didNotifyResponse && !m_didReturnFromNotify;
+}
+
 CURL* CurlRequest::setupTransfer()
 {
     auto httpHeaderFields = m_request.httpHeaderFields();
@@ -359,10 +377,16 @@ size_t CurlRequest::didReceiveHeader(String&& header)
     // For example, when authentication succeeds, the first block is "401 Authorization", and the second block is "200 OK".
     // Also, "100 Continue" and "200 Connection Established" do the same behavior.
     // In this process, deletes the first block to send a correct headers to WebCore.
-    if (m_didReceiveResponse) {
-        m_didReceiveResponse = false;
-        m_response = CurlResponse { };
-        m_multipartHandle = nullptr;
+    {
+        Locker locker { m_notifyStateMutex };
+        if (m_didReceiveResponse) {
+            m_didReceiveResponse = false;
+            m_didNotifyResponse = false;
+            m_didReturnFromNotify = false;
+            m_actionAfterInvoke = Action::None;
+            m_response = CurlResponse { };
+            m_multipartHandle = nullptr;
+        }
     }
 
     auto receiveBytes = static_cast<size_t>(header.length());
@@ -381,7 +405,10 @@ size_t CurlRequest::didReceiveHeader(String&& header)
     if (auto code = m_curlHandle->getHttpConnectCode())
         httpConnectCode = *code;
 
-    m_didReceiveResponse = true;
+    {
+        Locker locker { m_notifyStateMutex };
+        m_didReceiveResponse = true;
+    }
 
     m_response.url = m_request.url();
     m_response.statusCode = statusCode;
@@ -490,11 +517,21 @@ void CurlRequest::didCompleteTransfer(CURLcode result)
         return;
     }
 
+    if (isWaitingForDidReceiveResponseCompletion()) {
+        Locker locker { m_notifyStateMutex };
+        m_finishedResultCode = result;
+        m_actionAfterInvoke = Action::FinishTransfer;
+        return;
+    }
+
     if (needToInvokeDidReceiveResponse()) {
         // Processing of didReceiveResponse() has not been completed. (For example, HEAD method)
         // When completeDidReceiveResponse() is called, didCompleteTransfer() will be called again.
 
-        m_finishedResultCode = result;
+        {
+            Locker locker { m_notifyStateMutex };
+            m_finishedResultCode = result;
+        }
         invokeDidReceiveResponse(m_response, Action::FinishTransfer);
         return;
     }
@@ -665,10 +702,13 @@ void CurlRequest::invokeDidReceiveResponseForFile(const URL& url)
 
 void CurlRequest::invokeDidReceiveResponse(const CurlResponse& response, Action behaviorAfterInvoke)
 {
-    ASSERT(!m_didNotifyResponse || m_multipartHandle);
-
-    m_didNotifyResponse = true;
-    m_actionAfterInvoke = behaviorAfterInvoke;
+    {
+        Locker locker { m_notifyStateMutex };
+        ASSERT(!m_didNotifyResponse || m_multipartHandle);
+        m_didReturnFromNotify = false;
+        m_didNotifyResponse = true;
+        m_actionAfterInvoke = behaviorAfterInvoke;
+    }
 
     // FIXME: Replace this isolatedCopy with WTFMove.
     callClient([response = response.isolatedCopy()](CurlRequest& request, CurlRequestClient& client) mutable {
@@ -679,22 +719,36 @@ void CurlRequest::invokeDidReceiveResponse(const CurlResponse& response, Action 
 void CurlRequest::completeDidReceiveResponse()
 {
     ASSERT(isMainThread());
-    ASSERT(m_didNotifyResponse);
-    ASSERT(!m_didReturnFromNotify || m_multipartHandle);
+
+    Action actionAfterInvoke;
+    {
+        Locker locker { m_notifyStateMutex };
+        ASSERT(m_didNotifyResponse);
+        ASSERT(!m_didReturnFromNotify || m_multipartHandle);
+        m_didReturnFromNotify = true;
+        actionAfterInvoke = m_actionAfterInvoke;
+        m_didReceiveResponse = false;
+        m_didNotifyResponse = false;
+        m_actionAfterInvoke = Action::None;
+    }
 
     if (isCompletedOrCancelled())
         return;
 
-    m_didReturnFromNotify = true;
 
-    if (m_actionAfterInvoke == Action::ReceiveData) {
+    if (actionAfterInvoke == Action::ReceiveData) {
         // Resume transfer
         setCallbackPaused(false);
-    } else if (m_actionAfterInvoke == Action::StartTransfer) {
+    } else if (actionAfterInvoke == Action::StartTransfer) {
         // Start transfer for file scheme
         startWithJobManager();
-    } else if (m_actionAfterInvoke == Action::FinishTransfer) {
-        runOnWorkerThreadIfRequired([this, protectedThis = makeRef(*this), finishedResultCode = m_finishedResultCode]() {
+    } else if (actionAfterInvoke == Action::FinishTransfer) {
+        CURLcode finishedResultCode;
+        {
+            Locker locker { m_notifyStateMutex };
+            finishedResultCode = m_finishedResultCode;
+        }
+        runOnWorkerThreadIfRequired([this, protectedThis = makeRef(*this), finishedResultCode]() {
             didCompleteTransfer(finishedResultCode);
         });
     }

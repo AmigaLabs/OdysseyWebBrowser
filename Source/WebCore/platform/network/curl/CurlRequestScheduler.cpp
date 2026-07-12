@@ -39,6 +39,7 @@
 #endif
 #include <proto/bsdsocket.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <bsdsocket/socketbasetags.h>
 #if !OS(AMIGAOS)
 #include <aros/debug.h>
@@ -300,7 +301,7 @@ void CurlRequestScheduler::workerThread()
 
         executeTasks();
 
-#if OS(MORPHOS) // || OS(AMIGAOS)
+#if OS(MORPHOS)
         const int selectTimeoutMS = INT_MAX;
         CURLMcode mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
         if (mc != CURLM_OK)
@@ -316,9 +317,15 @@ void CurlRequestScheduler::workerThread()
             break;
 
         const int selectTimeoutMS = 10;
+#if PLATFORM(MUI)
+    // curl_multi_poll() is unreliable on MUI and can stall request completion.
+    // Use a deterministic tick loop instead.
+    usleep(selectTimeoutMS * 1000);
+#else
         mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
-        if (mc != CURLM_OK)
+    if (mc != CURLM_OK)
             break;
+#endif
 #endif
         // check the curl messages indicating completed transfers
         // and free their resources
@@ -358,7 +365,11 @@ void CurlRequestScheduler::startTransfer(CurlRequestSchedulerClient* client)
             return;
         }
 
-        m_curlMultiHandle->addHandle(handle);
+        auto addResult = m_curlMultiHandle->addHandle(handle);
+        if (addResult != CURLM_OK) {
+            completeTransfer(client, CURLE_FAILED_INIT);
+            return;
+        }
 
         ASSERT(!m_clientMaps.contains(handle));
         m_clientMaps.set(handle, client);
@@ -394,9 +405,10 @@ void CurlRequestScheduler::finalizeTransfer(CurlRequestSchedulerClient* client, 
 
     auto task = [this, client, completionHandler = WTFMove(completionHandler)]() {
         if (client->handle()) {
-            ASSERT(m_clientMaps.contains(client->handle()));
-            m_clientMaps.remove(client->handle());
-            m_curlMultiHandle->removeHandle(client->handle());
+            if (m_clientMaps.contains(client->handle())) {
+                m_clientMaps.remove(client->handle());
+                m_curlMultiHandle->removeHandle(client->handle());
+            }
         }
 
         completionHandler();

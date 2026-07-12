@@ -171,12 +171,12 @@ void Thread::signalHandlerSuspendResume(int, siginfo_t*, void* ucontext)
 
 #if HAVE(MACHINE_CONTEXT)
     ucontext_t* userContext = static_cast<ucontext_t*>(ucontext);
-    thread->m_platformRegisters = &registersFromUContext(userContext);
+    thread->m_savedPlatformRegisters = registersFromUContext(userContext);
 #else
     UNUSED_PARAM(ucontext);
-    PlatformRegisters platformRegisters { approximateStackPointer };
-    thread->m_platformRegisters = &platformRegisters;
+    thread->m_savedPlatformRegisters = PlatformRegisters { approximateStackPointer };
 #endif
+    thread->m_platformRegisters = &thread->m_savedPlatformRegisters;
 
     // Allow suspend caller to see that this thread is suspended.
     // sem_post is async-signal-safe function. It means that we can call this from a signal handler.
@@ -198,7 +198,7 @@ void Thread::signalHandlerSuspendResume(int, siginfo_t*, void* ucontext)
     // Allow resume caller to see that this thread is resumed.
     globalSemaphoreForSuspendResume->post();
 }
-#endif
+#endif // !OS(MORPHOS) && !OS(AMIGAOS)
 #endif // !OS(DARWIN)
 
 void Thread::initializePlatformThreading()
@@ -533,7 +533,14 @@ static ThreadStateMetadata threadStateMetadata()
 
 size_t Thread::getRegisters(PlatformRegisters& registers)
 {
+    // On PLATFORM(MUI) (MorphOS/AmigaOS), suspend() is a no-op that returns success
+    // without actually suspending the thread or setting m_platformRegisters.
+    // The lock is only needed when signal-based suspension is active; acquiring it
+    // here on MUI builds crashes because globalSuspendLock is in the SDA section
+    // and r13 is not properly set in all threads (clib4/-mlongcall ABI).
+#if !PLATFORM(MUI)
     Locker locker { globalSuspendLock };
+#endif
 #if OS(DARWIN)
     auto metadata = threadStateMetadata();
     kern_return_t result = thread_get_state(m_platformThread, metadata.flavor, (thread_state_t)&registers, &metadata.userCount);
@@ -544,8 +551,11 @@ size_t Thread::getRegisters(PlatformRegisters& registers)
     return metadata.userCount * sizeof(uintptr_t);
 #else
     ASSERT_WITH_MESSAGE(m_suspendCount, "We can get registers only if the thread is suspended.");
-    ASSERT(m_platformRegisters);
-    registers = *m_platformRegisters;
+    PlatformRegisters* platformRegisters = m_platformRegisters;
+    ASSERT_WITH_MESSAGE(platformRegisters || !m_suspendCount, "Missing suspended-thread register snapshot.");
+    if (UNLIKELY(!platformRegisters))
+        platformRegisters = &m_savedPlatformRegisters;
+    registers = *platformRegisters;
     return sizeof(PlatformRegisters);
 #endif
 }

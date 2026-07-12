@@ -372,6 +372,7 @@ protected:
 #if OS(LINUX)
     ThreadIdentifier m_id { 0 };
 #endif
+    PlatformRegisters m_savedPlatformRegisters { };
     PlatformRegisters* m_platformRegisters { nullptr };
     unsigned m_suspendCount { 0 };
 #endif

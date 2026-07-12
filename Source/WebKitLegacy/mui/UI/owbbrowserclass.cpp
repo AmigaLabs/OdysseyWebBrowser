@@ -2191,6 +2191,24 @@ DEFMMETHOD(HandleEvent)
                             }
                             break;
 
+#if OS(AMIGAOS)
+                        case IECODE_4TH_BUTTON:
+                            if (!(Code & IECODE_UP_PREFIX) && getv(obj, MA_OWBBrowser_BackAvailable))
+                            {
+                                DoMethod(_win(obj), MM_OWBWindow_Back);
+                                rc = MUI_EventHandlerRC_Eat;
+                            }
+                            break;
+
+                        case IECODE_5TH_BUTTON:
+                            if (!(Code & IECODE_UP_PREFIX) && getv(obj, MA_OWBBrowser_ForwardAvailable))
+                            {
+                                DoMethod(_win(obj), MM_OWBWindow_Forward);
+                                rc = MUI_EventHandlerRC_Eat;
+                            }
+                            break;
+#endif
+
                         case IECODE_MBUTTON:
                             if (Code & IECODE_UP_PREFIX)
                             {

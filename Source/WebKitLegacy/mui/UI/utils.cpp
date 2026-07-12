@@ -591,13 +591,11 @@ char *utf8_to_local(const char *in)
 #endif
 #if OS(AMIGAOS)
     {
-        struct codeset *utfCodeset = CodesetsFindA("UTF-8", NULL);
         ULONG dataConvertedLength;
-        STRPTR dataConverted = CodesetsConvertStr(
+        // Convert UTF-8 page titles/text to the system local charset for MUI widgets.
+        STRPTR dataConverted = CodesetsUTF8ToStr(
                             CSA_Source, (IPTR) in,
-                            CSA_SourceLen, (IPTR) strlen(in),
                             CSA_DestLenPtr, (IPTR) &dataConvertedLength,
-                            CSA_DestCodeset, (IPTR) utfCodeset,
                             TAG_END);
 
         if(dataConverted)

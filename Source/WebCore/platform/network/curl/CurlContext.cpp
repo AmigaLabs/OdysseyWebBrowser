@@ -56,6 +56,19 @@ void dprintf(const char *fmt, ... );
 #define CURL_TRACES 0
 #endif
 
+#if PLATFORM(MUI)
+#include <sys/socket.h>
+static int curlLimitSockOptCallback(void* /*clientp*/, curl_socket_t curlfd, curlsocktype purpose)
+{
+    if (purpose == CURLSOCKTYPE_IPCXN) {
+        // Cap receive buffer at 512 KB to avoid the 2MB DMA cache-flush kernel bug.
+        int rcvbuf = 512 * 1024;
+        setsockopt((int)curlfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    }
+    return CURL_SOCKOPT_OK;
+}
+#endif
+
 namespace WebCore {
 
 class EnvironmentVariableReader {
@@ -408,6 +421,7 @@ CurlHandle::CurlHandle()
 
 #if PLATFORM(MUI)
     curl_easy_setopt(m_handle, CURLOPT_BUFFERSIZE, 64 * 1024);
+    curl_easy_setopt(m_handle, CURLOPT_SOCKOPTFUNCTION, curlLimitSockOptCallback);
     setSslMaxTLSVersion(CURL_SSLVERSION_TLSv1_2);
 #endif
 

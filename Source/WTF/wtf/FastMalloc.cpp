@@ -235,31 +235,6 @@ void fastAlignedFree(void *p)
 	free(p);
 }
 
-#elif OS(AMIGAOS)
-
-void* fastAlignedMalloc(size_t alignment, size_t size)
-{
-    ASSERT_IS_WITHIN_LIMIT(size);
-	void* p = memalign(alignment, size);
-	if (UNLIKELY(!p))
-		CRASH();
-	return p;
-}
-
-void *tryFastAlignedMalloc(size_t alignment, size_t size)
-{
-    FAIL_IF_EXCEEDS_LIMIT(size);
-    return memalign(alignment, size);
-}
-
-void fastAlignedFree(void *p)
-{
-    if (p) {
-	    free(p);
-        p = NULL;
-    }
-}
-
 #else
 
 void* fastAlignedMalloc(size_t alignment, size_t size) 
@@ -269,6 +244,8 @@ retry:
     void* p = nullptr;
 #if OS(AROS)
     p = allocator_getmem_aligned(size, alignment);
+#elif OS(AMIGAOS)
+    p = memalign(alignment, size);
 #else
     posix_memalign(&p, alignment, size ? size : 2);
 #endif
@@ -298,6 +275,8 @@ void* tryFastAlignedMalloc(size_t alignment, size_t size)
     void* p = nullptr;
 #if OS(AROS)
     p = allocator_getmem_aligned(size, alignment);
+#elif OS(AMIGAOS)
+    p = memalign(alignment, size);
 #else
     posix_memalign(&p, alignment, size);
 #endif
@@ -430,6 +409,8 @@ size_t fastMallocSize(const void* p)
     return malloc_size(p);
 #elif OS(WINDOWS)
     return _msize(const_cast<void*>(p));
+#elif OS(AMIGAOS)
+    return malloc_usable_size(const_cast<void*>(p));
 #else
     UNUSED_PARAM(p);
     return 1;

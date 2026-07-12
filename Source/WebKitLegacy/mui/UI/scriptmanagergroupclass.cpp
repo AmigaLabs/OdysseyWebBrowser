@@ -168,9 +168,16 @@ static void load_scripts(Object *obj, struct Data *data)
     Vector<String> scripts = fileBuffer.split("\n");
     for(size_t i = 0; i < scripts.size(); i++)
     {
-        Vector<String> scriptAttributes = scripts[i].split("\1");
+        if(scripts[i].isEmpty())
+            continue;
 
-        if(scriptAttributes.size() == 4)
+        // splitAllowingEmptyEntries preserves trailing empty fields so that an empty
+        // blacklist field is kept, giving exactly 4 elements in the normal case.
+        Vector<String> scriptAttributes = scripts[i].splitAllowingEmptyEntries('\1');
+
+        // Accept 2, 3 or 4 fields: path and enabled are mandatory;
+        // whitelist and blacklist are optional (may be absent or empty).
+        if(scriptAttributes.size() >= 2)
         {
             ScriptEntry *script = new ScriptEntry;
 
@@ -181,18 +188,22 @@ static void load_scripts(Object *obj, struct Data *data)
 
                 if(parse_script(script))
                 {
-                    if(scriptAttributes[2].length())
+                    if(scriptAttributes.size() > 2 && scriptAttributes[2].length())
                     {
                         script->whitelist = scriptAttributes[2].split("\2");
                     }
 
-                    if(scriptAttributes[3].length())
+                    if(scriptAttributes.size() > 3 && scriptAttributes[3].length())
                     {
                         script->blacklist = scriptAttributes[3].split("\2");
                     }
 
                     scripts_list.append(script);
                     DoMethod(data->lv_scripts, MUIM_List_InsertSingle, script, MUIV_List_Insert_Bottom);
+                }
+                else
+                {
+                    delete script;
                 }
             }
         }

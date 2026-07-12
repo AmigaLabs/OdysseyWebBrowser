@@ -36,6 +36,7 @@
 #include <wtf/MessageQueue.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 
@@ -150,8 +151,9 @@ private:
     void setupSendData(bool forPutMethod);
 
     // Processing for DidReceiveResponse
-    bool needToInvokeDidReceiveResponse() const { return m_didReceiveResponse && !m_didNotifyResponse; }
-    bool needToInvokeDidCancelTransfer() const { return m_didNotifyResponse && !m_didReturnFromNotify && m_actionAfterInvoke == Action::FinishTransfer; }
+    bool needToInvokeDidReceiveResponse() const;
+    bool needToInvokeDidCancelTransfer() const;
+    bool isWaitingForDidReceiveResponseCompletion() const;
     void invokeDidReceiveResponseForFile(const URL&);
     void invokeDidReceiveResponse(const CurlResponse&, Action);
     void setRequestPaused(bool);
@@ -196,6 +198,7 @@ private:
     std::unique_ptr<CurlMultipartHandle> m_multipartHandle;
 
     CurlResponse m_response;
+    mutable Lock m_notifyStateMutex;
     bool m_didReceiveResponse { false };
     bool m_didNotifyResponse { false };
     bool m_didReturnFromNotify { false };

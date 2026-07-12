@@ -134,8 +134,8 @@ void CurlCacheManager::loadIndex()
     // Load the file content into buffer
     Vector<char> buffer;
     buffer.resize(*filesize);
-    int bufferPosition = 0;
-    int bufferReadSize = IO_BUFFERSIZE;
+    unsigned int bufferPosition = 0;
+    unsigned int bufferReadSize = IO_BUFFERSIZE;
     while (*filesize > bufferPosition) {
         if (*filesize - bufferPosition < bufferReadSize)
             bufferReadSize = *filesize - bufferPosition;
