@@ -33,6 +33,42 @@
 #define codecpar codec
 #endif
 
+// VAAPI hardware decoding (AmigaOS4 va.library through ffmpeg hwaccel).
+// The OS4 driver cannot read surfaces back to system memory (vaGetImage /
+// vaDeriveImage fail with "Couldn't lock buffer for CPU access"), so decoded
+// frames stay on the GPU and are presented directly into the window RastPort
+// with vaPutSurface (overlay path, same as mplayer's vo_amivaapi).
+#if defined(__amigaos4__) && (LIBAVUTIL_VERSION_MAJOR >= 57)
+#define AC_VAAPI 1
+#endif
+
+#if defined(AC_VAAPI)
+#include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_vaapi.h>
+#include <proto/exec.h>
+#include <proto/VA.h>
+#include <stdarg.h>
+#include <stdio.h>
+// Set to 1 for VAAPI debug output on the serial console.
+#define AC_VAAPI_DEBUG 0
+#if AC_VAAPI_DEBUG
+// The kernel DebugPrintF mishandles long strings and 64-bit varargs, so
+// pre-format with the C library and emit a single short %s (ints only in fmt!)
+static void ac_vadbg(const char *fmt, ...)
+{
+	char buffer[512];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buffer, sizeof(buffer), fmt, args);
+	va_end(args);
+	DebugPrintF("%s", buffer);
+}
+#define VADBG(fmt, ...) ac_vadbg("[acinerella/vaapi] " fmt "\n", ##__VA_ARGS__)
+#else
+#define VADBG(fmt, ...) do { } while (0)
+#endif
+#endif
+
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 
@@ -97,6 +133,15 @@ struct _ac_video_decoder {
 	struct SwsContext *pScaledSwsCtx;
 	int scaled_frame_width;
 	int scaled_frame_height;
+#if defined(AC_VAAPI)
+	AVBufferRef *pHWDeviceCtx;
+	int hwaccel_active;
+	int hw_init_failed;
+	int hw_first_frame_done;
+	int hw_transfer_fail_count;
+	int hw_present_count;
+	int hw_closed;
+#endif
 };
 
 typedef struct _ac_video_decoder ac_video_decoder;
@@ -647,8 +692,8 @@ void CALL_CONVT ac_get_stream_info(lp_ac_instance pacInstance, int nb,
 lp_ac_package CALL_CONVT ac_read_package(lp_ac_instance pacInstance) {
 	if (NULL == pacInstance)
 		return NULL;
-	if (NULL == ((lp_ac_data)(pacInstance))->pFormatCtx->internal)
-		return NULL; // why?
+	if (NULL == ((lp_ac_data)(pacInstance))->pFormatCtx)
+		return NULL;
 
 	// Allocate the result packet
 	lp_ac_package_data pkt;
@@ -675,7 +720,7 @@ void CALL_CONVT ac_free_package(lp_ac_package pPackage) {
 	if (pPackage && pPackage != ac_flush_packet()) {
 		lp_ac_package_data self = (lp_ac_package_data)pPackage;
 		av_packet_unref(self->pPack);
-		av_packet_free(self->pPack);
+		av_packet_free(&self->pPack);
 		av_free(self);
 	}
 }
@@ -705,6 +750,222 @@ static enum AVPixelFormat convert_pix_format(ac_output_format fmt) {
 }
 
 // Init a video decoder
+#if defined(AC_VAAPI)
+
+static int ac_vaapi_codec_supported(enum AVCodecID id)
+{
+	// Codecs the OS4 VAAPI driver can accelerate (same list as the mplayer port)
+	switch (id) {
+		case AV_CODEC_ID_H264:
+		case AV_CODEC_ID_HEVC:
+		case AV_CODEC_ID_MPEG2VIDEO:
+		case AV_CODEC_ID_MPEG4:
+		case AV_CODEC_ID_H263:
+		case AV_CODEC_ID_VC1:
+		case AV_CODEC_ID_WMV3:
+			return 1;
+		default:
+			return 0;
+	}
+}
+
+static enum AVPixelFormat ac_vaapi_get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmts)
+{
+	lp_ac_video_decoder pDecoder = (lp_ac_video_decoder)avctx->opaque;
+	const enum AVPixelFormat *p;
+	enum AVPixelFormat swFallback = AV_PIX_FMT_NONE;
+	int haveVaapi = 0;
+
+	for (p = fmts; *p != AV_PIX_FMT_NONE; p++) {
+		if (*p == AV_PIX_FMT_VAAPI)
+			haveVaapi = 1;
+		else if (swFallback == AV_PIX_FMT_NONE)
+			swFallback = *p;
+	}
+
+	if (!haveVaapi) {
+		VADBG("get_format: VAAPI not offered by codec, software decode (fmt %d)", (int)swFallback);
+		return swFallback;
+	}
+
+	if (pDecoder->hw_init_failed) {
+		VADBG("get_format: earlier VAAPI init failed, software decode");
+		return swFallback;
+	}
+
+	// Lazy device creation: the OS4 VA driver (Warp3DNova) binds contexts to the
+	// creating task, so ALL driver calls - device create, probe, surface pool -
+	// must happen here on the decode thread, not on the task that built the decoder.
+	if (!pDecoder->pHWDeviceCtx) {
+		VADBG("get_format: creating VAAPI device on decode thread...");
+		AVBufferRef *hwdev = NULL;
+		int err = av_hwdevice_ctx_create(&hwdev, AV_HWDEVICE_TYPE_VAAPI, NULL, NULL, 0);
+		if (err < 0) {
+			VADBG("get_format: av_hwdevice_ctx_create failed (err %d), software decode", err);
+			pDecoder->hw_init_failed = 1;
+			return swFallback;
+		}
+
+		pDecoder->pHWDeviceCtx = hwdev;
+		VADBG("get_format: VAAPI device created (overlay presentation via vaPutSurface, no readback)");
+	}
+
+	// FFmpeg 5+ requires hw_frames_ctx to be set up inside get_format
+	AVBufferRef *frames_ref = av_hwframe_ctx_alloc(pDecoder->pHWDeviceCtx);
+	if (!frames_ref) {
+		VADBG("get_format: av_hwframe_ctx_alloc failed, software decode");
+		pDecoder->hw_init_failed = 1;
+		return swFallback;
+	}
+
+	AVHWFramesContext *fc = (AVHWFramesContext *)frames_ref->data;
+	fc->format = AV_PIX_FMT_VAAPI;
+	fc->sw_format = AV_PIX_FMT_NV12;
+	fc->width = avctx->coded_width;
+	fc->height = avctx->coded_height;
+	// The pool is FIXED: every surface still referenced by a decoded frame
+	// stays taken. Size it for the codec DPB (avctx->refs) plus the 8 frames
+	// the video decoder buffers ahead (see readAheadTime) plus render/present
+	// margin, or the pool runs dry mid-warmup and the decoder wedges (seen as
+	// a hang inside vaDestroyContext when ffmpeg reinits the hwaccel).
+	{
+		int dpb = (avctx->refs > 0 && avctx->refs <= 16) ? avctx->refs : 8;
+		fc->initial_pool_size = dpb + 14;
+	}
+
+	VADBG("get_format: allocating hw frames pool (coded %dx%d, refs %d, pool %d)...",
+		avctx->coded_width, avctx->coded_height, avctx->refs, fc->initial_pool_size);
+
+	int err = av_hwframe_ctx_init(frames_ref);
+	if (err < 0) {
+		VADBG("get_format: av_hwframe_ctx_init failed (err %d, coded %dx%d), software decode",
+			err, avctx->coded_width, avctx->coded_height);
+		av_buffer_unref(&frames_ref);
+		pDecoder->hw_init_failed = 1;
+		return swFallback;
+	}
+
+	av_buffer_unref(&avctx->hw_frames_ctx);
+	avctx->hw_frames_ctx = frames_ref;
+	pDecoder->hwaccel_active = 1;
+
+	VADBG("get_format: VAAPI selected (coded %dx%d, pool %d)",
+		avctx->coded_width, avctx->coded_height, fc->initial_pool_size);
+	return AV_PIX_FMT_VAAPI;
+}
+
+// Present a decoded VAAPI frame straight into a window RastPort with
+// vaPutSurface. Runs GPU-side scaling + NV12->RGB conversion; no readback.
+// Must be called on the decode thread (the OS4 VA driver binds its Warp3DNova
+// context to the task that created the device; cross-task calls hang).
+int CALL_CONVT ac_vaapi_present_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
+	void *rastPort, int srcX, int srcY, int srcW, int srcH,
+	int dstX, int dstY, int dstW, int dstH)
+{
+	if (!pDecoder || !pFrame || !rastPort || pDecoder->type != AC_DECODER_TYPE_VIDEO)
+		return -1;
+
+	lp_ac_video_decoder vDecoder = (lp_ac_video_decoder)pDecoder;
+	struct _ac_decoder_frame_internal *frame = (struct _ac_decoder_frame_internal *)pFrame;
+	AVFrame *pAVFrame = frame->pFrame;
+
+	if (!pAVFrame || pAVFrame->format != AV_PIX_FMT_VAAPI) {
+		if (vDecoder->hw_transfer_fail_count < 5) {
+			vDecoder->hw_transfer_fail_count++;
+			VADBG("present: frame is not a VAAPI surface (fmt %d)", pAVFrame ? (int)pAVFrame->format : -1);
+		}
+		return -1;
+	}
+
+	if (!vDecoder->pHWDeviceCtx) {
+		VADBG("present: no VAAPI device context");
+		return -1;
+	}
+
+	AVHWDeviceContext *pHWCtx = (AVHWDeviceContext *)vDecoder->pHWDeviceCtx->data;
+	AVVAAPIDeviceContext *pVACtx = (AVVAAPIDeviceContext *)pHWCtx->hwctx;
+	VADisplay display = pVACtx->display;
+	VASurfaceID surface = (VASurfaceID)(uintptr_t)pAVFrame->data[3];
+
+	unsigned int flags = VA_FILTER_SCALING_FAST | VA_FRAME_PICTURE |
+		((pAVFrame->height > 576) ? VA_SRC_BT709 : VA_SRC_BT601);
+
+	if (!vDecoder->hw_first_frame_done) {
+		VADBG("present: first vaPutSurface (surface %d, src %d,%d %dx%d -> dst %d,%d %dx%d, flags 0x%x)",
+			(int)surface, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, flags);
+	}
+
+	// Log around the call itself: if the log shows "calling" without the
+	// matching "returned" line, vaPutSurface hung inside the driver.
+	vDecoder->hw_present_count++;
+	int logPresent = (vDecoder->hw_present_count <= 5) || (vDecoder->hw_present_count % 100 == 0);
+	if (logPresent)
+		VADBG("present #%d: calling vaPutSurface (surface %d, dst %d,%d %dx%d)",
+			vDecoder->hw_present_count, (int)surface, dstX, dstY, dstW, dstH);
+
+	VAStatus status = vaPutSurface(display, surface, VADT_RastPort, rastPort,
+		(short)srcX, (short)srcY, (unsigned short)srcW, (unsigned short)srcH,
+		(short)dstX, (short)dstY, (unsigned short)dstW, (unsigned short)dstH,
+		flags);
+
+	if (logPresent)
+		VADBG("present #%d: vaPutSurface returned %d", vDecoder->hw_present_count, (int)status);
+
+	if (status != VA_STATUS_SUCCESS) {
+		if (vDecoder->hw_transfer_fail_count < 5) {
+			vDecoder->hw_transfer_fail_count++;
+			VADBG("present: vaPutSurface failed (status %d, failure %d of max 5 logged)",
+				(int)status, vDecoder->hw_transfer_fail_count);
+		}
+		return -1;
+	}
+
+	if (!vDecoder->hw_first_frame_done) {
+		vDecoder->hw_first_frame_done = 1;
+		VADBG("present: first VAAPI frame on screen (%dx%d)", pAVFrame->width, pAVFrame->height);
+	}
+	return 0;
+}
+
+static void ac_vaapi_init(lp_ac_video_decoder pDecoder, AVCodecContext *pCodecCtx)
+{
+	pDecoder->pHWDeviceCtx = NULL;
+	pDecoder->hwaccel_active = 0;
+	pDecoder->hw_init_failed = 0;
+	pDecoder->hw_first_frame_done = 0;
+	pDecoder->hw_transfer_fail_count = 0;
+	pDecoder->hw_present_count = 0;
+
+	if (!ac_vaapi_codec_supported(pCodecCtx->codec_id)) {
+		VADBG("codec id %d not accelerated by VAAPI, software decode", (int)pCodecCtx->codec_id);
+		return;
+	}
+
+	// Only install the callback here; the VAAPI device is created lazily inside
+	// ac_vaapi_get_format so every VA driver call runs on the decode thread
+	// (the OS4 Warp3DNova-based driver hangs on cross-task calls).
+	pCodecCtx->opaque = pDecoder;
+	pCodecCtx->get_format = ac_vaapi_get_format;
+
+	VADBG("VAAPI candidate codec id %d (%dx%d), device init deferred to decode thread",
+		(int)pCodecCtx->codec_id, pCodecCtx->width, pCodecCtx->height);
+}
+
+#endif // AC_VAAPI
+
+#if defined(__amigaos4__) && !defined(AC_VAAPI)
+// Old SDK ffmpeg without VAAPI support: keep the exported symbol as a no-op.
+int CALL_CONVT ac_vaapi_present_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
+	void *rastPort, int srcX, int srcY, int srcW, int srcH,
+	int dstX, int dstY, int dstW, int dstH)
+{
+	(void)pDecoder; (void)pFrame; (void)rastPort;
+	(void)srcX; (void)srcY; (void)srcW; (void)srcH;
+	(void)dstX; (void)dstY; (void)dstW; (void)dstH;
+	return -1;
+}
+#endif
+
 static void *ac_create_video_decoder(lp_ac_instance pacInstance,
                                      lp_ac_stream_info info, int nb,
                                      ac_codecctx_callback codec_proc) {
@@ -745,6 +1006,11 @@ static void *ac_create_video_decoder(lp_ac_instance pacInstance,
 	ERR(pDecoder->pCodec =
 	          avcodec_find_decoder(pDecoder->pCodecCtx->codec_id));
 
+#if defined(AC_VAAPI)
+	// Must be set up before avcodec_open2
+	ac_vaapi_init(pDecoder, pDecoder->pCodecCtx);
+#endif
+
 	// Open codec
 	AV_ERR(avcodec_open2(pDecoder->pCodecCtx, pDecoder->pCodec, NULL));
 
@@ -783,6 +1049,44 @@ error:
 void ac_decoder_set_loopfilter(lp_ac_decoder pDecoder, int lflevel)
 {
     ((lp_ac_video_decoder)pDecoder)->pCodecCtx->skip_loop_filter = lflevel;
+}
+
+int CALL_CONVT ac_decoder_hwaccel_active(lp_ac_decoder pDecoder)
+{
+#if defined(AC_VAAPI)
+	if (pDecoder && pDecoder->type == AC_DECODER_TYPE_VIDEO)
+		return ((lp_ac_video_decoder)pDecoder)->hwaccel_active;
+#else
+	(void)pDecoder;
+#endif
+	return 0;
+}
+
+// Tear down all VAAPI state (last frame ref, codec hw context, VA device).
+// MUST be called on the decode thread: the OS4 VA driver binds its state to
+// the creating task; vaDestroyContext/vaTerminate from any other task hang
+// the caller and free driver memory that a concurrent vaPutSurface on the
+// decode thread is still reading (DSI crash at end of playback).
+void CALL_CONVT ac_vaapi_decoder_shutdown(lp_ac_decoder pDecoder)
+{
+#if defined(AC_VAAPI)
+	if (pDecoder && pDecoder->type == AC_DECODER_TYPE_VIDEO) {
+		lp_ac_video_decoder p = (lp_ac_video_decoder)pDecoder;
+		if (p->hwaccel_active && !p->hw_closed) {
+			VADBG("decoder shutdown: releasing VAAPI codec + device on decode thread");
+			if (p->pFrame)
+				av_frame_unref(p->pFrame);
+			avcodec_close(p->pCodecCtx);
+			if (p->pHWDeviceCtx)
+				av_buffer_unref(&p->pHWDeviceCtx);
+			p->hwaccel_active = 0;
+			p->hw_closed = 1;
+			VADBG("decoder shutdown: done");
+		}
+	}
+#else
+	(void)pDecoder;
+#endif
 }
 
 int ac_get_audio_rate(lp_ac_decoder pDecoder)
@@ -915,8 +1219,7 @@ lp_ac_decoder CALL_CONVT ac_create_decoder_ex(lp_ac_instance pacInstance, int nb
 
 const char *ac_codec_name(lp_ac_instance pacInstance, int nb) {
 	lp_ac_data self = ((lp_ac_data)(pacInstance));
-	AVCodecContext *pCodecCtx = self->pFormatCtx->streams[nb]->codec;
-	return avcodec_get_name(pCodecCtx->codec_id);
+	return avcodec_get_name(self->pFormatCtx->streams[nb]->codecpar->codec_id);
 }
 
 static int ac_decode_video_package(lp_ac_package pPackage,
@@ -937,7 +1240,7 @@ static int ac_decode_video_package(lp_ac_package pPackage,
 
 	ERR(pDecoder->pSwsCtx = sws_getCachedContext(
 	    pDecoder->pSwsCtx, pDecoder->pCodecCtx->width,
-	    pDecoder->pCodecCtx->height, pDecoder->pCodecCtx->pix_fmt,
+	    pDecoder->pCodecCtx->height, (enum AVPixelFormat)pDecoder->pFrame->format,
 	    pDecoder->pCodecCtx->width, pDecoder->pCodecCtx->height,
 	    convert_pix_format(pDecoder->decoder.pacInstance->output_format),
 	    /*SWS_BICUBIC*/SWS_FAST_BILINEAR, NULL, NULL, NULL));
@@ -1212,7 +1515,7 @@ void ac_scale_to_rgb_decoder_frame(lp_ac_decoder_frame pFrame, lp_ac_decoder pDe
 
 	if (NULL == (vDecoder->pSwsCtx = sws_getCachedContext(
 		vDecoder->pSwsCtx, vDecoder->pCodecCtx->width,
-		vDecoder->pCodecCtx->height, vDecoder->pCodecCtx->pix_fmt,
+		vDecoder->pCodecCtx->height, (enum AVPixelFormat)frame->pFrame->format,
 		vDecoder->pCodecCtx->width, vDecoder->pCodecCtx->height,
 		convert_pix_format(vDecoder->decoder.pacInstance->output_format),
 		/*SWS_BICUBIC*/SWS_FAST_BILINEAR, NULL, NULL, NULL)))
@@ -1235,6 +1538,14 @@ void ac_scale_to_scaled_rgb_decoder_frame(lp_ac_decoder_frame pFrame, lp_ac_deco
 {
 	struct _ac_decoder_frame_internal *frame = (struct _ac_decoder_frame_internal *)pFrame;
 	lp_ac_video_decoder vDecoder = (lp_ac_video_decoder)pDecoder;
+
+#if defined(AC_VAAPI)
+	// GPU surfaces have no CPU-accessible pixel data; sws_scale would crash.
+	if (frame->pFrame && frame->pFrame->format == AV_PIX_FMT_VAAPI) {
+		VADBG("scale_to_scaled_rgb: called on a VAAPI surface, skipping (use ac_vaapi_present_frame)");
+		return;
+	}
+#endif
 
 	if (vDecoder->pScaledFrameRGB == NULL || vDecoder->scaled_frame_width != dst_width ||
 		vDecoder->scaled_frame_height != dst_height)
@@ -1260,7 +1571,7 @@ void ac_scale_to_scaled_rgb_decoder_frame(lp_ac_decoder_frame pFrame, lp_ac_deco
 
 	if (NULL == (vDecoder->pScaledSwsCtx = sws_getCachedContext(
 		vDecoder->pScaledSwsCtx, vDecoder->pCodecCtx->width,
-		vDecoder->pCodecCtx->height, vDecoder->pCodecCtx->pix_fmt,
+		vDecoder->pCodecCtx->height, (enum AVPixelFormat)frame->pFrame->format,
 		dst_width, dst_height,
 		convert_pix_format(vDecoder->decoder.pacInstance->output_format),
 		/*SWS_BICUBIC*/SWS_FAST_BILINEAR, NULL, NULL, NULL)))
@@ -1303,7 +1614,10 @@ ac_receive_frame_rc ac_receive_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame
 	case 0:
 		pFrame->timecode = pDecoder->timecode; // is this correct?
 		frame->needs_unref = 1;
-		
+
+		// AC_VAAPI: hardware frames stay in GPU surfaces (AV_PIX_FMT_VAAPI);
+		// they are presented later with ac_vaapi_present_frame (no readback).
+
 		if (pDecoder->type == AC_DECODER_TYPE_AUDIO) {
 			lp_ac_audio_decoder aDecoder = (lp_ac_audio_decoder)pDecoder;
 			// Always output AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16
@@ -1483,9 +1797,23 @@ static void ac_free_video_decoder(lp_ac_video_decoder pDecoder) {
 		if (pDecoder->pScaledFrameRGB) av_frame_free(&(pDecoder->pScaledFrameRGB));
 		if (pDecoder->pScaledSwsCtx) sws_freeContext(pDecoder->pScaledSwsCtx);
 #if LIBAVCODEC_VERSION_MAJOR >= 57
+#if defined(AC_VAAPI)
+		// If ac_vaapi_decoder_shutdown already closed the codec on the decode
+		// thread (VA task affinity), only the context memory is left to free.
+		if (!pDecoder->hw_closed)
+			avcodec_close(pDecoder->pCodecCtx);
+#else
 		avcodec_close(pDecoder->pCodecCtx);
+#endif
 		av_free(pDecoder->pCodecCtx);
 #endif /* LIBAVCODEC_VERSION_MAJOR >= 57 */
+#if defined(AC_VAAPI)
+		// After avcodec_close dropped the codec's own references
+		if (pDecoder->pHWDeviceCtx) {
+			VADBG("releasing VAAPI device");
+			av_buffer_unref(&pDecoder->pHWDeviceCtx);
+		}
+#endif
 		av_free(pDecoder->decoder.pBuffer);
 		av_free(pDecoder);
 	}

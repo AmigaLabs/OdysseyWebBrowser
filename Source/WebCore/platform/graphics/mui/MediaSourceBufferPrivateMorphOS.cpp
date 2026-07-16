@@ -14,6 +14,9 @@
 #include "VideoTrackPrivateMorphOS.h"
 #include "MediaSampleMorphOS.h"
 
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <proto/exec.h>
 

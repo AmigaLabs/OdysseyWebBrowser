@@ -35,6 +35,7 @@
 #if USE(PTHREADS)
 
 #include <errno.h>
+#include <time.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/ThreadingPrimitives.h>
@@ -677,6 +678,31 @@ bool ThreadCondition::timedWait(Mutex& mutex, WallTime absoluteTime)
         return pthread_cond_wait(&m_condition, &mutex.impl()) == 0;
     }
 
+#if OS(AMIGAOS)
+    // On this port WallTime::now() adds the locale GMT/DST offsets on top of
+    // gettimeofday() (see currentTime() in CurrentTime.cpp), while clib4's
+    // pthread_cond_timedwait measures the absolute deadline against its own
+    // CLOCK_REALTIME. Passing the WallTime-based deadline directly makes the
+    // wait expire immediately (or far too late) whenever the two clocks are
+    // skewed. Preserve the intended relative duration by rebasing the
+    // deadline onto the pthread clock.
+    double relativeSeconds = (absoluteTime - WallTime::now()).value();
+    if (relativeSeconds < 0)
+        relativeSeconds = 0;
+
+    timespec targetTime;
+    clock_gettime(CLOCK_REALTIME, &targetTime);
+
+    time_t timeSeconds = static_cast<time_t>(relativeSeconds);
+    long timeNanoseconds = static_cast<long>((relativeSeconds - timeSeconds) * 1E9);
+
+    targetTime.tv_sec += timeSeconds;
+    targetTime.tv_nsec += timeNanoseconds;
+    if (targetTime.tv_nsec >= 1000000000L) {
+        targetTime.tv_sec++;
+        targetTime.tv_nsec -= 1000000000L;
+    }
+#else
     double rawSeconds = absoluteTime.secondsSinceEpoch().value();
 
     int timeSeconds = static_cast<int>(rawSeconds);
@@ -685,6 +711,7 @@ bool ThreadCondition::timedWait(Mutex& mutex, WallTime absoluteTime)
     timespec targetTime;
     targetTime.tv_sec = timeSeconds;
     targetTime.tv_nsec = timeNanoseconds;
+#endif
 
     return pthread_cond_timedwait(&m_condition, &mutex.impl(), &targetTime) == 0;
 }

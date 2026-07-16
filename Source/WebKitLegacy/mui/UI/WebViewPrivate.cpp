@@ -71,6 +71,13 @@
 #include "WebView.h"
 #include <WebCore/WindowFeatures.h>
 #include <WebCore/HTMLTextFormControlElement.h>
+#if ENABLE(VIDEO)
+#include <WebCore/HTMLMediaElement.h>
+#include <WebCore/RenderObject.h>
+#include "MediaPlayerMorphOS.h"
+#include <wtf/HashMap.h>
+#include <wtf/NeverDestroyed.h>
+#endif
 
 #include <WebCore/CommonVM.h>
 
@@ -108,6 +115,121 @@ namespace WTF
 using namespace WebCore;
 
 static const bool renderBenchmark = getenv("OWB_BENCHMARK");
+
+#if ENABLE(VIDEO) && defined(__amigaos4__)
+
+// VAAPI overlay plumbing: the media player asks (m_overlayRequest) for the
+// intuition Window and the element's position in window (RastPort)
+// coordinates so AcinerellaVideoDecoder can present frames with vaPutSurface.
+// The callback is kept per-player and re-invoked (m_overlayUpdate) whenever
+// the element may have moved (scroll, resize, layout).
+
+typedef Function<void(void *windowPtr, int scrollX, int scrollY, int left, int top, int right, int bottom, int width, int height)> OverlayCoordsCallback;
+
+static HashMap<void *, OverlayCoordsCallback> &overlayCallbacks()
+{
+    static NeverDestroyed<HashMap<void *, OverlayCoordsCallback>> map;
+    return map;
+}
+
+static void sendOverlayCoordinates(WebCore::MediaPlayer *player, const OverlayCoordsCallback &callback)
+{
+    bool sent = false;
+
+    WebCore::Page::forEachPage([player, &callback, &sent](WebCore::Page &page) {
+        if (sent)
+            return;
+
+        WebCore::HTMLMediaElement *element = nullptr;
+        page.forEachMediaElement([player, &element](WebCore::HTMLMediaElement &e) {
+            if (player == e.player().get())
+                element = &e;
+        });
+        if (!element)
+            return;
+
+        sent = true;
+
+        WebView *webView = kit(&page);
+        BalWidget *widget = webView ? webView->viewWindow() : nullptr;
+        if (!widget || !widget->browser || !widget->window)
+        {
+            kprintf("[Overlay] sendOverlayCoordinates: no widget/browser/window for player %p\n", player);
+            callback(nullptr, 0, 0, 0, 0, 0, 0, 0, 0);
+            return;
+        }
+
+        struct Window *window = (struct Window *)getv(widget->window, MUIA_Window);
+        // Call Node::renderer() (RenderMedia is only forward-declared here)
+        WebCore::RenderObject *renderer = static_cast<WebCore::Node*>(element)->renderer();
+        WebCore::FrameView *view = element->document().view();
+        if (!window || !renderer || !view)
+        {
+            kprintf("[Overlay] sendOverlayCoordinates: window %p renderer %p view %p - disabling overlay\n", window, renderer, view);
+            callback(nullptr, 0, 0, 0, 0, 0, 0, 0, 0);
+            return;
+        }
+
+        // Element rect in view coordinates, then offset by the browser
+        // widget's position inside the window (RastPort coordinates).
+        WebCore::IntRect rect = view->contentsToWindow(renderer->absoluteBoundingBoxRect());
+        Object *browser = widget->browser;
+        int offsetX = _mleft(browser);
+        int offsetY = _mtop(browser);
+        // Visible clip box of the browser view in window coordinates (x2/y2 exclusive)
+        int clipX1 = _mleft(browser);
+        int clipY1 = _mtop(browser);
+        int clipX2 = _mright(browser) + 1;
+        int clipY2 = _mbottom(browser) + 1;
+
+        kprintf("[Overlay] sendOverlayCoordinates: win %p element %d,%d %dx%d clip %d,%d-%d,%d\n",
+            window, offsetX + rect.x(), offsetY + rect.y(), rect.width(), rect.height(),
+            clipX1, clipY1, clipX2, clipY2);
+
+        callback(window, clipX1, clipY1, offsetX + rect.x(), offsetY + rect.y(), clipX2, clipY2, rect.width(), rect.height());
+    });
+
+    if (!sent)
+    {
+        kprintf("[Overlay] sendOverlayCoordinates: media element for player %p not found - disabling overlay\n", player);
+        callback(nullptr, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+}
+
+static void installOverlayHandlersIfNeeded()
+{
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+
+    MediaPlayerMorphOSSettings::settings().m_overlayRequest = [](WebCore::MediaPlayer *player, OverlayCoordsCallback &&callback) {
+        kprintf("[Overlay] overlayRequest for player %p\n", player);
+        // 'set' is a MUI macro (mui.h) - use remove+add on the HashMap instead
+        overlayCallbacks().remove(player);
+        overlayCallbacks().add(player, WTFMove(callback));
+        auto it = overlayCallbacks().find(player);
+        if (it != overlayCallbacks().end())
+            sendOverlayCoordinates(player, it->value);
+    };
+
+    MediaPlayerMorphOSSettings::settings().m_overlayUpdate = [](WebCore::MediaPlayer *player) {
+        auto it = overlayCallbacks().find(player);
+        if (it == overlayCallbacks().end())
+            return;
+        sendOverlayCoordinates(player, it->value);
+    };
+
+    MediaPlayerMorphOSSettings::settings().m_loadCancelled = [](WebCore::MediaPlayer *player) {
+        if (overlayCallbacks().contains(player))
+        {
+            kprintf("[Overlay] loadCancelled: removing overlay callback for player %p\n", player);
+            overlayCallbacks().remove(player);
+        }
+    };
+}
+
+#endif
 
 /* MorphOSWebNotificationDelegate */
 
@@ -756,6 +878,9 @@ WebViewPrivate::WebViewPrivate(WebView *webView)
     webView->setJSActionDelegate(MorphOSJSActionDelegate::createInstance());
     webView->setWebFrameLoadDelegate(MorphOSWebFrameDelegate::createInstance());
     webView->setDownloadDelegate(DownloadDelegateMorphOS::createInstance());
+#if ENABLE(VIDEO) && defined(__amigaos4__)
+    installOverlayHandlersIfNeeded();
+#endif
 //      webView->setPolicyDelegate(PolicyDelegateMorphOS::createInstance());
 //      webView->setWebResourceLoadDelegate(MorphOSResourceLoadDelegate::createInstance());
 }
@@ -787,61 +912,75 @@ BalRectangle WebViewPrivate::onExpose(BalEventExpose event)
 
     if (frame->contentRenderer() && frame->view() && !rect.isEmpty() && !getv(widget->browser, MA_OWBBrowser_VideoElement))
     {
-        bool coalesce = shouldCoalesce(rect);
+        bool videoOnly = widget->videoFrameRepaint;
+        widget->videoFrameRepaint = false;
 
-        if(renderBenchmark) { kprintf("dirtyRegion [%d %d %d %d] rects %ld coalesce %d\n", rect.x(), rect.y(), rect.width(), rect.height(), m_dirtyRegions.size(), coalesce); } //
-
-        if(coalesce)
+        if (!videoOnly)
         {
-            if(renderBenchmark) { kprintf("*** Coalescing rects\n"); } //
+            // Normal path: full layout + paint for the dirty region.
+            bool coalesce = shouldCoalesce(rect);
 
+            if(renderBenchmark) { kprintf("dirtyRegion [%d %d %d %d] rects %ld coalesce %d\n", rect.x(), rect.y(), rect.width(), rect.height(), m_dirtyRegions.size(), coalesce); } //
+
+            if(coalesce)
+            {
+                if(renderBenchmark) { kprintf("*** Coalescing rects\n"); } //
+
+                clearDirtyRegion();
+
+                frame->view()->updateLayoutAndStyleIfNeededRecursive();
+
+                if(renderBenchmark)    { layout = MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); kprintf("Painting [%d %d %d %d]\n", rect.x(), rect.y(), rect.width(), rect.height()); } //
+
+                ctx.save();
+                ctx.clip(rect);
+                frame->view()->paint(ctx, rect);
+                ctx.restore();
+
+                if(renderBenchmark)    { paint = MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); kprintf("Painting inspector [%d %d %d %d]\n", rect.x(), rect.y(), rect.width(), rect.height()); } //
+
+                updateView(widget, rect, false);
+
+                if(renderBenchmark)    { blit = MonotonicTime::now().secondsSinceEpoch().value() - start; } //
+            }
+            else
+            {
+                if(renderBenchmark) { kprintf("*** Not Coalescing rects\n"); } //
+
+                Vector<IntRect> dirtyRegions = m_dirtyRegions; // urg
+                clearDirtyRegion();
+
+                frame->view()->updateLayoutAndStyleIfNeededRecursive();
+
+                if(renderBenchmark)    { layout = MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); } //
+
+                for(size_t i = 0; i < dirtyRegions.size(); i++)
+                {
+                    if(renderBenchmark) { kprintf("Painting [%d %d %d %d]\n", dirtyRegions[i].x(), dirtyRegions[i].y(), dirtyRegions[i].width(), dirtyRegions[i].height()); }
+                    ctx.save();
+                    ctx.clip(dirtyRegions[i]);
+                    frame->view()->paint(ctx, dirtyRegions[i]);
+                    ctx.restore();
+
+                    if(renderBenchmark)    { paint += MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); kprintf("Blitting [%d %d %d %d]\n", dirtyRegions[i].x(), dirtyRegions[i].y(), dirtyRegions[i].width(), dirtyRegions[i].height()); } //
+
+                    updateView(widget, dirtyRegions[i], false);
+
+                    if(renderBenchmark)    { blit += MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); } //
+                }
+            }
+        }
+        else
+        {
+            // Video-only path: skip layout update (video playback doesn't change layout),
+            // paint only the video rect (video element writes pixels via AcinerellaVideoDecoder::paint),
+            // then blit to the offscreen bitmap and screen.
             clearDirtyRegion();
-
-            frame->view()->updateLayoutAndStyleIfNeededRecursive();
-
-            if(renderBenchmark)    { layout = MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); kprintf("Painting [%d %d %d %d]\n", rect.x(), rect.y(), rect.width(), rect.height()); } //
-
             ctx.save();
             ctx.clip(rect);
             frame->view()->paint(ctx, rect);
             ctx.restore();
-
-            if(renderBenchmark)    { paint = MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); kprintf("Painting inspector [%d %d %d %d]\n", rect.x(), rect.y(), rect.width(), rect.height()); } //
-
             updateView(widget, rect, false);
-
-            if(renderBenchmark)    { blit = MonotonicTime::now().secondsSinceEpoch().value() - start; } //
-        }
-        else
-        {
-            if(renderBenchmark) { kprintf("*** Not Coalescing rects\n"); } //
-
-            Vector<IntRect> dirtyRegions = m_dirtyRegions; // urg
-            clearDirtyRegion();
-
-            frame->view()->updateLayoutAndStyleIfNeededRecursive();
-
-            if(renderBenchmark)    { layout = MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); } //
-
-            for(size_t i = 0; i < dirtyRegions.size(); i++)
-            {
-                if(renderBenchmark) { kprintf("Painting [%d %d %d %d]\n", dirtyRegions[i].x(), dirtyRegions[i].y(), dirtyRegions[i].width(), dirtyRegions[i].height()); }
-                ctx.save();
-                ctx.clip(dirtyRegions[i]);
-                frame->view()->paint(ctx, dirtyRegions[i]);
-                ctx.restore();
-/*
-                ctx.save();
-                ctx.clip(dirtyRegions[i]);
-                frame->page()->inspectorController()->drawHighlight(ctx);
-                ctx.restore();
-*/
-                if(renderBenchmark)    { paint += MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); kprintf("Blitting [%d %d %d %d]\n", dirtyRegions[i].x(), dirtyRegions[i].y(), dirtyRegions[i].width(), dirtyRegions[i].height()); } //
-
-                updateView(widget, dirtyRegions[i], false);
-
-                if(renderBenchmark)    { blit += MonotonicTime::now().secondsSinceEpoch().value() - start; start = MonotonicTime::now().secondsSinceEpoch().value(); } //
-            }
         }
 
         updateView(widget, rect, true);

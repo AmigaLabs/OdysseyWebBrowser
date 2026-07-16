@@ -9,8 +9,8 @@ struct VLayerHandle;
 struct Window;
 struct Library;
 
-#define CGX_OVERLAY 0
-#define CAIRO_BLIT  1
+#define CGX_OVERLAY    0
+#define CAIRO_BLIT     1
 
 namespace WebCore {
 namespace Acinerella {
@@ -32,7 +32,7 @@ public:
 	bool isVideo() const override { return true; }
 	bool isText() const override { return false; }
 	
-	double readAheadTime() const override { return m_frameHeight > 720 ? 0.5f : 1.f; }
+	double readAheadTime() const override;
 	
 	double framesPerSecond() const { return m_fps; }
 
@@ -74,8 +74,19 @@ protected:
 	void pullThreadEntryPoint();
 	void blitFrameLocked();
 	void showFirstFrame(bool lock);
-	
+
 	void updateOverlayCoords();
+#if defined(__amigaos4__)
+	// Presents the current VAAPI frame into the window RastPort with
+	// vaPutSurface. Must run on the decoder thread (VA task affinity).
+	void presentOverlayFrame();
+	// Requests a (re)present of the current frame; coalesced via m_presentPending.
+	// Safe to call from any thread.
+	void requestOverlayRepresent();
+	// Services a pending present between decode iterations so presents don't
+	// starve while decodeUntilBufferFull monopolizes the decoder thread
+	void onDecodeLoopYield() override;
+#endif
 
 	bool getAudioPresentationTime(double &time);
 
@@ -117,6 +128,18 @@ protected:
 #if (CGX_OVERLAY)
 	struct ::VLayerHandle *m_overlayHandle = nullptr;
 	struct ::Window       *m_overlayWindow = nullptr;
+#endif
+#if (CAIRO_BLIT)
+	// Frame snapshot held for paint() — updated by pull thread, consumed by paint()
+	std::unique_ptr<AcinerellaDecodedFrame> m_currentRenderFrame;
+#endif
+#if defined(__amigaos4__)
+	// VAAPI overlay presentation state (vaPutSurface into the window RastPort)
+	struct ::Window *m_overlayWindow = nullptr;
+	int             m_clipX = 0, m_clipY = 0, m_clipX2 = 0, m_clipY2 = 0;
+	volatile bool   m_hwOverlay = false;
+	// Coalesces presentOverlayFrame dispatches from the pull thread
+	volatile bool   m_presentPending = false;
 #endif
 };
 

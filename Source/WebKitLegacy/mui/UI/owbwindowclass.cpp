@@ -56,6 +56,7 @@
 #include "WebPreferences.h"
 #include <WebCore/WindowFeatures.h>
 #include <WebCore/FrameLoader.h>
+#include <WebCore/MemoryCache.h>
 #include "ScriptEntry.h"
 #include "TopSitesManager.h"
 #include <WebCore/markup.h>
@@ -2069,9 +2070,12 @@ DEFSMETHOD(OWBWindow_RemoveBrowser)
     }
     */
 
+    bool browserRemoved = false;
+
     if (!resetvm && count <= 1)
     {
         DoMethod(obj, MM_OWBWindow_Close);
+        browserRemoved = true;
     }
     else
     {
@@ -2109,6 +2113,15 @@ DEFSMETHOD(OWBWindow_RemoveBrowser)
         DoMethod(data->pagetitles, MUIM_Group_ExitChange);
         DoMethod(data->pagegroup, MUIM_Group_ExitChange);
         DoMethod(_parent(data->pagegroup), MUIM_Group_ExitChange);
+
+        browserRemoved = true;
+    }
+
+    if (browserRemoved)
+    {
+        // Keep tab close responsive: only prune dead cache entries here.
+        // Full process-wide memory release can contend with teardown paths.
+        MemoryCache::singleton().pruneDeadResourcesToSize(0);
     }
 
     return 0;

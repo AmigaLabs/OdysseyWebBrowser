@@ -263,6 +263,12 @@ WebHistory* WebHistory::createInstance()
     return instance;
 }
 
+void WebHistory::closeDatabase()
+{
+    if (m_historyDB.isOpen())
+        m_historyDB.close();
+}
+
 WebHistory* WebHistory::sharedHistory()
 {
     static WebHistory sharedHistory = *WebHistory::createInstance();

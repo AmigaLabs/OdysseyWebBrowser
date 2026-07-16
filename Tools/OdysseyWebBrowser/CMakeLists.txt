@@ -44,12 +44,28 @@ set(OdysseyWebBrowser_LIBRARIES
     -lavutil
     -lswresample
     -lswscale
+    -lopencore-amrwb 
+    -lopencore-amrnb 
+    -lmp3lame 
+    -lopenjp2 
+    -lvpx 
+    -lvorbisfile 
+    -lvorbisenc 
+    -lvorbis 
+    -logg 
+    -lopus 
+    -ltheoraenc 
+    -ltheoradec 
+    -lwebp 
+    -lsharpyuv 
+    -lxvidcore 
     -lpsl
     -latomic
     -lpixman-1
     -lfontconfig
     -lnghttp2
     -llzma
+    -lzstd
     -lpthread
     -lunistring
     ${ZLIB_LIBRARIES}    

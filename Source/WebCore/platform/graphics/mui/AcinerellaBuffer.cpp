@@ -17,7 +17,32 @@
 #include "AcinerellaHLS.h"
 #include "CookieJar.h"
 
-#define D(x) 
+#define D(x)
+// Set to 1 for network buffer debug output on the serial console.
+#define YTDBG_ENABLED 0
+#if YTDBG_ENABLED
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#include <stdarg.h>
+#include <stdio.h>
+// The kernel DebugPrintF mishandles 64-bit varargs (%lld shifts every following
+// argument by one slot), so pre-format with the C library and emit a single %s.
+static void ytdbgPrint(const char* fmt, ...)
+{
+	char buffer[512];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buffer, sizeof(buffer), fmt, args);
+	va_end(args);
+	DebugPrintF("%s", buffer);
+}
+#define YTDBG(x) ytdbgPrint x
+#else
+#define YTDBG(x) dprintf x
+#endif
+#else
+#define YTDBG(x)
+#endif
 
 namespace WebCore {
 namespace Acinerella {
@@ -70,11 +95,27 @@ public:
 		}
 
 		m_request = ResourceRequest(m_url);
+		if (m_provider)
+		{
+			URL requestURL = URL(URL(), m_url);
+			m_request.setAllowCookies(true);
+			m_request.setFirstPartyForCookies(requestURL);
+			m_request.setHTTPReferrer(m_provider->referrer());
+		}
+		m_request.clearHTTPAcceptEncoding();
 		m_curlRequest = createCurlRequest(m_request);
 		if (m_curlRequest)
 		{
 			m_curlRequest->setResumeOffset(static_cast<long long>(m_bufferPositionAbs));
 			m_curlRequest->start();
+			YTDBG(("[YTDBG][NB] start request created/resumed from=%llu main=%d urlLen=%u\n", m_bufferPositionAbs, isMainThread(), unsigned(m_url.length())));
+		}
+		else
+		{
+			YTDBG(("[YTDBG][NB] start request creation failed\n"));
+			m_didFailLoading = true;
+			m_finishedLoading = true;
+			m_eventSemaphore.signal();
 		}
 	}
 
@@ -108,6 +149,11 @@ public:
 		int sizeWritten = 0;
 		int sizeLeft = size;
 		bool resume = false;
+		unsigned waitRounds = 0;
+		unsigned stallRestartCount = 0;
+		constexpr unsigned maxIdleWaitRounds = 18; // 18 * 10s = 180s
+		constexpr unsigned stallRestartEveryRounds = 6;
+		constexpr unsigned maxStallRestarts = 2;
 
 		if (-1 != readPosition && int64_t(m_bufferPositionAbs) != readPosition)
 		{
@@ -122,6 +168,9 @@ public:
 
 			while (!m_dead && !m_seekProcessed)
 			{
+				waitRounds++;
+				if (!(waitRounds % 3))
+					YTDBG(("[YTDBG][NB] waiting seek process rounds=%u dead=%d\n", waitRounds, m_dead));
 				m_eventSemaphore.waitFor(10_s);
 			}
 
@@ -166,6 +215,42 @@ public:
 			
 			if (sizeWritten < size && !m_finishedLoading && !canReadMore)
 			{
+				waitRounds++;
+				if (!(waitRounds % 3))
+					YTDBG(("[YTDBG][NB] waiting data rounds=%u wrote=%d/%d paused=%d finished=%d fail=%d bufSize=%d hasReq=%d\n", waitRounds, sizeWritten, size, m_isPaused, m_finishedLoading, m_didFailLoading, m_bufferSize, !!m_curlRequest));
+
+				if (!m_isPaused && m_curlRequest && !(waitRounds % stallRestartEveryRounds) && stallRestartCount < maxStallRestarts)
+				{
+					stallRestartCount++;
+					YTDBG(("[YTDBG][NB] stalled request restart #%u at abs=%llu\n", stallRestartCount, m_bufferPositionAbs));
+					WTF::callOnMainThread([this, from = m_bufferPositionAbs, protect = makeRef(*this)]() {
+						start(from);
+					});
+					m_eventSemaphore.waitFor(10_s);
+					continue;
+				}
+
+				if (m_didFailLoading)
+				{
+					YTDBG(("[YTDBG][NB] abort read due to load failure\n"));
+					return AcinerellaNetworkBuffer::eRead_EOF;
+				}
+
+				if (waitRounds >= maxIdleWaitRounds)
+				{
+					YTDBG(("[YTDBG][NB] abort read due to timeout rounds=%u\n", waitRounds));
+					m_didFailLoading = true;
+					m_finishedLoading = true;
+					WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+						if (m_curlRequest)
+						{
+							m_curlRequest->cancel();
+							m_curlRequest = nullptr;
+						}
+					});
+					return AcinerellaNetworkBuffer::eRead_EOF;
+				}
+
 				WTF::callOnMainThread([this, protect = makeRef(*this)]() {
 					continueBuffering();
 				});
@@ -185,6 +270,8 @@ public:
 		}
 
 		D(dprintf("%s(%p): written %ld\n", "nbRead", this, sizeWritten));
+		if (sizeWritten <= 0)
+			YTDBG(("[YTDBG][NB] read returned %d finished=%d fail=%d dead=%d\n", sizeWritten, m_finishedLoading, m_didFailLoading, m_dead));
 		return sizeWritten;
 	}
 	
@@ -195,6 +282,7 @@ public:
 		{
 			if (m_curlRequest)
 			{
+				YTDBG(("[YTDBG][NB] continueBuffering resume existing request\n"));
 				m_curlRequest->resume();
 			}
 			else
@@ -207,11 +295,28 @@ public:
 				}
 
 				m_request = ResourceRequest(m_url);
+				if (m_provider)
+				{
+					URL requestURL = URL(URL(), m_url);
+					m_request.setAllowCookies(true);
+					m_request.setFirstPartyForCookies(requestURL);
+					m_request.setHTTPReferrer(m_provider->referrer());
+				}
+				m_request.clearHTTPAcceptEncoding();
 				m_curlRequest = createCurlRequest(m_request);
 				if (m_curlRequest)
 				{
 					m_curlRequest->setResumeOffset(static_cast<long long>(abs));
+					YTDBG(("[YTDBG][NB] continueBuffering start new request abs=%llu\n", abs));
 					m_curlRequest->start();
+				}
+				else
+				{
+					YTDBG(("[YTDBG][NB] continueBuffering failed to create request\n"));
+					m_didFailLoading = true;
+					m_finishedLoading = true;
+					m_eventSemaphore.signal();
+					return;
 				}
 			}
 			D(dprintf("%s(%p): resuming...\n", __PRETTY_FUNCTION__, this));
@@ -226,7 +331,7 @@ public:
 		{
 			auto& storageSession = *context->storageSession();
 			auto includeSecureCookies = request.url().protocolIs("https") ? IncludeSecureCookies::Yes : IncludeSecureCookies::No;
-			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), WTF::nullopt, WTF::nullopt, includeSecureCookies, ShouldAskITP::Yes, ShouldRelaxThirdPartyCookieBlocking::No).first;
+			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), std::nullopt, std::nullopt, includeSecureCookies, ShouldAskITP::Yes, ShouldRelaxThirdPartyCookieBlocking::No).first;
 			if (!cookieHeaderField.isEmpty())
 				request.addHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeaderField);
 		}
@@ -263,6 +368,7 @@ public:
 	void curlDidReceiveResponse(CurlRequest& request, CurlResponse&& response) override
 	{
 		D(dprintf("%s(%p): %s\n", __PRETTY_FUNCTION__, this, m_url.utf8().data()));
+		YTDBG(("[YTDBG][NB] curlDidReceiveResponse reqMatch=%d\n", m_curlRequest.get() == &request));
 		if (m_curlRequest.get() == &request)
 		{
 			D(dprintf("%s(%p)..\n", __PRETTY_FUNCTION__, this));
@@ -271,6 +377,11 @@ public:
 			// only set on 1st request (or when we're reading from pos=0)
 			if (0 == m_bufferPositionAbs)
 				m_length = static_cast<int64_t>(m_response.expectedContentLength());
+			{
+				// Keep the URL short: the kernel debug output cannot take multi-KB lines
+				auto shortURL = m_response.url().string().left(160).utf8();
+				YTDBG(("[YTDBG][NB] response code=%d expectedLen=%lld url=%s%s\n", m_response.httpStatusCode(), (long long)m_length, shortURL.data(), m_response.url().string().length() > 160 ? "..." : ""));
+			}
 
 			if (m_response.shouldRedirect())
 			{
@@ -350,6 +461,7 @@ public:
 	void curlDidComplete(CurlRequest& request, NetworkLoadMetrics&&) override
 	{
 		D(dprintf("%s(%p): %s %lld\n", __PRETTY_FUNCTION__, this, m_url.utf8().data(), m_length));
+		YTDBG(("[YTDBG][NB] curl complete len=%lld\n", m_length));
 		if (m_curlRequest.get() == &request)
 		{
 			m_finishedLoading = true;
@@ -359,15 +471,20 @@ public:
 		}
 	}
 	
-	void curlDidFailWithError(CurlRequest& request, ResourceError&&, CertificateInfo&&) override
+	void curlDidFailWithError(CurlRequest& request, ResourceError&& error, CertificateInfo&&) override
 	{
 		D(dprintf("%s(%p)\n", __PRETTY_FUNCTION__, this));
+		auto failingURL = error.failingURL().string().left(160).utf8();
+		auto domain = error.domain().left(80).utf8();
+		auto desc = error.localizedDescription().left(160).utf8();
+		YTDBG(("[YTDBG][NB] curl fail code=%d domain=%s url=%s desc=%s\n", error.errorCode(), domain.data(), failingURL.data(), desc.data()));
 		if (m_curlRequest.get() == &request)
 		{
 			m_curlRequest->cancel();
 			m_curlRequest = nullptr;
 			m_isPaused = true;
 			m_didFailLoading = true;
+			m_finishedLoading = true;
 			m_eventSemaphore.signal();
 		}
 	}
@@ -590,7 +707,7 @@ public:
 		{
 			auto& storageSession = *context->storageSession();
 			auto includeSecureCookies = request.url().protocolIs("https") ? IncludeSecureCookies::Yes : IncludeSecureCookies::No;
-			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), WTF::nullopt, WTF::nullopt, includeSecureCookies, ShouldAskITP::Yes, ShouldRelaxThirdPartyCookieBlocking::No).first;
+			String cookieHeaderField = storageSession.cookieRequestHeaderFieldValue(request.firstPartyForCookies(), SameSiteInfo::create(request), request.url(), std::nullopt, std::nullopt, includeSecureCookies, ShouldAskITP::Yes, ShouldRelaxThirdPartyCookieBlocking::No).first;
 			if (!cookieHeaderField.isEmpty())
 				request.addHTTPHeaderField(HTTPHeaderName::Cookie, cookieHeaderField);
 		}

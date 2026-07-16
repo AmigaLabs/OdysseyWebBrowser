@@ -8,10 +8,6 @@
 #include "../../graphics/morphos/acinerella.h"
 #include "../../graphics/morphos/AcinerellaDecoder.h"
 
-#include <proto/dos.h>
-
-extern "C" {void dprintf(const char *,...);}
-
 #define DINIT(x)
 #define DDECODE(x) 
 #define DIO(x)

@@ -4,10 +4,17 @@
 
 #if ENABLE(VIDEO)
 
+#include <optional>
+#include <memory>
+#include <algorithm>
+
 #include "GraphicsContext.h"
-#include "PlatformContextCairo.h"
+#include "GraphicsContextCairo.h"
 
 #include <proto/exec.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <dos/dos.h>
 
@@ -18,6 +25,7 @@
 
 #include <proto/intuition.h>
 #include <intuition/intuition.h>
+#if OS(AROS) || OS(MORPHOS)
 #include <proto/cybergraphics.h>
 #include <cybergraphx/cybergraphics.h>
 #define __NOLIBBASE__
@@ -26,6 +34,7 @@
 #endif
 #undef __NOLIBBASE__
 #include <cybergraphx/cgxvideo.h>
+#endif
 #include <graphics/rpattr.h>
 #include <proto/graphics.h>
 #if OS(AROS)
@@ -115,12 +124,28 @@ void AcinerellaVideoDecoder::onDecoderChanged(RefPtr<AcinerellaPointer> acinerel
 #if (CAIRO_BLIT)
 	ac_set_output_format(decoder, AC_OUTPUT_RGBA32);
 #endif
+#if defined(__amigaos4__)
+	m_hwOverlay = (m_overlayWindow != nullptr) && ac_decoder_hwaccel_active(decoder);
+#endif
     ac_decoder_set_loopfilter(decoder, int(m_client->streamSettings().m_loopFilter));
 }
 
 bool AcinerellaVideoDecoder::isReadyToPlay() const
 {
 	return isWarmedUp() && m_didShowFirstFrame;
+}
+
+double AcinerellaVideoDecoder::readAheadTime() const
+{
+#if defined(__amigaos4__)
+	// Every decoded VAAPI frame keeps a surface from a fixed-size GPU pool.
+	// Buffering a full second of frames (25-30) exhausts the pool and wedges
+	// the decoder (hang inside vaDestroyContext on the ffmpeg reinit path).
+	// Cap the read-ahead to 8 frames; the pool is sized for DPB + 8 + margin.
+	if (m_lastDecoder && ac_decoder_hwaccel_active(m_lastDecoder) && m_frameDuration > 0.0)
+		return m_frameDuration * 8.0;
+#endif
+	return m_frameHeight > 720 ? 0.5 : 1.0;
 }
 
 bool AcinerellaVideoDecoder::isWarmedUp() const
@@ -172,6 +197,24 @@ void AcinerellaVideoDecoder::onThreadShutdown()
 	D(dprintf("\033[35m[VD]%s: %p\033[0m\n", __func__, this));
 	m_pullEvent.signal();
 	m_frameEvent.signal();
+#if defined(__amigaos4__)
+	// VAAPI teardown must happen here, on the decoder thread: the OS4 VA
+	// driver binds its state to the creating task; destroying contexts or
+	// the VA device from the Acinerella thread hangs the GUI and frees
+	// driver memory a concurrent vaPutSurface may still be reading.
+	{
+		auto lock = holdLock(m_lock);
+		m_hwOverlay = false;
+		m_presentPending = false;
+		m_currentRenderFrame = nullptr;
+		// All hw frames must be released before closing the codec so the
+		// VA surface pool is destroyed now, on this task
+		while (!m_decodedFrames.empty())
+			m_decodedFrames.pop();
+	}
+	if (m_lastDecoder)
+		ac_vaapi_decoder_shutdown(m_lastDecoder);
+#endif
 	D(dprintf("\033[35m[VD]%s: %p done\033[0m\n", __func__, this));
 }
 
@@ -216,8 +259,9 @@ void AcinerellaVideoDecoder::flush()
 void AcinerellaVideoDecoder::dumpStatus()
 {
 	auto lock = holdLock(m_lock);
-	dprintf("[\033[35mV]: WM %d IR %d PL %d BUF %f POS %f FIRSTFRAME %d DECFR %d LIVE %d\033[0m\n",
-		isWarmedUp(), isReadyToPlay(), isPlaying(), float(bufferSize()), float(position()), m_didShowFirstFrame, m_decodedFrames.size(), m_isLive);
+	dprintf("[\033[35mV]: WM %d IR %d PL %d BUF %f POS %f FIRSTFRAME %d DECFR %d LIVE %d HW %d\033[0m\n",
+		isWarmedUp(), isReadyToPlay(), isPlaying(), float(bufferSize()), float(position()), m_didShowFirstFrame, m_decodedFrames.size(), m_isLive,
+		m_lastDecoder ? ac_decoder_hwaccel_active(m_lastDecoder) : -1);
 }
 
 void AcinerellaVideoDecoder::setAudioPresentationTime(double apts)
@@ -252,10 +296,52 @@ bool AcinerellaVideoDecoder::getAudioPresentationTime(double &time)
 
 void AcinerellaVideoDecoder::setOverlayWindowCoords(struct ::Window *w, int scrollx, int scrolly, int mleft, int mtop, int mright, int mbottom, int width, int height)
 {
+#if defined(__amigaos4__)
+	// OS4 VAAPI overlay: mleft/mtop = element top-left in window (RastPort)
+	// coordinates, width/height = element size, scrollx/scrolly + mright/mbottom
+	// = the view clip box (x1,y1 - x2,y2 exclusive) in window coordinates.
+	bool changed = false;
+	{
+		auto lock = holdLock(m_lock);
+
+		changed = (m_outerX != mleft) || (m_outerY != mtop)
+			|| (m_visibleWidth != width) || (m_visibleHeight != height)
+			|| (m_clipX != scrollx) || (m_clipY != scrolly)
+			|| (m_clipX2 != mright) || (m_clipY2 != mbottom)
+			|| (m_overlayWindow != w);
+
+		m_outerX = mleft;
+		m_outerY = mtop;
+		m_outerX2 = mleft + width;
+		m_outerY2 = mtop + height;
+		m_visibleWidth = width;
+		m_visibleHeight = height;
+		m_clipX = scrollx;
+		m_clipY = scrolly;
+		m_clipX2 = mright;
+		m_clipY2 = mbottom;
+
+		if (w)
+		{
+			m_windowWidth = w->Width;
+			m_windowHeight = w->Height;
+		}
+
+		m_overlayWindow = w;
+
+		m_hwOverlay = (m_overlayWindow != nullptr) && m_lastDecoder && ac_decoder_hwaccel_active(m_lastDecoder);
+	}
+
+	if (m_hwOverlay && changed)
+	{
+		// Re-present the current frame at the new position (paused video etc)
+		requestOverlayRepresent();
+	}
+#endif
 #if (CGX_OVERLAY)
 	{
 		auto lock = holdLock(m_lock);
-		
+
 		DOVL(dprintf("\033[35m[VD]%s: window %p %d %d %d %d\033[0m\n", __func__, w, mleft, mtop, mright, mbottom));
 
 		(void)scrollx;
@@ -285,7 +371,7 @@ void AcinerellaVideoDecoder::setOverlayWindowCoords(struct ::Window *w, int scro
 
 			m_overlayWindow = w;
 			m_didShowFirstFrame = false;
-			
+
 			if (m_overlayWindow && !m_terminating && m_cgxVideo)
 			{
 				m_overlayHandle = CreateVLayerHandleTags(m_overlayWindow->WScreen,
@@ -296,14 +382,14 @@ void AcinerellaVideoDecoder::setOverlayWindowCoords(struct ::Window *w, int scro
 					VOA_SrcHeight, m_frameHeight & -2,
 					VOA_DoubleBuffer, TRUE,
 					TAG_DONE);
-			
+
 				if (m_overlayHandle)
 				{
 					AttachVLayerTags(m_overlayHandle, m_overlayWindow, VOA_ColorKeyFill, FALSE, TAG_DONE);
 					m_overlayFillColor = GetVLayerAttr(m_overlayHandle, VOA_ColorKey);
 					DOVL(dprintf("\033[35m[VD]%s: fill %08lx\033[0m\n", __func__, m_overlayFillColor));
 					m_pullEvent.signal();
-					
+
 					dispatch([this]() {
 						showFirstFrame(true);
 					});
@@ -383,8 +469,6 @@ void AcinerellaVideoDecoder::updateOverlayCoords()
 		offsetY = m_visibleHeight - (double(m_visibleWidth) * frameRevRatio);
 		offsetY /= 2;
 	}
-//	offsetX = 0;
-//	offsetY = 0;
 
 	auto lock = holdLock(m_lock);
 	if (m_overlayHandle)
@@ -407,10 +491,117 @@ void AcinerellaVideoDecoder::updateOverlayCoords()
 #endif
 }
 
+#if defined(__amigaos4__)
+void AcinerellaVideoDecoder::presentOverlayFrame()
+{
+	// Runs on the decoder thread (VA device task affinity).
+	std::unique_ptr<AcinerellaDecodedFrame> frame;
+	struct ::Window *window;
+	int srcX = 0, srcY = 0, srcW, srcH;
+	int dstX, dstY, dstW, dstH;
+
+	{
+		auto lock = holdLock(m_lock);
+		// requestOverlayRepresent() sets the flag; if it's already clear, a
+		// direct call from onDecodeLoopYield already serviced this present and
+		// this queued job is stale - do nothing.
+		if (!m_presentPending)
+			return;
+		m_presentPending = false;
+		if (m_terminating || !m_hwOverlay || !m_overlayWindow || !m_currentRenderFrame)
+			return;
+		if (m_frameWidth <= 0 || m_frameHeight <= 0 || m_visibleWidth <= 0 || m_visibleHeight <= 0)
+			return;
+
+		// Letterbox the frame inside the element rect, preserving aspect ratio
+		int offsetX = 0, offsetY = 0;
+		double frameRatio = double(m_frameWidth) / double(m_frameHeight);
+		double frameRevRatio = double(m_frameHeight) / double(m_frameWidth);
+		double visibleRatio = double(m_visibleWidth) / double(m_visibleHeight);
+
+		if (frameRatio < visibleRatio)
+			offsetX = (m_visibleWidth - int(double(m_visibleHeight) * frameRatio)) / 2;
+		else
+			offsetY = (m_visibleHeight - int(double(m_visibleWidth) * frameRevRatio)) / 2;
+
+		dstX = m_outerX + offsetX;
+		dstY = m_outerY + offsetY;
+		dstW = m_visibleWidth - (offsetX * 2);
+		dstH = m_visibleHeight - (offsetY * 2);
+		if (dstW <= 0 || dstH <= 0)
+			return;
+
+		// The OS4 vaPutSurface has no cliprects: clip the dest rect against the
+		// view clip box and crop the source rect proportionally.
+		srcW = m_frameWidth;
+		srcH = m_frameHeight;
+		if (m_clipX2 > m_clipX && m_clipY2 > m_clipY)
+		{
+			int cx1 = std::max(dstX, m_clipX), cy1 = std::max(dstY, m_clipY);
+			int cx2 = std::min(dstX + dstW, m_clipX2), cy2 = std::min(dstY + dstH, m_clipY2);
+			if (cx1 >= cx2 || cy1 >= cy2)
+				return; // fully scrolled out of view
+			srcX = (cx1 - dstX) * m_frameWidth / dstW;
+			srcY = (cy1 - dstY) * m_frameHeight / dstH;
+			srcW = (cx2 - cx1) * m_frameWidth / dstW;
+			srcH = (cy2 - cy1) * m_frameHeight / dstH;
+			dstX = cx1; dstY = cy1;
+			dstW = cx2 - cx1; dstH = cy2 - cy1;
+		}
+		if (srcW <= 0 || srcH <= 0)
+			return;
+
+		if (dstX != m_paintX || dstY != m_paintY || (dstX + dstW) != m_paintX2 || (dstY + dstH) != m_paintY2)
+		{
+			m_paintX = dstX; m_paintY = dstY;
+			m_paintX2 = dstX + dstW; m_paintY2 = dstY + dstH;
+		}
+
+		// Take the frame out of the shared slot: vaPutSurface can block for a
+		// long time (vsync, GPU) and MUST NOT run while holding m_lock, or the
+		// demuxer, the audio path and the main thread all stall behind it.
+		frame = WTFMove(m_currentRenderFrame);
+		window = m_overlayWindow;
+	}
+
+	ac_vaapi_present_frame(frame->pointer()->decoder(m_index),
+		frame->frame(), window->RPort,
+		srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH);
+
+	{
+		// Put the frame back for paint()/re-present, unless a newer one arrived
+		auto lock = holdLock(m_lock);
+		if (!m_currentRenderFrame)
+			m_currentRenderFrame = WTFMove(frame);
+	}
+}
+
+void AcinerellaVideoDecoder::requestOverlayRepresent()
+{
+	// Coalesce: only one present may be in flight; extra requests while a
+	// present is pending would just re-show the same frame.
+	if (m_presentPending || m_terminating)
+		return;
+	m_presentPending = true;
+	dispatch([this] {
+		presentOverlayFrame();
+	});
+}
+
+void AcinerellaVideoDecoder::onDecodeLoopYield()
+{
+	// decodeUntilBufferFull can monopolize the decoder thread for a long time
+	// (decode slower than playback), starving presents queued via dispatch().
+	// Service them inline between decoded frames - we're on the right thread.
+	if (m_presentPending)
+		presentOverlayFrame();
+}
+#endif
+
 void AcinerellaVideoDecoder::paint(GraphicsContext& gc, const FloatRect& rect)
 {
 #if (CGX_OVERLAY)
-	WebCore::PlatformContextCairo *context = gc.platformContext();
+	WebCore::GraphicsContextCairo *context = gc.platformContext();
 	cairo_t* cr = context->cr();
 	cairo_save(cr);
 	cairo_set_source_rgb(cr, double((m_overlayFillColor >> 16) & 0xff) / 255.0, double((m_overlayFillColor >> 8) & 0xff) / 255.0,
@@ -440,9 +631,9 @@ void AcinerellaVideoDecoder::paint(GraphicsContext& gc, const FloatRect& rect)
 	if (m_decodedFrames.size())
 	{
 		MonotonicTime mtStart = MonotonicTime::now();
-	
+
 		const auto *frame = m_decodedFrames.front().frame();
-		WebCore::PlatformContextCairo *context = gc.platformContext();
+		WebCore::GraphicsContextCairo *context = gc.platformContext();
 		cairo_t* cr = context->cr();
 		auto *avFrame = ac_get_frame(m_decodedFrames.front().pointer()->decoder(m_index));
 		// CAIRO_FORMAT_RGB24 is actually 00RRGGBB on BigEndian
@@ -489,7 +680,7 @@ void AcinerellaVideoDecoder::paint(GraphicsContext& gc, const FloatRect& rect)
 				cairo_surface_destroy(surface);
 			}
 		}
-		
+
 		MonotonicTime mtEnd = MonotonicTime::now();
 		Seconds decodingTime = (mtEnd - mtStart);
 
@@ -499,68 +690,57 @@ void AcinerellaVideoDecoder::paint(GraphicsContext& gc, const FloatRect& rect)
 		if (m_accumulatedCairoCount % int(m_fps))
 			D(dprintf("\033[35m[VD]%s: paint time %f, avg %f\033[0m\n", __func__, float(decodingTime.value()),
 				float(m_accumulatedCairoTime.value() / float(m_accumulatedCairoCount))));
-				
+
 	}
 #endif
 #endif
 #if (CAIRO_BLIT)
-	auto lock = holdLock(m_lock);
-	if (m_decodedFrames.size())
+#if defined(__amigaos4__)
+	if (m_hwOverlay)
 	{
-		WebCore::PlatformContextCairo *context = gc.platformContext();
+		// Video is presented directly by vaPutSurface; just fill the element black.
+		WebCore::GraphicsContextCairo *context = gc.platformContext();
+		cairo_t* cr = context->cr();
+		cairo_save(cr);
+		cairo_set_source_rgb(cr, 0, 0, 0);
+		cairo_rectangle(cr, rect.x(), rect.y(), rect.width(), rect.height());
+		cairo_fill(cr);
+		cairo_restore(cr);
+		// A paint means the element may have moved (scroll, layout, resize):
+		// ask the UI to recompute and push fresh overlay coordinates.
+		if (m_client)
+			m_client->onDecoderRenderUpdate(makeRef(*this));
+		// The black fill we just queued will land over the presented frame
+		// once the browser blits this tile: re-present on top of it.
+		requestOverlayRepresent();
+		return;
+	}
+#endif
+	auto lock = holdLock(m_lock);
+	if (m_currentRenderFrame)
+	{
+		WebCore::GraphicsContextCairo *context = gc.platformContext();
 		cairo_t* cr = context->cr();
 
-#if MEASURE
-static long microSecs1 = 0;
-static long microSecs2 = 0;
-static long iters = 0;
-struct timeval t1;
-struct timeval t2;
-if (iters % 256 == 0) iters = 0;
-iters++;
-getSysTime(&t1);
-#endif
+		// Use the snapshotted render frame (set by the pull thread before it
+		// advances the decode queue) to avoid the race where m_decodedFrames
+		// is already empty when this paint() call arrives on the main thread.
+		auto& renderFrame = *m_currentRenderFrame;
 
-
-		// measurements of 360p video displayed inline 711x400 / 853x480 theather mode
-#if 1
-		// 1.6Ghz -> 1100 us / 1400 us
 		// optimization: ffmpeg is 3x faster when scaling to even width
 		int corrwidth = rect.width(); if (corrwidth & 1) corrwidth++;
-		ac_scale_to_scaled_rgb_decoder_frame(m_decodedFrames.front().frame(), m_decodedFrames.front().pointer()->decoder(m_index), corrwidth, rect.height());
-		AVFrame *avFrame = ac_get_frame_scaled(m_decodedFrames.front().pointer()->decoder(m_index));
-#else
-		// 1.6Ghz ->  200 us /  200 us
-		ac_scale_to_rgb_decoder_frame(m_decodedFrames.front().frame(), m_decodedFrames.front().pointer()->decoder(m_index));
-		AVFrame *avFrame = ac_get_frame(m_decodedFrames.front().pointer()->decoder(m_index));
-#endif
+		ac_scale_to_scaled_rgb_decoder_frame(renderFrame.frame(), renderFrame.pointer()->decoder(m_index), corrwidth, rect.height());
+		AVFrame *avFrame = ac_get_frame_scaled(renderFrame.pointer()->decoder(m_index));
 
-
-#if MEASURE
-getSysTime(&t2);
-long val1 = ((long)(t2.tv_secs - t1.tv_secs) * 1000000L) + (long)t2.tv_micro - (long)t1.tv_micro;
-microSecs1 += val1;
-if (iters % 256 == 0)
-{
-bug ("scale %ld us\n", (microSecs1 / iters));
-microSecs1 = 0;
-}
-getSysTime(&t1);
-#endif
-
-
-#if 1
-		// 1.6Ghz ->  300 us /  450 us
+		if (avFrame && avFrame->data[0])
 		{
-			auto surface = cairo_image_surface_create_for_data(avFrame->data[0], CAIRO_FORMAT_RGB24, corrwidth, rect.height(), avFrame->linesize[0]);
+			auto surface = cairo_image_surface_create_for_data(avFrame->data[0], CAIRO_FORMAT_RGB24, corrwidth, (int)rect.height(), avFrame->linesize[0]);
 			if (surface)
 			{
 				cairo_save(cr);
 				cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-				// optimizaton: operate on integer coords to allow for plain blit instead of re-scaling (300 us us vs 3000 us)
 				cairo_translate(cr, (int)rect.x(), (int)rect.y());
 				cairo_rectangle(cr, 0, 0, (int)rect.width(), (int)rect.height());
-				// optimization: remove rounded-edge clip, saves ~3500 us, as blit is done to rectangle, not polygon
 				cairo_reset_clip(cr);
 				cairo_set_antialias(cr, CAIRO_ANTIALIAS_NONE);
 				cairo_set_source_surface(cr, surface, 0, 0);
@@ -569,62 +749,6 @@ getSysTime(&t1);
 				cairo_surface_destroy(surface);
 			}
 		}
-#else
-		// 1.6Ghz -> 5800 us / 8100 us
-		if (rect.width() == m_frameWidth && rect.height() == m_frameHeight)
-		{
-			auto surface = cairo_image_surface_create_for_data(avFrame->data[0], CAIRO_FORMAT_RGB24, m_frameWidth, m_frameHeight, avFrame->linesize[0]);
-			if (surface)
-			{
-				cairo_save(cr);
-				cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-				cairo_translate(cr, rect.x(), rect.y());
-				cairo_rectangle(cr, 0, 0, rect.width(), rect.height());
-				cairo_clip(cr);
-				cairo_set_source_surface(cr, surface, 0, 0);
-				cairo_paint(cr);
-				cairo_restore(cr);
-				cairo_surface_destroy(surface);
-			}
-		}
-		else
-		{
-			auto surface = cairo_image_surface_create_for_data(avFrame->data[0], CAIRO_FORMAT_RGB24, m_frameWidth, m_frameHeight, avFrame->linesize[0]);
-			if (surface)
-			{
-				cairo_save(cr);
-				cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-				cairo_translate(cr, rect.x(), rect.y());
-				cairo_rectangle(cr, 0, 0, rect.width(), rect.height());
-				cairo_pattern_t *pattern = cairo_pattern_create_for_surface(surface);
-				if (pattern)
-				{
-					cairo_matrix_t matrix;
-					cairo_matrix_init_scale(&matrix, double(m_frameWidth) / rect.width(), double(m_frameHeight) / rect.height());
-					cairo_pattern_set_matrix(pattern, &matrix);
-					cairo_pattern_set_filter(pattern, CAIRO_FILTER_GOOD);
-					cairo_set_source(cr, pattern);
-					cairo_clip(cr);
-					cairo_set_antialias(cr, CAIRO_ANTIALIAS_DEFAULT);
-					cairo_paint(cr);
-					cairo_pattern_destroy(pattern);
-				}
-				cairo_restore(cr);
-				cairo_surface_destroy(surface);
-			}
-		}
-#endif
-
-#if MEASURE
-getSysTime(&t2);
-microSecs2 += ((long)(t2.tv_secs - t1.tv_secs) * 1000000L) + (long)t2.tv_micro - (long)t1.tv_micro;
-if (iters % 256 == 0)
-{
-bug ("paint %ld us\n", (microSecs2 / iters));
-microSecs2 = 0;
-}
-#endif
-
 	}
 #endif
 }
@@ -744,7 +868,6 @@ void AcinerellaVideoDecoder::blitFrameLocked()
 		}
 	}
 #endif
-#warning implement
 }
 
 void AcinerellaVideoDecoder::pullThreadEntryPoint()
@@ -808,18 +931,48 @@ void AcinerellaVideoDecoder::pullThreadEntryPoint()
 							SwapVLayerBuffer(m_overlayHandle);
 #endif
 #if (CAIRO_BLIT)
-						dispatch([this] {
-							m_client->onDecoderWantsToRender(makeRef(*this));
-						});
-#endif
+						// Snapshot the frame for paint() BEFORE popping: move it out of the
+						// queue so paint() can access it even after the pull thread has advanced.
+						if (m_decodedFrames.size())
+						{
+							pts = m_decodedFrames.front().pts();
+							if (!m_isLive)
+								m_position = pts;
 
+							m_currentRenderFrame = std::make_unique<AcinerellaDecodedFrame>(std::move(m_decodedFrames.front()));
+							m_decodedFrames.pop();
+							m_bufferedSeconds -= m_frameDuration;
+							m_frameCount++;
+							didShowFrame = true;
+
+#if defined(__amigaos4__)
+							if (m_hwOverlay)
+							{
+								// Present on the decoder thread: the OS4 VA driver only
+								// accepts calls from the task that created the device.
+								// Coalesced via m_presentPending; also serviced inline by
+								// onDecodeLoopYield while the decoder is busy refilling.
+								requestOverlayRepresent();
+							}
+							else
+#endif
+							dispatch([this] {
+								m_client->onDecoderWantsToRender(makeRef(*this));
+							});
+						}
+						else
+						{
+							break;
+						}
+#endif
+#if (CGX_OVERLAY)
 						if (m_decodedFrames.size())
 						{
 							// Store current frame's pts
 							pts = m_decodedFrames.front().pts();
 							if (!m_isLive)
 								m_position = pts;
-							
+
 							// Blit the frame into overlay backbuffer
 							blitFrameLocked();
 
@@ -834,6 +987,7 @@ void AcinerellaVideoDecoder::pullThreadEntryPoint()
 						{
 							break;
 						}
+#endif
 					}
 				}
 

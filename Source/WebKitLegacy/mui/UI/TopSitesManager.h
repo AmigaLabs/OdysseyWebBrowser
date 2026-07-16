@@ -46,6 +46,7 @@ public:
 
     TopSitesManager();   
     virtual ~TopSitesManager();
+    void close();
     
     void generateTemplate(WebView *webView, WTF::String originurl);
     void update(WebView *webView, URL &url, WTF::String &title);

@@ -13,6 +13,7 @@ namespace WebCore {
 
 class MediaSampleMorphOS final : public MediaSample {
 	MediaSampleMorphOS(RefPtr<Acinerella::AcinerellaPackage>& sample, const FloatSize& presentationSize, const String& trackId);
+    virtual ~MediaSampleMorphOS();
 
 public:
     static Ref<MediaSampleMorphOS> create(RefPtr<Acinerella::AcinerellaPackage>& sample, const FloatSize& presentationSize, const String& trackId)
@@ -30,9 +31,9 @@ public:
     void offsetTimestampsBy(const MediaTime&) override;
     void setTimestamps(const MediaTime&, const MediaTime&) override;
     bool isDivisable() const override { return false; }
-    std::pair<RefPtr<MediaSample>, RefPtr<MediaSample>> divide(const MediaTime& presentationTime) override { (void)presentationTime; return { nullptr, nullptr }; }
+    std::pair<RefPtr<MediaSample>, RefPtr<MediaSample>> divide(const MediaTime&, UseEndTime = UseEndTime::DoNotUse) override { return { nullptr, nullptr }; }
     Ref<MediaSample> createNonDisplayingCopy() const override;
-    Optional<MediaSample::ByteRange> byteRange() const override;
+    std::optional<MediaSample::ByteRange> byteRange() const override;
 
     SampleFlags flags() const override { return m_flags; }
     PlatformSample platformSample() override;

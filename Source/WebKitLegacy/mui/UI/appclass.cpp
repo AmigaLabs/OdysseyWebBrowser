@@ -73,12 +73,8 @@
 #include <WebCore/ContextMenu.h>
 #include <WebCore/ContextMenuController.h>
 #include <wtf/RunLoop.h>
-#if 0
-// broken 2.18
 #if ENABLE(ICONDATABASE)
-#include "IconDatabase.h"
 #include "WebIconDatabase.h"
-#endif
 #endif
 #include "WebHistory.h"
 #include "WebHistoryItem.h"
@@ -104,7 +100,12 @@
 #include <WebCore/AsyncFileStream.h>
 #include <WebCore/BlobRegistryImpl.h>
 #include <WebCore/CurlRequestScheduler.h>
+#include <WebCore/FontCache.h>
 #include <wtf/text/StringToIntegerConversion.h>
+#include <unicode/uclean.h>
+#include "WebHistory.h"
+#include "TopSitesManager.h"
+#include "AutofillBackingStore.h"
 
 namespace JSC {
 namespace DFG {
@@ -1171,6 +1172,14 @@ DEFDISP
     APTR n, m;
 
     owb_timer_should_exit = 1;
+    /* Wait for the timer thread to fully exit before tearing down resources.
+       On AmigaOS threads cannot be killed; the thread signals completion by
+       setting owb_timer_should_exit = 2.  DoIO interval is 14 ms, so this
+       will return almost immediately. */
+    if (owbTimer) {
+        owbTimer->waitForCompletion();
+        owbTimer = nullptr;
+    }
 
     ITERATELISTSAFE(n, m, &window_list)
     {
@@ -1201,28 +1210,34 @@ DEFDISP
     }
 
     /* Free shared instances that really need to be freed */
-    
-#if 0
-// broken 2.18
-    WebIconDatabase *sharedWebIconDatabase = WebIconDatabase::sharedWebIconDatabase();
-    if(sharedWebIconDatabase)
-    {
-        delete sharedWebIconDatabase;
-    }
 
-    /* Free resource manager, since it doesn't seem freed anywhere else */
-    ResourceHandleManager *sharedResourceHandleManager = ResourceHandleManager::sharedInstance();
-
-    if(sharedResourceHandleManager)
+#if ENABLE(ICONDATABASE)
+    /* Close the icon database and its background thread before VM shutdown. */
     {
-        delete sharedResourceHandleManager;
+        WebIconDatabase *sharedWebIconDatabase = WebIconDatabase::sharedWebIconDatabase();
+        if(sharedWebIconDatabase)
+        {
+            delete sharedWebIconDatabase;
+        }
     }
 #endif
+
+    /* Explicitly close all SQLite databases before process exit.
+       On AmigaOS/AROS static-local and file-scope-static destructors are not
+       reliably called when the process ends, so file handles stay open.
+       These must be closed before WebCore/JSC teardown since they do not
+       depend on those subsystems. */
+    WebHistory::closeDatabase();
+    TopSitesManager::getInstance().close();
+    autofillBackingStore().close();
 
     removeClipboardMonitor();
     //kprintf("OWBApp: Ok, calling supermethod\n");
     WebCore::DOMWindow::dispatchAllPendingUnloadEvents();
     WebCore::CurlContext::singleton().stopThread();
+    /* Destroy all network storage sessions so CookieJarDB closes cookies.db.
+       NetworkStorageSessionMap is never explicitly torn down otherwise. */
+    NetworkStorageSessionMap::destroyAllSessions();
     WebDatabaseProvider::singleton().shutdownServers();
     WebKit::WebStorageNamespaceProvider::closeLocalStorage();
     DataURLDecoder::shutdown();
@@ -1240,9 +1255,22 @@ DEFDISP
        stopped cleanly by delete &commonVM() below, so we skip this here. */
     GCController::singleton().garbageCollectNow();
 #endif
-    //    FontCache::singleton().invalidate(); // trashes memory like fuck on https://testdrive-archive.azurewebsites.net/Graphics/CanvasPinball/default.html
     MemoryCache::singleton().setDisabled(true);
     delete &commonVM(); /* This looks weird, but it stops JSC Heap Collector Thread */
+    /* FontCache::singleton().invalidate() MUST come AFTER delete &commonVM().
+       Calling it before (with the async GC still running) causes the JSC Heap
+       Collector Thread to spin at 100% CPU: releasing all cached font/style data
+       feeds an avalanche of ref-count drops into the live GC which never drains.
+       After the VM is deleted the GC thread is stopped; FontData objects are pure
+       C++/FreeType with no JSC involvement, so this is safe and properly closes
+       all open TTF file handles on AmigaOS/AROS where the OS does not auto-close
+       file descriptors on process exit. */
+#if OS(AMIGAOS) || OS(AROS)
+    FontCache::singleton().invalidate();
+#endif
+    /* Release all ICU resources (open locale data files, converters, collators).
+       Must be called after all ICU consumers (JSC, WebCore) have shut down. */
+    u_cleanup();
 #if 0
 // broken 2.34.6
 #if ENABLE(JIT)

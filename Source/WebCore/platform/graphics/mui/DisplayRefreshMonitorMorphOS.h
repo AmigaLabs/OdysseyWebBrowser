@@ -34,12 +34,18 @@ class DisplayRefreshMonitorMorphOS : public DisplayRefreshMonitor {
 public:
     static RefPtr<DisplayRefreshMonitorMorphOS> create(PlatformDisplayID);
 
-    void displayLinkFired() override;
-    bool requestRefreshCallback() override;
+    bool startNotificationMechanism() final;
+    void stopNotificationMechanism() final;
+    void stop() final;
 
 private:
+	void timerCallback();
+	
+	std::optional<FramesPerSecond> displayNominalFramesPerSecond() final;
+
     explicit DisplayRefreshMonitorMorphOS(PlatformDisplayID);
     RunLoop::Timer<DisplayRefreshMonitorMorphOS> m_timer;
+    DisplayUpdate m_currentUpdate;
 };
 
 } // namespace WebCore

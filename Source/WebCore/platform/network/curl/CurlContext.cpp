@@ -883,9 +883,9 @@ std::optional<long long> CurlHandle::getContentLength()
     if (!m_handle)
         return std::nullopt;
 
-    double contentLength;
+    curl_off_t contentLength = -1;
 
-    CURLcode errorCode = curl_easy_getinfo(m_handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &contentLength);
+    CURLcode errorCode = curl_easy_getinfo(m_handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &contentLength);
     if (errorCode != CURLE_OK)
         return std::nullopt;
 

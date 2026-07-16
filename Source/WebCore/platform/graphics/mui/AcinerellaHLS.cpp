@@ -3,6 +3,7 @@
 #if ENABLE(VIDEO)
 
 #include <proto/exec.h>
+#include <wtf/text/StringToIntegerConversion.h>
 
 namespace WebCore {
 namespace Acinerella {
@@ -83,13 +84,16 @@ public:
 							auto res = param.convertToASCIILowercase().split('x');
 							if (res.size() == 2)
 							{
-								info.m_width = res[0].toInt();
-								info.m_height = res[1].toInt();
+								if (auto width = parseInteger<int>(res[0]))
+									info.m_width = *width;
+								if (auto height = parseInteger<int>(res[1]))
+									info.m_height = *height;
 							}
 						}
 						else if (startsWithLettersIgnoringASCIICase(key, "frame-rate"))
 						{
-							info.m_fps = param.toInt();
+							if (auto fps = parseInteger<int>(param))
+								info.m_fps = *fps;
 						}
 						else if (startsWithLettersIgnoringASCIICase(key, "codecs"))
 						{
@@ -97,7 +101,8 @@ public:
 						}
 						else if (startsWithLettersIgnoringASCIICase(key, "bandwidth"))
 						{
-							info.m_bandwidth = param.toInt();
+							if (auto bandwidth = parseInteger<int>(param))
+								info.m_bandwidth = *bandwidth;
 						}
 
 						// skip to next
@@ -163,7 +168,8 @@ HLSStream::HLSStream(const URL &baseURL, const String &sdata)
 
 			if (startsWithLettersIgnoringASCIICase(line, "#ext-x-media-sequence"))
 			{
-				m_mediaSequence = line.substring(22).toUInt64();
+				if (auto mediaSequence = parseInteger<int64_t>(line.substring(22)))
+					m_mediaSequence = *mediaSequence;
 				D(dprintf("mediaseq: %llu\n", m_mediaSequence));
 				m_mediaSequence--; //! we want 1st added chunk to have the right sequence!
 			}

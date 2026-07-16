@@ -88,6 +88,11 @@ DEFNEW
 
 DEFDISP
 {
+    /* Close the password database explicitly. On AmigaOS/AROS static-scope
+       destructors are not reliably called, so the file handle would stay open. */
+    if (m_passwordDB.isOpen())
+        m_passwordDB.close();
+
     HashMap<String, ExtCredential*>::iterator first = credentialMap.begin();
     HashMap<String, ExtCredential*>::iterator end = credentialMap.end();
 

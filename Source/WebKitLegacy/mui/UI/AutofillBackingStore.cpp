@@ -52,6 +52,12 @@ AutofillBackingStore::~AutofillBackingStore()
         m_database.close();
 }
 
+void AutofillBackingStore::close()
+{
+    if (m_database.isOpen())
+        m_database.close();
+}
+
 bool AutofillBackingStore::open(const String& dbPath)
 {
     ASSERT(!m_database.isOpen());

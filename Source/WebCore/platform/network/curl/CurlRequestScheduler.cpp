@@ -50,6 +50,16 @@ struct Library *SocketBase;
 struct SocketIFace *ISocket = NULL;
 #endif
 
+#if OS(AROS)
+#include <aros/debug.h>
+#define CDBG(x) bug x
+#elif OS(MORPHOS)
+extern "C" void dprintf(const char *fmt, ...);
+#define CDBG(x) dprintf x
+#else
+#define CDBG(x) DebugPrintF x
+#endif
+
 void init_SocketBase()
 {
     SocketBase = OpenLibrary("bsdsocket.library", 4L);
@@ -143,6 +153,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
     m_thread = Thread::create("curlThread", [this] {
 #if PLATFORM(MUI)
         init_SocketBase();
+        CDBG(("[CURL] worker thread started SocketBase=%p\n", SocketBase));
         /* Increase priority so that network data is transported immediatelly */
         SetTaskPri(FindTask(NULL), 1);
 #endif
@@ -313,8 +324,10 @@ void CurlRequestScheduler::workerThread()
 #else
         int activeCount = 0;
         CURLMcode mc = m_curlMultiHandle->perform(activeCount);
-        if (mc != CURLM_OK)
+        if (mc != CURLM_OK) {
+            CDBG(("[CURL] perform failed mc=%d\n", (int)mc));
             break;
+        }
 
         const int selectTimeoutMS = 10;
 #if PLATFORM(MUI)
@@ -361,12 +374,14 @@ void CurlRequestScheduler::startTransfer(CurlRequestSchedulerClient* client)
     auto task = [this, client]() {
         CURL* handle = client->setupTransfer();
         if (!handle) {
+            CDBG(("[CURL] setupTransfer returned NULL -> CURLE_FAILED_INIT\n"));
             completeTransfer(client, CURLE_FAILED_INIT);
             return;
         }
 
         auto addResult = m_curlMultiHandle->addHandle(handle);
         if (addResult != CURLM_OK) {
+            CDBG(("[CURL] addHandle failed\n"));
             completeTransfer(client, CURLE_FAILED_INIT);
             return;
         }

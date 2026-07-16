@@ -5,6 +5,9 @@
 #if ENABLE(VIDEO)
 #include <proto/ahi.h>
 #include <proto/exec.h>
+#if OS(AMIGAOS)
+#define ODYSSEY
+#endif
 #include <proto/dos.h>
 #include <dos/dos.h>
 
@@ -24,8 +27,33 @@ namespace Acinerella {
 
 #define D(x)
 #define DSYNC(x)
-#define DSPAM(x) 
-#define DSPAMTS(x) 
+#define DSPAM(x)
+#define DSPAMTS(x)
+// Set to 1 for audio decoder debug output on the serial console.
+#define YTDBG_ENABLED 0
+#if YTDBG_ENABLED
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#include <stdarg.h>
+#include <stdio.h>
+// The kernel DebugPrintF mishandles 64-bit varargs (%lld shifts every following
+// argument by one slot), so pre-format with the C library and emit a single %s.
+static void ytdbgPrint(const char* fmt, ...)
+{
+	char buffer[512];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buffer, sizeof(buffer), fmt, args);
+	va_end(args);
+	DebugPrintF("%s", buffer);
+}
+#define YTDBG(x) ytdbgPrint x
+#else
+#define YTDBG(x) dprintf x
+#endif
+#else
+#define YTDBG(x)
+#endif
 
 AcinerellaAudioDecoder::AcinerellaAudioDecoder(AcinerellaDecoderClient* client, RefPtr<AcinerellaPointer> acinerella, RefPtr<AcinerellaMuxedBuffer> buffer, int index, const ac_stream_info &info, bool isLiveStream)
 	: AcinerellaDecoder(client, acinerella, buffer, index, info, isLiveStream)
@@ -43,6 +71,7 @@ AcinerellaAudioDecoder::AcinerellaAudioDecoder(AcinerellaDecoderClient* client, 
 
 void AcinerellaAudioDecoder::startPlaying()
 {
+	YTDBG(("[YTDBG][AD] startPlaying control=%p warmed=%d eof=%d bufferMs=%d\n", m_ahiControl, isWarmedUp(), m_decoderEOF, int(bufferSize() * 1000.0)));
 	D(dprintf("[AD]%s: %p\n", __func__, this));
 	EP_EVENT(start);
 	initializeAudio();
@@ -81,6 +110,8 @@ void AcinerellaAudioDecoder::doSetVolume(double volume)
 
 bool AcinerellaAudioDecoder::isReadyToPlay() const
 {
+	if (m_ahiInitFailed)
+		return isWarmedUp();
 	return isWarmedUp() && m_ahiControl;
 }
 
@@ -113,11 +144,15 @@ AROS_UFH3(void, AROS_SoundFunc,
 
 bool AcinerellaAudioDecoder::initializeAudio()
 {
+	YTDBG(("[YTDBG][AD] initializeAudio rate=%d channels=%d bits=%d\n", m_audioRate, m_audioChannels, m_audioBits));
 	D(dprintf("[AD]%s:\n", __func__));
 	EP_SCOPE(initializeAudio);
 	
 	if (m_ahiControl)
+	{
+		YTDBG(("[YTDBG][AD] initializeAudio already initialized\n"));
 		return true;
+	}
 	
 	if ((m_ahiPort = CreateMsgPort()))
 	{
@@ -126,6 +161,7 @@ bool AcinerellaAudioDecoder::initializeAudio()
 			m_ahiIO->ahir_Version = 4;
 			if (0 == OpenDevice(AHINAME, AHI_NO_UNIT, reinterpret_cast<IORequest *>(m_ahiIO), 0))
 			{
+				YTDBG(("[YTDBG][AD] OpenDevice(AHI) ok\n"));
 				m_ahiBase = reinterpret_cast<Library *>(m_ahiIO->ahir_Std.io_Device);
 
 				D(dprintf("[AD]%s: ahiBase %p\n", __func__, m_ahiBase));
@@ -148,6 +184,21 @@ bool AcinerellaAudioDecoder::initializeAudio()
 					NULL, NULL,
 				};
 #endif
+#if OS(AMIGAOS)
+				IAHI = (struct AHIIFace *)GetInterface(m_ahiBase, "main", 1, NULL);
+				if (!IAHI)
+				{
+					YTDBG(("[YTDBG][AD] GetInterface(IAHI) failed\n"));
+					return false;
+				}
+
+				static struct Hook __soundHook = {
+					{NULL, NULL},
+					(ULONG (*)(Hook*, void*, void*)) &AcinerellaAudioDecoder::soundFunc,
+					NULL,
+					NULL,
+				};
+#endif
 
 				if ((m_ahiControl = AHI_AllocAudio(
 					AHIA_UserData, reinterpret_cast<IPTR>(this),
@@ -157,6 +208,7 @@ bool AcinerellaAudioDecoder::initializeAudio()
 					AHIA_SoundFunc, reinterpret_cast<IPTR>(&__soundHook),
 					TAG_DONE)))
 				{
+					YTDBG(("[YTDBG][AD] AHI_AllocAudio ok control=%p\n", m_ahiControl));
 					ULONG maxSamples = 0, mixFreq = 0;
 
 					AHI_GetAudioAttrs(AHI_INVALID_ID, m_ahiControl,
@@ -214,6 +266,7 @@ bool AcinerellaAudioDecoder::initializeAudio()
 										AHIP_EndChannel, 0,
 										TAG_DONE);
 									m_playing = false;
+									YTDBG(("[YTDBG][AD] initializeAudio success sampleLength=%u\n", m_ahiSampleLength));
 									return true;
 								}
 								else
@@ -234,7 +287,11 @@ bool AcinerellaAudioDecoder::initializeAudio()
 					AHI_FreeAudio(m_ahiControl);
 					m_ahiControl = 0;
 				}
+				else
+					YTDBG(("[YTDBG][AD] AHI_AllocAudio failed\n"));
 			}
+			else
+				YTDBG(("[YTDBG][AD] OpenDevice(AHI) failed\n"));
 			
 			DeleteIORequest(reinterpret_cast<IORequest *>(m_ahiIO));
 			m_ahiIO = nullptr;
@@ -245,6 +302,8 @@ bool AcinerellaAudioDecoder::initializeAudio()
 		m_ahiPort = nullptr;
 	}
 	
+	YTDBG(("[YTDBG][AD] initializeAudio failed\n"));
+	m_ahiInitFailed = true;
 	return false;
 }
 
@@ -256,7 +315,8 @@ void AcinerellaAudioDecoder::onThreadShutdown()
 void AcinerellaAudioDecoder::onGetReadyToPlay()
 {
 	D(dprintf("[AD]%s: waplay %d readying %d warmup %d warmedup %d\n", __func__, m_waitingToPlay, m_readying, m_warminUp, isWarmedUp()));
-	initializeAudio();
+	if (!initializeAudio())
+		onReadyToPlay();
 }
 
 void AcinerellaAudioDecoder::ahiCleanup()

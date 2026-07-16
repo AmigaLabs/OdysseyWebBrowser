@@ -40,6 +40,16 @@
 #include <wtf/Language.h>
 #include <wtf/MainThread.h>
 
+#if OS(AROS)
+#include <aros/debug.h>
+#define CDBG(x) bug x
+#elif OS(MORPHOS)
+extern "C" void dprintf(const char *fmt, ...);
+#define CDBG(x) dprintf x
+#else
+#define CDBG(x) do{}while(0)
+#endif
+
 namespace WebCore {
 
 #if OS(MORPHOS)
@@ -221,6 +231,7 @@ void CurlRequest::resume()
 void CurlRequest::callClient(Function<void(CurlRequest&, CurlRequestClient&)>&& task)
 {
     runOnMainThread([this, protectedThis = makeRef(*this), task = WTFMove(task)]() mutable {
+        CDBG(("[CURL] callClient on main thread: m_client=%p this=%p\n", m_client, this));
         if (m_client)
             task(*this, *m_client);
     });
@@ -512,7 +523,9 @@ void CurlRequest::didReceiveDataFromMultipart(Ref<SharedBuffer>&& buffer)
 
 void CurlRequest::didCompleteTransfer(CURLcode result)
 {
+    CDBG(("[CURL] didCompleteTransfer result=%d (%s) this=%p\n", (int)result, curl_easy_strerror(result), this));
     if (isCancelled()) {
+        CDBG(("[CURL] didCompleteTransfer: already cancelled, skipping\n"));
         didCancelTransfer();
         return;
     }

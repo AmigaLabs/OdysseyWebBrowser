@@ -59,6 +59,7 @@ public:
      * @return WebHistory
      */
     static WebHistory* createInstance();
+    static void closeDatabase();
 
 private:
 

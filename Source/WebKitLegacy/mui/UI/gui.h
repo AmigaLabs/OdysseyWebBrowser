@@ -34,10 +34,14 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
 #define THREAD_NAME              "OWB Thread"
 #define APPLICATION_DESCRIPTION  "WebKit-based browser."
 #define APPLICATION_BASE         "OWB"
-#if !defined(__AROS__)
+#if !defined(__AROS__) && !defined(__amigaos4__)
 #define APPLICATION_ICON         "PROGDIR:Odyssey"
 #define APPLICATION_ENV_PREFS    "ENV:MUI/OWB.config"
 #define APPLICATION_ENVARC_PREFS "ENVARC:MUI/OWB.config"
+#elif defined(__amigaos4__)
+#define APPLICATION_ICON         "PROGDIR:Odyssey"
+#define APPLICATION_ENV_PREFS    "ENV:MUI/Odyssey3.config"
+#define APPLICATION_ENVARC_PREFS "ENVARC:MUI/Odyssey3.config"
 #else
 #define APPLICATION_ICON         "PROGDIR:OWB"
 #define APPLICATION_ENV_PREFS    "ENV:Zune/OWB.config"

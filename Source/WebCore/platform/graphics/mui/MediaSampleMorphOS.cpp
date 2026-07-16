@@ -30,6 +30,11 @@ MediaSampleMorphOS::MediaSampleMorphOS(RefPtr<Acinerella::AcinerellaPackage>& sa
 	}
 }
 
+MediaSampleMorphOS::~MediaSampleMorphOS()
+{
+	D(dprintf("~MediaSample: pts %f\n", m_pts.toFloat()));
+}
+
 Ref<MediaSample> MediaSampleMorphOS::createNonDisplayingCopy() const
 {
 	RefPtr<Acinerella::AcinerellaPackage> ptr(m_sample.get());
@@ -58,9 +63,9 @@ PlatformSample MediaSampleMorphOS::platformSample()
 	return sample;
 }
 
-Optional<MediaSample::ByteRange> MediaSampleMorphOS::byteRange() const
+std::optional<MediaSample::ByteRange> MediaSampleMorphOS::byteRange() const
 {
-	return WTF::nullopt;
+	return std::nullopt;
 }
 
 

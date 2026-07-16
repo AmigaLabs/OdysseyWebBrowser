@@ -26,7 +26,13 @@
 #include "config.h"
 #include "DisplayRefreshMonitorMorphOS.h"
 
+#if !OS(AMIGAOS)
+extern "C" { void dprintf(const char *,...); }
+#endif
+
 namespace WebCore {
+
+constexpr WebCore::FramesPerSecond DisplayLinkFramesPerSecond = 30;
 
 RefPtr<DisplayRefreshMonitorMorphOS> DisplayRefreshMonitorMorphOS::create(PlatformDisplayID displayID)
 {
@@ -35,33 +41,41 @@ RefPtr<DisplayRefreshMonitorMorphOS> DisplayRefreshMonitorMorphOS::create(Platfo
 
 DisplayRefreshMonitorMorphOS::DisplayRefreshMonitorMorphOS(PlatformDisplayID displayID)
     : DisplayRefreshMonitor(displayID)
-    , m_timer(RunLoop::main(), this, &DisplayRefreshMonitorMorphOS::displayLinkFired)
+    , m_timer(RunLoop::main(), this, &DisplayRefreshMonitorMorphOS::timerCallback)
 {
+    setMaxUnscheduledFireCount(1);
 }
 
-bool DisplayRefreshMonitorMorphOS::requestRefreshCallback()
+void DisplayRefreshMonitorMorphOS::stop()
 {
-    if (!isActive())
-        return false;
-    m_timer.startOneShot(33_ms);
+    m_timer.stop();
+}
 
-    LockHolder lock(mutex());
-    setIsActive(true);
-    setIsScheduled(true);
+bool DisplayRefreshMonitorMorphOS::startNotificationMechanism()
+{
+    if (!m_timer.isActive())
+    {
+        m_timer.startRepeating(33_ms);
+        m_currentUpdate = { 0, DisplayLinkFramesPerSecond };
+    }
+
     return true;
 }
 
-void DisplayRefreshMonitorMorphOS::displayLinkFired()
+void DisplayRefreshMonitorMorphOS::stopNotificationMechanism()
 {
-    {
-        LockHolder lock(mutex());
-        if (!isPreviousFrameDone())
-            return;
+    m_timer.stop();
+}
 
-        setIsPreviousFrameDone(false);
-    }
+void DisplayRefreshMonitorMorphOS::timerCallback()
+{
+    displayLinkFired(m_currentUpdate);
+    m_currentUpdate = m_currentUpdate.nextUpdate();
+}
 
-    handleDisplayRefreshedNotificationOnMainThread(this);
+std::optional<FramesPerSecond> DisplayRefreshMonitorMorphOS::displayNominalFramesPerSecond()
+{
+    return DisplayLinkFramesPerSecond;
 }
 
 } // namespace WebCore

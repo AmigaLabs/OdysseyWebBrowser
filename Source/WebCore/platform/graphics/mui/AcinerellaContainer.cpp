@@ -25,6 +25,31 @@
 #define DINIT(x)
 
 #define DDUMP(x)
+// Set to 1 for container/demuxer debug output on the serial console.
+#define YTDBG_ENABLED 0
+#if YTDBG_ENABLED
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#include <stdarg.h>
+#include <stdio.h>
+// The kernel DebugPrintF mishandles 64-bit varargs (%lld shifts every following
+// argument by one slot), so pre-format with the C library and emit a single %s.
+static void ytdbgPrint(const char* fmt, ...)
+{
+	char buffer[512];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buffer, sizeof(buffer), fmt, args);
+	va_end(args);
+	DebugPrintF("%s", buffer);
+}
+#define YTDBG(x) ytdbgPrint x
+#else
+#define YTDBG(x) dprintf x
+#endif
+#else
+#define YTDBG(x)
+#endif
 
 namespace WebCore {
 namespace Acinerella {
@@ -34,6 +59,8 @@ Acinerella::Acinerella(AcinerellaClient *client, const String &url)
 	, m_url(url)
 	, m_watchdogTimer(RunLoop::current(), this, &Acinerella::watchdogTimerFired)
 {
+	auto shortURL = url.left(160).utf8();
+	YTDBG(("[YTDBG][AC] create this=%p urlLen=%u url=%s%s\n", this, unsigned(url.length()), shortURL.data(), url.length() > 160 ? "..." : ""));
 	D(dprintf("%s: %p url '%s'\n", __func__, this, url.utf8().data()));
 	m_networkBuffer = AcinerellaNetworkBuffer::create(this, m_url);
 	m_isLive = m_url.contains("m3u8");
@@ -52,6 +79,7 @@ Acinerella::Acinerella(AcinerellaClient *client, const String &url)
 
 void Acinerella::play()
 {
+	YTDBG(("[YTDBG][AC] play() paused=%d ended=%d waitReady=%d a=%p v=%p\n", m_paused, m_ended, m_waitReady, m_audioDecoder.get(), m_videoDecoder.get()));
 	D(dprintf("%s: paused %d ended %d\n", __PRETTY_FUNCTION__, m_paused, m_ended));
 	if (m_ended)
 		return;
@@ -65,6 +93,7 @@ void Acinerella::play()
 	dispatch([this] {
 		if (areDecodersReadyToPlay())
 		{
+			YTDBG(("[YTDBG][AC] play() decoders ready -> play\n"));
 			D(dprintf("%s: calling play()...\n", __PRETTY_FUNCTION__));
 			m_waitReady = false;
 			if (m_audioDecoder)
@@ -74,6 +103,7 @@ void Acinerella::play()
 		}
 		else
 		{
+			YTDBG(("[YTDBG][AC] play() decoders not ready -> prePlay\n"));
 			D(dprintf("%s: calling prePlay()...\n", __PRETTY_FUNCTION__));
 			m_waitReady = true;
 			if (m_audioDecoder)
@@ -220,7 +250,7 @@ void Acinerella::selectStream()
 	UQUAD clock = 2000000000;
 #endif
 #if OS(AMIGAOS)
-	#error 
+	uint64_t clock = 2000000000ULL;
 #endif
 	for (auto info : hls->streams())
 	{
@@ -453,19 +483,30 @@ void Acinerella::performTerminate()
 
 bool Acinerella::initialize()
 {
+	auto shortURL = m_url.left(160).utf8();
+	YTDBG(("[YTDBG][AC] initialize() urlLen=%u url=%s%s\n", unsigned(m_url.length()), shortURL.data(), m_url.length() > 160 ? "..." : ""));
 	DINIT(dprintf("%s: %p\n", __func__, this));
     RefPtr<AcinerellaPointer> acinerella(AcinerellaPointer::create());
 	if (acinerella && acinerella->instance())
 	{
         m_acinerella = acinerella;
-		if (-1 == ac_open(acinerella->instance(), static_cast<void *>(this), &acOpenCallback, &acReadCallback, &acSeekCallback, &acCloseCallback, nullptr))
+		YTDBG(("[YTDBG][AC] calling ac_open...\n"));
+		int openResult = ac_open(acinerella->instance(), static_cast<void *>(this), &acOpenCallback, &acReadCallback, &acSeekCallback, &acCloseCallback, nullptr);
+		YTDBG(("[YTDBG][AC] ac_open returned %d\n", openResult));
+		if (-1 == openResult)
 		{
+			YTDBG(("[YTDBG][AC] ac_open failed\n"));
 			m_acinerella = nullptr;
+			WTF::callOnMainThread([this, protectedThis = makeRef(*this)]() {
+				if (m_client)
+					m_client->accFailed();
+			});
 			DINIT(dprintf("---- ac failed to open :(\n"));
 		}
 		else
 		{
 			DINIT(dprintf("ac initialized, stream count %d\n", acinerella->instance()->stream_count));
+			YTDBG(("[YTDBG][AC] ac_open ok streams=%d\n", acinerella->instance()->stream_count));
 			int audioIndex = -1;
 			int videoIndex = -1;
 
@@ -499,6 +540,7 @@ bool Acinerella::initialize()
 			}
 
 			DINIT(dprintf("ac init audio %d video %d\n", audioIndex, videoIndex));
+			YTDBG(("[YTDBG][AC] selected streams audio=%d video=%d canSeek=%d\n", audioIndex, videoIndex, m_canSeek));
 
 			if (-1 != audioIndex || -1 != videoIndex)
 			{
@@ -559,6 +601,7 @@ bool Acinerella::initialize()
 				}
 				
 				m_muxer->setDecoderMask(decoderMask);
+				YTDBG(("[YTDBG][AC] decoderMask=0x%08x\n", decoderMask));
 				m_muxer->setSinkFunction([this, protectedThis = makeRef(*this)](int, int) -> bool {
 					// look ma, a lambda within a lambda
                     if (!m_waitingForDemux) {
@@ -733,6 +776,7 @@ void Acinerella::demuxMorePackages(bool untilEOS)
 	if (muxer && acinerella && acinerella->instance())
 	{
 		int packages = 0;
+		bool sawEOF = false;
 
 		while (!m_terminating && (untilEOS || (packages < 128)))
 		{
@@ -747,11 +791,13 @@ void Acinerella::demuxMorePackages(bool untilEOS)
 
 			if (!package->package())
 			{
+				sawEOF = true;
 				break;
 			}
 			
 			packages++;
 		}
+		(void)sawEOF;
 	}
  
 	DNP(dprintf("%s: done!\n", __func__ ));
@@ -783,9 +829,12 @@ void Acinerella::onDecoderReadyToPlay(RefPtr<AcinerellaDecoder> decoder)
 {
 	D(dprintf("%s:\n", __func__));
 	(void)decoder;
+	YTDBG(("[YTDBG][AC] onDecoderReadyToPlay decoder=%p isAudio=%d isVideo=%d waitReady=%d\n", decoder.get(),
+		decoder ? decoder->isAudio() : 0, decoder ? decoder->isVideo() : 0, m_waitReady));
 
 	dispatch([this, protectedThis = makeRef(*this)]() {
 		D(dprintf("onDecoderReadyToPlay: ready %d\n", areDecodersReadyToPlay()));
+		YTDBG(("[YTDBG][AC] onDecoderReadyToPlay readyNow=%d waitReady=%d\n", areDecodersReadyToPlay(), m_waitReady));
 
 		if (areDecodersReadyToPlay()) {
 
@@ -927,6 +976,8 @@ int Acinerella::read(uint8_t *buf, int size)
 	if (buffer)
 	{
 		int rc = buffer->read(buf, size, m_readPosition);
+		if (rc <= 0)
+			YTDBG(("[YTDBG][AC] read rc=%d size=%d seekPos=%lld discontinuity=%d\n", rc, size, m_readPosition, m_ioDiscontinuity));
 
  		DIO(dprintf("%s: %p >> rc %d\n", "acRead", this, rc));
 

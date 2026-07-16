@@ -22,7 +22,7 @@
 #endif
 
 #define D(x)
-#define DM(x) 
+#define DM(x)
 
 namespace WebCore {
 
@@ -34,7 +34,7 @@ MediaPlayerMorphOSSettings &MediaPlayerMorphOSSettings::settings()
 
 class MediaPlayerFactoryMediaSourceMorphOS : public MediaPlayerFactory {
 public:
-    MediaPlayerEnums::MediaEngineIdentifier identifier() const final { return MediaPlayerEnums::MediaEngineIdentifier::FFMPEG; };
+	MediaPlayerEnums::MediaEngineIdentifier identifier() const final { return MediaPlayerEnums::MediaEngineIdentifier::MorphOS; };
 
     std::unique_ptr<MediaPlayerPrivateInterface> createMediaEnginePlayer(MediaPlayer* player) const final { return makeUnique<MediaPlayerPrivateMorphOS>(player); }
 
@@ -310,7 +310,7 @@ void MediaPlayerPrivateMorphOS::load(const String& url)
 	m_readyState = MediaPlayer::ReadyState::HaveNothing;
 	m_player->readyStateChanged();
 
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
 MediaPlayerMorphOSSettings::settings().m_networkingContextForRequests =
 m_player->client().mediaPlayerPage()->mainFrame().loader().networkingContext();
 
@@ -388,6 +388,10 @@ void MediaPlayerPrivateMorphOS::cancelLoad()
 	if (MediaPlayerMorphOSSettings::settings().m_loadCancelled)
 		MediaPlayerMorphOSSettings::settings().m_loadCancelled(m_player);
 
+	// Clear Cairo inline video flag
+	if (MediaPlayerMorphOSSettings::settings().m_setVideoElement)
+		MediaPlayerMorphOSSettings::settings().m_setVideoElement(m_player, nullptr);
+
 #if ENABLE(MEDIA_SOURCE)
 	if (m_mediaSourcePrivate)
 		m_mediaSourcePrivate->orphan();
@@ -425,7 +429,7 @@ bool MediaPlayerPrivateMorphOS::canSaveMediaData() const
 
 void MediaPlayerPrivateMorphOS::play()
 {
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
 	if (MediaPlayerMorphOSSettings::settings().m_willPlay)
 		MediaPlayerMorphOSSettings::settings().m_willPlay(m_player);
 #else
@@ -527,7 +531,7 @@ bool MediaPlayerPrivateMorphOS::hasAudio() const
 	return false;
 }
 
-void MediaPlayerPrivateMorphOS::setVisible(bool visible)
+void MediaPlayerPrivateMorphOS::setPageIsVisible(bool visible)
 {
 	m_visible = visible;
 //	D(dprintf("%s: visible %d\n", __PRETTY_FUNCTION__, visible));
@@ -578,7 +582,7 @@ bool MediaPlayerPrivateMorphOS::paused() const
 	return true;
 }
 
-Optional<VideoPlaybackQualityMetrics> MediaPlayerPrivateMorphOS::videoPlaybackQualityMetrics()
+std::optional<VideoPlaybackQualityMetrics> MediaPlayerPrivateMorphOS::videoPlaybackQualityMetrics()
 {
 	VideoPlaybackQualityMetrics metrics;
 	metrics.totalVideoFrames = m_decodedFrameCount;
@@ -648,6 +652,9 @@ void MediaPlayerPrivateMorphOS::accNextFrameReady()
 	}
     else
     {
+        // Mark this as a video-only repaint so onExpose can skip layout update.
+        if (MediaPlayerMorphOSSettings::settings().m_setVideoElement)
+            MediaPlayerMorphOSSettings::settings().m_setVideoElement(m_player, (void*)1);
         m_player->repaint();
     }
 }
@@ -667,7 +674,7 @@ void MediaPlayerPrivateMorphOS::accSetVideoSize(int width, int height)
 		m_player->sizeChanged();
 }
 
-void MediaPlayerPrivateMorphOS::accFrameUpdateNeeded() 
+void MediaPlayerPrivateMorphOS::accFrameUpdateNeeded()
 {
 	if (MediaPlayerMorphOSSettings::settings().m_overlayUpdate)
 		MediaPlayerMorphOSSettings::settings().m_overlayUpdate(m_player);
@@ -728,18 +735,18 @@ MediaTime MediaPlayerPrivateMorphOS::durationMediaTime() const
 
 void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 {
+	if (info.m_width)
+	{
+		m_width = info.m_width;
+		m_height = info.m_height;
+	}
+
+	accSetVideoSize(m_width, m_height);
+	accSetReadyState(WebCore::MediaPlayerEnums::ReadyState::HaveMetadata);
+
 	if (MediaPlayerMorphOSSettings::settings().m_load)
 	{
 		String url;
-
-		if (info.m_width)
-		{
-			m_width = info.m_width;
-			m_height = info.m_height;
-		}
-
-		accSetVideoSize(m_width, m_height);
-		accSetReadyState(WebCore::MediaPlayerEnums::ReadyState::HaveMetadata);
 
 #if ENABLE(MEDIA_SOURCE)
 		if (m_mediaSourcePrivate)
@@ -763,21 +770,31 @@ void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 				m_didDrawFrame = false;
 				m_player->playbackStateChanged();
 			});
-
-		m_acInitialized = true;
-		m_player->characteristicChanged();
-		if (m_prepareToPlay && m_acinerella)
-			m_acinerella->warmUp();
-	#if ENABLE(MEDIA_SOURCE)
-		else if (m_prepareToPlay && m_mediaSourcePrivate)
-			m_mediaSourcePrivate->warmUp();
-	#endif
 	}
+	else
+	{
+		// On MUI/AROS/OS4 the UI callback may be absent; keep media pipeline alive.
+	}
+
+	m_acInitialized = true;
+	m_player->characteristicChanged();
+
+	// Notify UI layer that a Cairo inline video is now active so it can skip
+	// full layout updates on per-frame repaints (pass non-null as sentinel).
+	if (info.m_width > 0 && MediaPlayerMorphOSSettings::settings().m_setVideoElement)
+		MediaPlayerMorphOSSettings::settings().m_setVideoElement(m_player, (void*)1);
+
+	if (m_prepareToPlay && m_acinerella)
+		m_acinerella->warmUp();
+#if ENABLE(MEDIA_SOURCE)
+	else if (m_prepareToPlay && m_mediaSourcePrivate)
+		m_mediaSourcePrivate->warmUp();
+#endif
 }
 
 void MediaPlayerPrivateMorphOS::accUpdated(MediaPlayerMorphOSInfo info)
 {
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
 	if (info.m_width)
 	{
 		m_width = info.m_width;
@@ -795,12 +812,16 @@ void MediaPlayerPrivateMorphOS::accUpdated(MediaPlayerMorphOSInfo info)
 
 void MediaPlayerPrivateMorphOS::accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState state)
 {
+	if (m_networkState == state)
+		return;
 	m_networkState = state;
 	m_player->networkStateChanged();
 }
 
 void MediaPlayerPrivateMorphOS::accSetReadyState(WebCore::MediaPlayerEnums::ReadyState state)
 {
+	if (m_readyState == state)
+		return;
 	m_readyState = state;
 	m_player->readyStateChanged();
 }
@@ -837,6 +858,9 @@ void MediaPlayerPrivateMorphOS::accEnded()
 
 void MediaPlayerPrivateMorphOS::accFailed()
 {
+	// Clear Cairo inline video flag
+	if (MediaPlayerMorphOSSettings::settings().m_setVideoElement)
+		MediaPlayerMorphOSSettings::settings().m_setVideoElement(m_player, nullptr);
 	m_networkState = WebCore::MediaPlayerEnums::NetworkState::FormatError;
 	m_readyState = WebCore::MediaPlayerEnums::ReadyState::HaveNothing;
 	m_player->networkStateChanged();

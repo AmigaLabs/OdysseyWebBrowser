@@ -62,7 +62,7 @@ public:
     bool hasVideo() const final;
     bool hasAudio() const final;
 
-    void setVisible(bool) final;
+	void setPageIsVisible(bool) final;
     bool seeking() const final;
     bool paused() const final;
 
@@ -73,7 +73,7 @@ public:
     void seek(float) final;
     bool ended() const final;
 
-    Optional<VideoPlaybackQualityMetrics> videoPlaybackQualityMetrics() final;
+	std::optional<VideoPlaybackQualityMetrics> videoPlaybackQualityMetrics() final;
 
     MediaPlayer::NetworkState networkState() const final;
     MediaPlayer::ReadyState readyState() const final;
@@ -120,7 +120,7 @@ protected:
 	int   m_height = 240;
 	bool  m_prepareToPlay = false;
 	bool  m_acInitialized = false;
-	bool  m_visible = false;
+	bool  m_visible = true;
 	bool  m_didDrawFrame = false;
 	unsigned m_decodedFrameCount = 0;
 	unsigned m_droppedFrameCount = 0;

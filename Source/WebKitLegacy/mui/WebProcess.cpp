@@ -2,6 +2,8 @@
 #include "WebProcess.h"
 //#include "WebPage.h"
 #include "WebFrame.h"
+// Note: UI/gui.h intentionally NOT included here — it pulls in MUI/Amiga macros
+// (End, set, ...) that conflict with C++ WTF/JSC headers.
 
 // todo: check why it isn't enabled inside WebKitLegacy
 #ifdef ENABLE_CONTENT_EXTENSIONS
@@ -22,7 +24,7 @@
 #include <WebCore/DOMWindow.h>
 #include <WebCore/FrameLoader.h>
 #include <WebCore/RuntimeEnabledFeatures.h>
-//#include <WebCore/MediaPlayerMorphOS.h>
+#include "MediaPlayerMorphOS.h"
 #include <WebCore/FontCascade.h>
 #include <wtf/Algorithms.h>
 #include <wtf/Language.h>
@@ -40,6 +42,9 @@
 #include <WebCore/CurlContext.h>
 #include <WebCore/HTMLMediaElement.h>
 #include <WebCore/Page.h>
+#include <WebCore/Frame.h>
+#include <WebCore/FrameView.h>
+#include <WebCore/RenderObject.h>
 #include "NetworkStorageSessionMap.h"
 #include "WebDatabaseProvider.h"
 #include "WebStorageNamespaceProvider.h"
@@ -296,6 +301,34 @@ void WebProcess::initialize(int sigbit)
 		}
 	};
 
+	// Called when Cairo inline video starts (element != nullptr) or stops (element == nullptr).
+	// Sets widget->videoFrameRepaint flag so onExpose can skip the layout update for video frames.
+	MediaPlayerMorphOSSettings::settings().m_setVideoElement = [this](WebCore::MediaPlayer *player, void *element) {
+		for (auto& webpage : m_pageMap.values())
+		{
+			bool found = false;
+			webpage->corePage()->forEachMediaElement([player, &found](WebCore::HTMLMediaElement &e) {
+				if (player == e.player().get())
+					found = true;
+			});
+			if (found)
+			{
+				// Find the BalWidget for this page and mark it for video updates
+				WebView *webView = webpage->mainFrame() ? webpage->mainFrame()->webView() : nullptr;
+				if (webView)
+				{
+					BalWidget *widget = webView->viewWindow();
+					if (widget)
+					{
+						// element non-null → video starting: pre-set the flag so the first repaint also benefits
+						widget->videoFrameRepaint = (element != nullptr);
+					}
+				}
+				return;
+			}
+		}
+	};
+
 	MediaPlayerMorphOSSettings::settings().m_pausedOrFinished = [this](WebCore::MediaPlayer *player) {
 		for (auto& webpage : m_pageMap.values())
 		{
@@ -353,6 +386,29 @@ void WebProcess::initialize(int sigbit)
 				return;
 			}
 		}
+	};
+#endif
+
+#if ENABLE(VIDEO)
+	// Enable the video-only repaint fast path (avoids full layout+paint per frame).
+	// Sets widget->videoFrameRepaint so WebViewPrivate::onExpose() only repaints
+	// the video rect — uses WritePixelArray + BltBitMapRastPort dirty region.
+	MediaPlayerMorphOSSettings::settings().m_setVideoElement = [](WebCore::MediaPlayer *player, void *element) {
+		WebCore::Page::forEachPage([player, element](WebCore::Page& page) {
+			bool found = false;
+			page.forEachMediaElement([player, &found](WebCore::HTMLMediaElement &e) {
+				if (player == e.player().get())
+					found = true;
+			});
+			if (found) {
+				WebView *webView = kit(&page);
+				if (webView) {
+					BalWidget *widget = webView->viewWindow();
+					if (widget)
+						widget->videoFrameRepaint = (element != nullptr);
+				}
+			}
+		});
 	};
 #endif
 

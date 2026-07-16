@@ -280,6 +280,9 @@ void AcinerellaDecoder::decodeUntilBufferFull()
 	{
 		if (!decodeNextFrame())
 			break;
+		// Let subclasses service urgent work (eg. a pending VAAPI present)
+		// while we keep the thread busy refilling the buffer
+		onDecodeLoopYield();
 	}
 
 	if (m_warminUp && bufferSize() >= readAheadTime())

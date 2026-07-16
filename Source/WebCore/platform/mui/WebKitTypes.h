@@ -72,6 +72,9 @@ struct viewnode
   _cairo *cr;
 
   bool expose;
+  // Set by the media player to signal that only the video element rect needs
+  // updating (no layout/full-page repaint needed). Cleared by onExpose().
+  bool videoFrameRepaint;
 };
 
 typedef struct viewnode BalWidget;

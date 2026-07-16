@@ -87,6 +87,7 @@ protected:
 	bool            m_waitingToPlay = false;
 	bool            m_didFlushBuffers = false;
 	bool            m_didUnderrun = false;
+	bool            m_ahiInitFailed = false;
 	int             m_audioRate;
 	int             m_audioChannels;
 	int             m_audioBits;

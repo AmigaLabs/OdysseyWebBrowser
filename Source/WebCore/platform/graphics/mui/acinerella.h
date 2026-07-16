@@ -559,6 +559,24 @@ EXTERN double ac_get_package_duration(lp_ac_instance pacInstance, lp_ac_package 
 
 EXTERN void ac_decoder_fake_seek(lp_ac_decoder pDecoder);
 EXTERN void ac_decoder_set_loopfilter(lp_ac_decoder pDecoder, int lflevel);
+
+// Returns 1 if the video decoder uses VAAPI hardware decoding, 0 otherwise
+EXTERN int CALL_CONVT ac_decoder_hwaccel_active(lp_ac_decoder pDecoder);
+
+#ifdef __amigaos4__
+// Present a decoded VAAPI frame into a window RastPort (struct RastPort *)
+// with vaPutSurface (GPU scaling + colorspace conversion, no readback).
+// Must be called on the decode thread. Returns 0 on success, <0 on error.
+EXTERN int CALL_CONVT ac_vaapi_present_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
+	void *rastPort, int srcX, int srcY, int srcW, int srcH,
+	int dstX, int dstY, int dstW, int dstH);
+
+// Tears down all VAAPI state of a video decoder (codec hw context, VA device).
+// MUST be called on the decode thread before it exits: the OS4 VA driver
+// binds its state to the creating task, teardown from other tasks hangs or
+// crashes. No-op for software decoders or when already shut down.
+EXTERN void CALL_CONVT ac_vaapi_decoder_shutdown(lp_ac_decoder pDecoder);
+#endif
 #ifdef __cplusplus
 } //end extern "C"
 #endif

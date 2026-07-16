@@ -68,6 +68,11 @@ public:
 	Function<void(WebCore::MediaPlayer *player)> m_loadCancelled;
 	Function<void(WebCore::MediaPlayer *player)> m_willPlay;
 
+	// Called when a video element starts/stops inline playback (Cairo-blit path).
+	// Passes the HTMLMediaElement* (non-null when starting, null when stopping).
+	// The UI layer sets data->video_element so onExpose can optimise the repaint path.
+	Function<void(WebCore::MediaPlayer *player, void *element)> m_setVideoElement;
+
 	Function<void(WebCore::MediaPlayer *player,
 		Function<void(void *windowPtr, int scrollX, int scrollY, int left, int top, int right, int bottom, int width, int height)>&&)> m_overlayRequest;
 	Function<void(WebCore::MediaPlayer *player)> m_overlayUpdate;

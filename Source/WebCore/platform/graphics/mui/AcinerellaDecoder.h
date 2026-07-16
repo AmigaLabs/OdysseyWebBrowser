@@ -150,6 +150,10 @@ protected:
 	virtual void onDecoderChanged(RefPtr<AcinerellaPointer>) { }
 	virtual void onFrameDecoded(const AcinerellaDecodedFrame &) { }
 
+	// call from: Own thread, between decoded frames (NOT under m_lock); lets
+	// the decoder service urgent work while decodeUntilBufferFull loops
+	virtual void onDecodeLoopYield() { }
+
 	// call from: Own thread
 	virtual void startPlaying() = 0;
 	virtual void stopPlaying() = 0;

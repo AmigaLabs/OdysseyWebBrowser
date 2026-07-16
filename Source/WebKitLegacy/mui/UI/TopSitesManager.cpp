@@ -128,6 +128,12 @@ TopSitesManager::~TopSitesManager()
         m_topSitesDB.close();
 }
 
+void TopSitesManager::close()
+{
+    if(m_topSitesDB.isOpen())
+        m_topSitesDB.close();
+}
+
 void TopSitesManager::setDisplayMode(displaymode_t mode) 
 { 
     m_displayMode = mode; 

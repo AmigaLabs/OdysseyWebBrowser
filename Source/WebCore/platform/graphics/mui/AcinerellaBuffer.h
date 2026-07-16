@@ -21,6 +21,33 @@ class PlatformMediaResourceLoader;
 
 namespace Acinerella {
 
+template<typename LockType>
+class LockGuard {
+public:
+	explicit LockGuard(LockType& lock)
+		: m_lock(lock)
+	{
+		m_lock.lock();
+	}
+
+	LockGuard(const LockGuard&) = delete;
+	LockGuard& operator=(const LockGuard&) = delete;
+
+	~LockGuard()
+	{
+		m_lock.unlock();
+	}
+
+private:
+	LockType& m_lock;
+};
+
+template<typename LockType>
+inline LockGuard<LockType> holdLock(LockType& lock)
+{
+	return LockGuard<LockType>(lock);
+}
+
 class AcinerellaMuxedBuffer;
 class AcinerellaDecoder;
 
@@ -93,6 +120,12 @@ protected:
 	Function<void(bool)> m_onFinished;
 };
 
+}
+
+template<typename LockType>
+inline Acinerella::LockGuard<LockType> holdLock(LockType& lock)
+{
+	return Acinerella::holdLock(lock);
 }
 }
 
