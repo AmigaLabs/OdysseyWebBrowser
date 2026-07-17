@@ -182,10 +182,6 @@ static void sendOverlayCoordinates(WebCore::MediaPlayer *player, const OverlayCo
         int clipX2 = _mright(browser) + 1;
         int clipY2 = _mbottom(browser) + 1;
 
-        kprintf("[Overlay] sendOverlayCoordinates: win %p element %d,%d %dx%d clip %d,%d-%d,%d\n",
-            window, offsetX + rect.x(), offsetY + rect.y(), rect.width(), rect.height(),
-            clipX1, clipY1, clipX2, clipY2);
-
         callback(window, clipX1, clipY1, offsetX + rect.x(), offsetY + rect.y(), clipX2, clipY2, rect.width(), rect.height());
     });
 
@@ -227,6 +223,15 @@ static void installOverlayHandlersIfNeeded()
             overlayCallbacks().remove(player);
         }
     };
+}
+
+// Re-sends element coordinates to every registered overlay player. Must be
+// called whenever elements may have moved in window coordinates (scroll),
+// or the video keeps compositing at its old position.
+static void updateAllOverlayCoordinates()
+{
+    for (auto& it : overlayCallbacks())
+        sendOverlayCoordinates(static_cast<WebCore::MediaPlayer *>(it.key), it.value);
 }
 
 #endif
@@ -1708,6 +1713,12 @@ void WebViewPrivate::scrollBackingStore(WebCore::FrameView* view, int dx, int dy
     BalWidget* widget = m_webView->viewWindow();
     if (!widget || !widget->window)
         return;
+
+#if ENABLE(VIDEO) && defined(__amigaos4__)
+    // Scroll moved the elements in window coordinates: refresh the overlay
+    // registry before the scroll blit so video composites at the new spot
+    updateAllOverlayCoordinates();
+#endif
 
     IntRect updateRect = clipRect;
     updateRect.intersect(scrollViewRect);

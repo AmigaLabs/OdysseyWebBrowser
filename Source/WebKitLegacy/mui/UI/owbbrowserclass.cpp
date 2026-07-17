@@ -28,6 +28,15 @@
 
 #define USE_MORPHOS_SURFACE 0
 
+#if defined(__amigaos4__)
+// VAAPI GPU overlay hooks (acinerella.c): after a page blit stomps a video
+// element, re-composite video + controls over it; and drop cached pointers
+// before the offscreen bitmap goes away.
+extern "C" void ac_overlay_repaint(void *rastPort, void *window, void *srcBM,
+    int srcOffX, int srcOffY, int dmgX, int dmgY, int dmgW, int dmgH);
+extern "C" void ac_overlay_source_gone(void *srcBM);
+#endif
+
 /* WebKit */
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/BackForwardController.h>
@@ -1391,6 +1400,9 @@ DEFMMETHOD(Show)
 #if !USE_MORPHOS_SURFACE
     if (data->rp_offscreen.BitMap)
     {
+#if defined(__amigaos4__)
+        ac_overlay_source_gone(data->rp_offscreen.BitMap);
+#endif
         FreeBitMap(data->rp_offscreen.BitMap);
         data->rp_offscreen.BitMap = NULL;
     }
@@ -1542,6 +1554,9 @@ DEFMMETHOD(Hide)
 #if !USE_MORPHOS_SURFACE
     if (data->rp_offscreen.BitMap)
     {
+#if defined(__amigaos4__)
+        ac_overlay_source_gone(data->rp_offscreen.BitMap);
+#endif
         FreeBitMap(data->rp_offscreen.BitMap);
         data->rp_offscreen.BitMap = NULL;
     }
@@ -1699,10 +1714,18 @@ DEFMMETHOD(Draw)
                 // Optimize that, thank you
                 BltBitMapRastPort(data->rp_offscreen.BitMap, 0, 0, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), 0xC0);
                 data->pendingscrollrect = IntRect(0, 0, 0, 0);
+#if defined(__amigaos4__)
+                ac_overlay_repaint(_rp(obj), _window(obj), data->rp_offscreen.BitMap,
+                    _mleft(obj), _mtop(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj));
+#endif
             }
             else
             {
                 BltBitMapRastPort(data->rp_offscreen.BitMap, data->update_x, data->update_y, _rp(obj), _mleft(obj) + data->update_x, _mtop(obj) + data->update_y, data->update_width, data->update_height, 0xC0);
+#if defined(__amigaos4__)
+                ac_overlay_repaint(_rp(obj), _window(obj), data->rp_offscreen.BitMap,
+                    _mleft(obj), _mtop(obj), _mleft(obj) + data->update_x, _mtop(obj) + data->update_y, data->update_width, data->update_height);
+#endif
             }
 #endif
         }
@@ -1731,6 +1754,10 @@ DEFMMETHOD(Draw)
                 WritePixelArrayAlpha(src, data->plugin_update_x, data->plugin_update_y, stride, &data->rp_offscreen, data->update_x, data->update_y, data->update_width, data->update_height, 0xffffffff);
                 //WritePixelArray(src, data->plugin_update_x, data->plugin_update_y, stride, &data->rp_offscreen, data->update_x, data->update_y, data->update_width, data->update_height, NATIVE_ARGB);
                 BltBitMapRastPort(data->rp_offscreen.BitMap, data->update_x, data->update_y, _rp(obj), _mleft(obj) + data->update_x, _mtop(obj) + data->update_y, data->update_width, data->update_height, 0xC0);
+#if defined(__amigaos4__)
+                ac_overlay_repaint(_rp(obj), _window(obj), data->rp_offscreen.BitMap,
+                    _mleft(obj), _mtop(obj), _mleft(obj) + data->update_x, _mtop(obj) + data->update_y, data->update_width, data->update_height);
+#endif
             }
 #endif
         }
@@ -1775,6 +1802,10 @@ DEFMMETHOD(Draw)
             }
 
             BltBitMapRastPort(data->rp_offscreen.BitMap, 0, 0, _rp(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj), 0xC0);
+#if defined(__amigaos4__)
+            ac_overlay_repaint(_rp(obj), _window(obj), data->rp_offscreen.BitMap,
+                _mleft(obj), _mtop(obj), _mleft(obj), _mtop(obj), _mwidth(obj), _mheight(obj));
+#endif
         }
 #endif
     }
@@ -1847,6 +1878,9 @@ DEFMMETHOD(Cleanup)
 #if !USE_MORPHOS_SURFACE
     if (data->rp_offscreen.BitMap)
     {
+#if defined(__amigaos4__)
+        ac_overlay_source_gone(data->rp_offscreen.BitMap);
+#endif
         FreeBitMap(data->rp_offscreen.BitMap);
         data->rp_offscreen.BitMap = NULL;
     }

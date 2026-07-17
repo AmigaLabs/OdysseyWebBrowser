@@ -5,6 +5,7 @@
 #if ENABLE(VIDEO)
 
 #include "AcinerellaDecoder.h"
+#include <wtf/Vector.h>
 struct VLayerHandle;
 struct Window;
 struct Library;
@@ -77,13 +78,15 @@ protected:
 
 	void updateOverlayCoords();
 #if defined(__amigaos4__)
-	// Presents the current VAAPI frame into the window RastPort with
-	// vaPutSurface. Must run on the decoder thread (VA task affinity).
+	// Renders the current VAAPI frame into the registered overlay target:
+	// vaPutSurface into a VRAM BitMap, page controls composited over it on
+	// the GPU, single blit to the window. Must run on the decoder thread
+	// (VA task affinity).
 	void presentOverlayFrame();
-	// Requests a (re)present of the current frame; coalesced via m_presentPending.
+	// Requests a (re)conversion of the current frame; coalesced via m_presentPending.
 	// Safe to call from any thread.
 	void requestOverlayRepresent();
-	// Services a pending present between decode iterations so presents don't
+	// Services a pending conversion between decode iterations so frames don't
 	// starve while decodeUntilBufferFull monopolizes the decoder thread
 	void onDecodeLoopYield() override;
 #endif
@@ -134,7 +137,9 @@ protected:
 	std::unique_ptr<AcinerellaDecodedFrame> m_currentRenderFrame;
 #endif
 #if defined(__amigaos4__)
-	// VAAPI overlay presentation state (vaPutSurface into the window RastPort)
+	// VAAPI hardware decode state: frames rendered GPU-side into the overlay
+	// registry target (ac_vaapi_overlay_frame), page controls composited over
+	// them with CompositeTags. No per-frame VRAM->RAM reads.
 	struct ::Window *m_overlayWindow = nullptr;
 	int             m_clipX = 0, m_clipY = 0, m_clipX2 = 0, m_clipY2 = 0;
 	volatile bool   m_hwOverlay = false;

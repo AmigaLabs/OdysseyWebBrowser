@@ -571,11 +571,40 @@ EXTERN int CALL_CONVT ac_vaapi_present_frame(lp_ac_decoder pDecoder, lp_ac_decod
 	void *rastPort, int srcX, int srcY, int srcW, int srcH,
 	int dstX, int dstY, int dstW, int dstH);
 
+// Convert a decoded VAAPI frame to ARGB pixels in dstARGB (dstW x dstH,
+// dstStride bytes per row): GPU blit into an offscreen BitMap + ReadPixelArray.
+// Must be called on the decode thread. Returns 0 on success, <0 on error.
+EXTERN int CALL_CONVT ac_vaapi_readback_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
+	int dstW, int dstH, void *dstARGB, int dstStride);
+
 // Tears down all VAAPI state of a video decoder (codec hw context, VA device).
 // MUST be called on the decode thread before it exits: the OS4 VA driver
 // binds its state to the creating task, teardown from other tasks hangs or
 // crashes. No-op for software decoders or when already shut down.
 EXTERN void CALL_CONVT ac_vaapi_decoder_shutdown(lp_ac_decoder pDecoder);
+
+// GPU overlay compositing: video stays in VRAM, page controls are composited
+// over it with graphics.library CompositeTags, single blit to the window.
+
+// Register/update the overlay target of a decoder (element rect and clip in
+// window coordinates, clip x2/y2 exclusive). window == NULL unregisters.
+EXTERN void CALL_CONVT ac_overlay_register(lp_ac_decoder pDecoder, void *window,
+	int dstX, int dstY, int dstW, int dstH,
+	int clipX1, int clipY1, int clipX2, int clipY2);
+
+// Render + composite + blit a decoded VAAPI frame into the registered target.
+// Decoder thread only. Returns 0 on success.
+EXTERN int CALL_CONVT ac_vaapi_overlay_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame);
+
+// Browser Draw hook: re-composites video elements stomped by a page blit.
+// rastPort/window are the target window; srcBM is the browser offscreen page
+// BitMap with srcOffX/Y its window-coordinate origin; dmg* is the damaged
+// window rect just blitted. No VA calls: safe on the main thread.
+EXTERN void CALL_CONVT ac_overlay_repaint(void *rastPort, void *window, void *srcBM,
+	int srcOffX, int srcOffY, int dmgX, int dmgY, int dmgW, int dmgH);
+
+// The browser is about to free srcBM: drop cached references to it.
+EXTERN void CALL_CONVT ac_overlay_source_gone(void *srcBM);
 #endif
 #ifdef __cplusplus
 } //end extern "C"

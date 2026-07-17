@@ -125,7 +125,15 @@ void AcinerellaVideoDecoder::onDecoderChanged(RefPtr<AcinerellaPointer> acinerel
 	ac_set_output_format(decoder, AC_OUTPUT_RGBA32);
 #endif
 #if defined(__amigaos4__)
-	m_hwOverlay = (m_overlayWindow != nullptr) && ac_decoder_hwaccel_active(decoder);
+	m_hwOverlay = ac_decoder_hwaccel_active(decoder);
+	{
+		// HLS quality switches swap the ac decoder: carry the overlay target
+		// over or the video freezes until the next coordinate update
+		auto lock = holdLock(m_lock);
+		if (m_overlayWindow)
+			ac_overlay_register(decoder, m_overlayWindow, m_outerX, m_outerY,
+				m_visibleWidth, m_visibleHeight, m_clipX, m_clipY, m_clipX2, m_clipY2);
+	}
 #endif
     ac_decoder_set_loopfilter(decoder, int(m_client->streamSettings().m_loopFilter));
 }
@@ -329,7 +337,14 @@ void AcinerellaVideoDecoder::setOverlayWindowCoords(struct ::Window *w, int scro
 
 		m_overlayWindow = w;
 
-		m_hwOverlay = (m_overlayWindow != nullptr) && m_lastDecoder && ac_decoder_hwaccel_active(m_lastDecoder);
+		m_hwOverlay = m_lastDecoder && ac_decoder_hwaccel_active(m_lastDecoder);
+
+		// Keep the overlay registry in sync: ac_vaapi_overlay_frame (decoder
+		// thread) and ac_overlay_repaint (main thread Draw) both read the
+		// placement from there. w == nullptr unregisters.
+		if (m_lastDecoder)
+			ac_overlay_register(m_lastDecoder, w, mleft, mtop, width, height,
+				scrollx, scrolly, mright, mbottom);
 	}
 
 	if (m_hwOverlay && changed)
@@ -494,82 +509,33 @@ void AcinerellaVideoDecoder::updateOverlayCoords()
 #if defined(__amigaos4__)
 void AcinerellaVideoDecoder::presentOverlayFrame()
 {
-	// Runs on the decoder thread (VA device task affinity).
+	// Runs on the decoder thread (VA device task affinity). Renders the
+	// current VAAPI frame into the registered overlay target: vaPutSurface
+	// into a VRAM BitMap, page controls composited over it on the GPU and a
+	// single blit to the window (ac_vaapi_overlay_frame). Zero VRAM->RAM reads.
 	std::unique_ptr<AcinerellaDecodedFrame> frame;
-	struct ::Window *window;
-	int srcX = 0, srcY = 0, srcW, srcH;
-	int dstX, dstY, dstW, dstH;
 
 	{
 		auto lock = holdLock(m_lock);
 		// requestOverlayRepresent() sets the flag; if it's already clear, a
-		// direct call from onDecodeLoopYield already serviced this present and
+		// direct call from onDecodeLoopYield already serviced this request and
 		// this queued job is stale - do nothing.
 		if (!m_presentPending)
 			return;
 		m_presentPending = false;
-		if (m_terminating || !m_hwOverlay || !m_overlayWindow || !m_currentRenderFrame)
-			return;
-		if (m_frameWidth <= 0 || m_frameHeight <= 0 || m_visibleWidth <= 0 || m_visibleHeight <= 0)
+		if (m_terminating || !m_hwOverlay || !m_currentRenderFrame)
 			return;
 
-		// Letterbox the frame inside the element rect, preserving aspect ratio
-		int offsetX = 0, offsetY = 0;
-		double frameRatio = double(m_frameWidth) / double(m_frameHeight);
-		double frameRevRatio = double(m_frameHeight) / double(m_frameWidth);
-		double visibleRatio = double(m_visibleWidth) / double(m_visibleHeight);
-
-		if (frameRatio < visibleRatio)
-			offsetX = (m_visibleWidth - int(double(m_visibleHeight) * frameRatio)) / 2;
-		else
-			offsetY = (m_visibleHeight - int(double(m_visibleWidth) * frameRevRatio)) / 2;
-
-		dstX = m_outerX + offsetX;
-		dstY = m_outerY + offsetY;
-		dstW = m_visibleWidth - (offsetX * 2);
-		dstH = m_visibleHeight - (offsetY * 2);
-		if (dstW <= 0 || dstH <= 0)
-			return;
-
-		// The OS4 vaPutSurface has no cliprects: clip the dest rect against the
-		// view clip box and crop the source rect proportionally.
-		srcW = m_frameWidth;
-		srcH = m_frameHeight;
-		if (m_clipX2 > m_clipX && m_clipY2 > m_clipY)
-		{
-			int cx1 = std::max(dstX, m_clipX), cy1 = std::max(dstY, m_clipY);
-			int cx2 = std::min(dstX + dstW, m_clipX2), cy2 = std::min(dstY + dstH, m_clipY2);
-			if (cx1 >= cx2 || cy1 >= cy2)
-				return; // fully scrolled out of view
-			srcX = (cx1 - dstX) * m_frameWidth / dstW;
-			srcY = (cy1 - dstY) * m_frameHeight / dstH;
-			srcW = (cx2 - cx1) * m_frameWidth / dstW;
-			srcH = (cy2 - cy1) * m_frameHeight / dstH;
-			dstX = cx1; dstY = cy1;
-			dstW = cx2 - cx1; dstH = cy2 - cy1;
-		}
-		if (srcW <= 0 || srcH <= 0)
-			return;
-
-		if (dstX != m_paintX || dstY != m_paintY || (dstX + dstW) != m_paintX2 || (dstY + dstH) != m_paintY2)
-		{
-			m_paintX = dstX; m_paintY = dstY;
-			m_paintX2 = dstX + dstW; m_paintY2 = dstY + dstH;
-		}
-
-		// Take the frame out of the shared slot: vaPutSurface can block for a
-		// long time (vsync, GPU) and MUST NOT run while holding m_lock, or the
-		// demuxer, the audio path and the main thread all stall behind it.
+		// Take the frame out of the shared slot: the GPU work can take a
+		// while and MUST NOT run while holding m_lock, or the demuxer, the
+		// audio path and the main thread all stall behind it.
 		frame = WTFMove(m_currentRenderFrame);
-		window = m_overlayWindow;
 	}
 
-	ac_vaapi_present_frame(frame->pointer()->decoder(m_index),
-		frame->frame(), window->RPort,
-		srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH);
+	ac_vaapi_overlay_frame(frame->pointer()->decoder(m_index), frame->frame());
 
 	{
-		// Put the frame back for paint()/re-present, unless a newer one arrived
+		// Put the frame back for a re-request, unless a newer one arrived
 		auto lock = holdLock(m_lock);
 		if (!m_currentRenderFrame)
 			m_currentRenderFrame = WTFMove(frame);
@@ -698,21 +664,18 @@ void AcinerellaVideoDecoder::paint(GraphicsContext& gc, const FloatRect& rect)
 #if defined(__amigaos4__)
 	if (m_hwOverlay)
 	{
-		// Video is presented directly by vaPutSurface; just fill the element black.
+		// The GPU overlay path puts the video on screen directly
+		// (ac_vaapi_overlay_frame / ac_overlay_repaint). Punch a transparent
+		// hole into the page backing store so the pixels the browser blits
+		// over the window carry alpha=0 where the video sits: CompositeTags
+		// then keeps the video visible and lays the HTML controls on top.
 		WebCore::GraphicsContextCairo *context = gc.platformContext();
 		cairo_t* cr = context->cr();
 		cairo_save(cr);
-		cairo_set_source_rgb(cr, 0, 0, 0);
+		cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
 		cairo_rectangle(cr, rect.x(), rect.y(), rect.width(), rect.height());
 		cairo_fill(cr);
 		cairo_restore(cr);
-		// A paint means the element may have moved (scroll, layout, resize):
-		// ask the UI to recompute and push fresh overlay coordinates.
-		if (m_client)
-			m_client->onDecoderRenderUpdate(makeRef(*this));
-		// The black fill we just queued will land over the presented frame
-		// once the browser blits this tile: re-present on top of it.
-		requestOverlayRepresent();
 		return;
 	}
 #endif
