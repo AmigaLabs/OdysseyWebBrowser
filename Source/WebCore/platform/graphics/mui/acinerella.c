@@ -1086,27 +1086,31 @@ static struct ac_overlay_entry *ac_overlay_find(lp_ac_video_decoder decoder)
 	return NULL;
 }
 
-// Compose video + page controls and blit the visible part into the window.
-// Called with ac_overlay_sem held. winRP must be the window RastPort (layer
-// clipping happens in BltBitMapRastPort). No VA calls: safe from any thread.
-static void ac_overlay_compose_locked(lp_ac_video_decoder v, struct ac_overlay_entry *e,
-	struct RastPort *winRP)
+// Compose video + page controls into hw_compose_bitmap and compute the
+// visible window rect. Called with ac_overlay_sem held. Returns 1 with
+// *pX1..*pY2 filled (window coords) when there is something to blit.
+// Deliberately does NOT touch the window RastPort: blitting to the window
+// needs the layer lock, and holding ac_overlay_sem while waiting for it
+// deadlocks against the main thread (Draw holds the layer lock and takes
+// the semaphore in ac_overlay_repaint).
+static int ac_overlay_compose_locked(lp_ac_video_decoder v, struct ac_overlay_entry *e,
+	int *pX1, int *pY1, int *pX2, int *pY2)
 {
-	if (!v || !e || !winRP || !v->hw_bitmap || !v->hw_compose_bitmap)
-		return;
+	if (!v || !e || !v->hw_bitmap || !v->hw_compose_bitmap)
+		return 0;
 	// Size transition in progress: the cached frame no longer matches the
 	// element rect, skip until the decoder thread renders the next frame
 	if (v->hw_bitmap_width != e->dstW || v->hw_bitmap_height != e->dstH)
-		return;
+		return 0;
 	if (v->hw_compose_width != e->dstW || v->hw_compose_height != e->dstH)
-		return;
+		return 0;
 
 	int x1 = e->dstX > e->clipX1 ? e->dstX : e->clipX1;
 	int y1 = e->dstY > e->clipY1 ? e->dstY : e->clipY1;
 	int x2 = (e->dstX + e->dstW) < e->clipX2 ? (e->dstX + e->dstW) : e->clipX2;
 	int y2 = (e->dstY + e->dstH) < e->clipY2 ? (e->dstY + e->dstH) : e->clipY2;
 	if (x2 <= x1 || y2 <= y1)
-		return;
+		return 0;
 
 	// VRAM->VRAM copy of the video frame (letterbox bars included)
 	BltBitMap(v->hw_bitmap, 0, 0, v->hw_compose_bitmap, 0, 0,
@@ -1147,8 +1151,9 @@ static void ac_overlay_compose_locked(lp_ac_video_decoder v, struct ac_overlay_e
 		}
 	}
 
-	BltBitMapRastPort(v->hw_compose_bitmap, x1 - e->dstX, y1 - e->dstY,
-		winRP, x1, y1, x2 - x1, y2 - y1, 0xC0);
+	*pX1 = x1; *pY1 = y1;
+	*pX2 = x2; *pY2 = y2;
+	return 1;
 }
 
 // Register (or update) the overlay target for a decoder; window == NULL
@@ -1234,7 +1239,12 @@ void CALL_CONVT ac_overlay_repaint(void *rastPort, void *window, void *srcBM,
 	int i;
 	if (!rastPort || !window)
 		return;
-	ObtainSemaphore(&ac_overlay_sem);
+	// Never block the main thread here: Draw can run with the window layer
+	// locked (intuition refresh) and the decoder thread might hold the
+	// semaphore - waiting would deadlock. Skipping is harmless, the next
+	// presented frame re-composites the controls anyway.
+	if (!AttemptSemaphore(&ac_overlay_sem))
+		return;
 	for (i = 0; i < AC_OVERLAY_MAX; i++) {
 		struct ac_overlay_entry *e = &ac_overlay_entries[i];
 		if (!e->decoder || e->window != window)
@@ -1243,8 +1253,13 @@ void CALL_CONVT ac_overlay_repaint(void *rastPort, void *window, void *srcBM,
 		e->srcOffX = srcOffX;
 		e->srcOffY = srcOffY;
 		if (dmgX < e->dstX + e->dstW && dmgX + dmgW > e->dstX &&
-		    dmgY < e->dstY + e->dstH && dmgY + dmgH > e->dstY)
-			ac_overlay_compose_locked(e->decoder, e, (struct RastPort *)rastPort);
+		    dmgY < e->dstY + e->dstH && dmgY + dmgH > e->dstY) {
+			int x1, y1, x2, y2;
+			if (ac_overlay_compose_locked(e->decoder, e, &x1, &y1, &x2, &y2))
+				BltBitMapRastPort(e->decoder->hw_compose_bitmap,
+					x1 - e->dstX, y1 - e->dstY,
+					(struct RastPort *)rastPort, x1, y1, x2 - x1, y2 - y1, 0xC0);
+		}
 	}
 	ReleaseSemaphore(&ac_overlay_sem);
 }
@@ -1366,13 +1381,28 @@ int CALL_CONVT ac_vaapi_overlay_frame(lp_ac_decoder pDecoder, lp_ac_decoder_fram
 		return -1;
 	}
 
+	// Compose under the semaphore, but blit to the window OUTSIDE it: the
+	// window blit waits for the layer lock, which the main thread holds
+	// during refresh while it may be trying to take this semaphore.
+	// hw_compose_bitmap is only ever freed by this thread, so using it
+	// after release is safe.
+	struct RastPort *winRP = NULL;
+	int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+	int srcX = 0, srcY = 0;
+	int doBlit = 0;
 	ObtainSemaphore(&ac_overlay_sem);
 	e = ac_overlay_find(v);
 	if (e && e->window) {
-		struct Window *w = (struct Window *)e->window;
-		ac_overlay_compose_locked(v, e, w->RPort);
+		winRP = ((struct Window *)e->window)->RPort;
+		doBlit = ac_overlay_compose_locked(v, e, &x1, &y1, &x2, &y2);
+		srcX = x1 - e->dstX;
+		srcY = y1 - e->dstY;
 	}
 	ReleaseSemaphore(&ac_overlay_sem);
+
+	if (doBlit && winRP)
+		BltBitMapRastPort(v->hw_compose_bitmap, srcX, srcY,
+			winRP, x1, y1, x2 - x1, y2 - y1, 0xC0);
 
 	if (!v->hw_first_frame_done) {
 		v->hw_first_frame_done = 1;
