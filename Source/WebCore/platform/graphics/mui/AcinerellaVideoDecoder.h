@@ -5,7 +5,7 @@
 #if ENABLE(VIDEO)
 
 #include "AcinerellaDecoder.h"
-#include <wtf/Vector.h>
+#include <vector>
 struct VLayerHandle;
 struct Window;
 struct Library;
@@ -78,15 +78,13 @@ protected:
 
 	void updateOverlayCoords();
 #if defined(__amigaos4__)
-	// Renders the current VAAPI frame into the registered overlay target:
-	// vaPutSurface into a VRAM BitMap, page controls composited over it on
-	// the GPU, single blit to the window. Must run on the decoder thread
-	// (VA task affinity).
-	void presentOverlayFrame();
-	// Requests a (re)conversion of the current frame; coalesced via m_presentPending.
+	// Reads the current VAAPI frame back to system memory and publishes it
+	// for paint(). Must run on the decoder thread (VA task affinity).
+	void readbackHwFrame();
+	// Requests a readback of the current frame; coalesced via m_hwReadbackPending.
 	// Safe to call from any thread.
-	void requestOverlayRepresent();
-	// Services a pending conversion between decode iterations so frames don't
+	void requestHwReadback();
+	// Services a pending readback between decode iterations so frames don't
 	// starve while decodeUntilBufferFull monopolizes the decoder thread
 	void onDecodeLoopYield() override;
 #endif
@@ -137,14 +135,19 @@ protected:
 	std::unique_ptr<AcinerellaDecodedFrame> m_currentRenderFrame;
 #endif
 #if defined(__amigaos4__)
-	// VAAPI hardware decode state: frames rendered GPU-side into the overlay
-	// registry target (ac_vaapi_overlay_frame), page controls composited over
-	// them with CompositeTags. No per-frame VRAM->RAM reads.
-	struct ::Window *m_overlayWindow = nullptr;
-	int             m_clipX = 0, m_clipY = 0, m_clipX2 = 0, m_clipY2 = 0;
-	volatile bool   m_hwOverlay = false;
-	// Coalesces presentOverlayFrame dispatches from the pull thread
-	volatile bool   m_presentPending = false;
+	// VAAPI hardware decode state: decoded frames are read back to system memory
+	// on the decoder thread (ac_vaapi_readback_frame) into one of two RGB buffers,
+	// which paint() blits the same way as a software frame.
+	volatile bool   m_hwDecoding = false;
+	// Coalesces readbackHwFrame dispatches from the pull thread
+	volatile bool   m_hwReadbackPending = false;
+	// Size paint() asked for, and the size of the published buffer (m_hwBuffer)
+	int             m_paintWidth = 0, m_paintHeight = 0;
+	int             m_hwPublished = -1;
+	int             m_hwPublishedWidth = 0, m_hwPublishedHeight = 0;
+	// Written only by the decoder thread into the buffer m_hwPublished does not
+	// name; paint() reads the published one under m_lock
+	std::vector<uint8_t> m_hwBuffer[2];
 #endif
 };
 

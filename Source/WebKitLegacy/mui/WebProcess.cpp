@@ -42,9 +42,6 @@
 #include <WebCore/CurlContext.h>
 #include <WebCore/HTMLMediaElement.h>
 #include <WebCore/Page.h>
-#include <WebCore/Frame.h>
-#include <WebCore/FrameView.h>
-#include <WebCore/RenderObject.h>
 #include "NetworkStorageSessionMap.h"
 #include "WebDatabaseProvider.h"
 #include "WebStorageNamespaceProvider.h"
@@ -301,34 +298,6 @@ void WebProcess::initialize(int sigbit)
 		}
 	};
 
-	// Called when Cairo inline video starts (element != nullptr) or stops (element == nullptr).
-	// Sets widget->videoFrameRepaint flag so onExpose can skip the layout update for video frames.
-	MediaPlayerMorphOSSettings::settings().m_setVideoElement = [this](WebCore::MediaPlayer *player, void *element) {
-		for (auto& webpage : m_pageMap.values())
-		{
-			bool found = false;
-			webpage->corePage()->forEachMediaElement([player, &found](WebCore::HTMLMediaElement &e) {
-				if (player == e.player().get())
-					found = true;
-			});
-			if (found)
-			{
-				// Find the BalWidget for this page and mark it for video updates
-				WebView *webView = webpage->mainFrame() ? webpage->mainFrame()->webView() : nullptr;
-				if (webView)
-				{
-					BalWidget *widget = webView->viewWindow();
-					if (widget)
-					{
-						// element non-null → video starting: pre-set the flag so the first repaint also benefits
-						widget->videoFrameRepaint = (element != nullptr);
-					}
-				}
-				return;
-			}
-		}
-	};
-
 	MediaPlayerMorphOSSettings::settings().m_pausedOrFinished = [this](WebCore::MediaPlayer *player) {
 		for (auto& webpage : m_pageMap.values())
 		{
@@ -337,56 +306,6 @@ void WebProcess::initialize(int sigbit)
 		}
 	};
 
-	MediaPlayerMorphOSSettings::settings().m_overlayRequest = [this](WebCore::MediaPlayer *player,
-		Function<void(void *windowPtr, int scrollX, int scrollY, int left, int top, int right, int bottom, int width, int height)>&& overlaycallback) {
-		for (auto& webpage : m_pageMap.values())
-		{
-			WebCore::Element* pElement;
-			bool found = false;
-			webpage->corePage()->forEachMediaElement([player, &found, &pElement](WebCore::HTMLMediaElement&e){
-				if (player == e.player().get())
-				{
-					pElement = &e;
-					found = true;
-				}
-			});
-
-			if (found)
-			{
-				if (webpage->_fMediaSetOverlayCallback)
-				{
-					// Wrap pElement into a ref - that way, the callback set on webpage holds a ref to the element
-					// This is cause we cannot use RefPtr<Element> in ObjC code
-					webpage->_fMediaSetOverlayCallback(player, pElement, [ref = makeRef(*pElement), cb = WTFMove(overlaycallback)](void *windowPtr, int scrollX, int scrollY, int left, int top, int right, int bottom, int width, int height) {
-							cb(windowPtr, scrollX, scrollY, left, top, right, bottom, width, height);
-						});
-				}
-				return;
-			}
-		}
-	};
-	
-	MediaPlayerMorphOSSettings::settings().m_overlayUpdate = [this](WebCore::MediaPlayer *player) {
-		for (auto& webpage : m_pageMap.values())
-		{
-			WebCore::Element* pElement;
-			bool found = false;
-			webpage->corePage()->forEachMediaElement([player, &found, &pElement](WebCore::HTMLMediaElement&e){
-				if (player == e.player().get())
-				{
-					pElement = &e;
-					found = true;
-				}
-			});
-
-			if (found)
-			{
-				if (webpage->_fMediaUpdateOverlayCallback)
-					webpage->_fMediaUpdateOverlayCallback(player);
-				return;
-			}
-		}
-	};
 #endif
 
 #if ENABLE(VIDEO)

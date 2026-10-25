@@ -36,9 +36,8 @@
 // VAAPI hardware decoding (AmigaOS4 va.library through ffmpeg hwaccel).
 // The OS4 driver cannot read surfaces back to system memory (vaGetImage /
 // vaDeriveImage fail with "Couldn't lock buffer for CPU access"). Frames are
-// either presented straight into the window RastPort with vaPutSurface
-// (overlay path) or blitted GPU-side into an offscreen BitMap and read back
-// with ReadPixelArray so they can be composited under the page content.
+// blitted GPU-side into an offscreen BitMap with vaPutSurface and read back
+// with ReadPixelArray, so the page's normal BltBitMap blit presents them.
 #if defined(__amigaos4__) && (LIBAVUTIL_VERSION_MAJOR >= 57)
 #define AC_VAAPI 1
 #endif
@@ -147,22 +146,13 @@ struct _ac_video_decoder {
 	int hw_transfer_fail_count;
 	int hw_present_count;
 	int hw_closed;
-	// Offscreen VRAM bitmap that vaPutSurface renders into (GPU scale + CSC).
-	// The overlay composite path blits it under the page controls; the old
-	// readback path reads it back with ReadPixelArray.
+	// Offscreen bitmap that vaPutSurface renders into (GPU scale + CSC), then
+	// ReadPixelArray pulls it out as ARGB (ac_vaapi_readback_frame)
 	struct BitMap *hw_bitmap;
 	int hw_bitmap_width;
 	int hw_bitmap_height;
 	int hw_bitmap_in_ram;
 	int hw_bitmap_ram_failed;
-	// Scratch bitmap for composing video + page controls before the single
-	// blit into the window (avoids tearing and keeps hw_bitmap pristine so
-	// paused frames can be re-composited when the controls change)
-	struct BitMap *hw_compose_bitmap;
-	int hw_compose_width;
-	int hw_compose_height;
-	// Letterbox inner rect of the video inside hw_bitmap
-	int hw_inner_x, hw_inner_y, hw_inner_w, hw_inner_h;
 #endif
 };
 
@@ -829,7 +819,7 @@ static enum AVPixelFormat ac_vaapi_get_format(AVCodecContext *avctx, const enum 
 		}
 
 		pDecoder->pHWDeviceCtx = hwdev;
-		VADBG("get_format: VAAPI device created (overlay presentation via vaPutSurface, no readback)");
+		VADBG("get_format: VAAPI device created (frames read back with vaPutSurface + ReadPixelArray)");
 	}
 
 	// FFmpeg 5+ requires hw_frames_ctx to be set up inside get_format
@@ -876,84 +866,11 @@ static enum AVPixelFormat ac_vaapi_get_format(AVCodecContext *avctx, const enum 
 	return AV_PIX_FMT_VAAPI;
 }
 
-// Present a decoded VAAPI frame straight into a window RastPort with
-// vaPutSurface. Runs GPU-side scaling + NV12->RGB conversion; no readback.
-// Must be called on the decode thread (the OS4 VA driver binds its Warp3DNova
-// context to the task that created the device; cross-task calls hang).
-int CALL_CONVT ac_vaapi_present_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
-	void *rastPort, int srcX, int srcY, int srcW, int srcH,
-	int dstX, int dstY, int dstW, int dstH)
-{
-	if (!pDecoder || !pFrame || !rastPort || pDecoder->type != AC_DECODER_TYPE_VIDEO)
-		return -1;
-
-	lp_ac_video_decoder vDecoder = (lp_ac_video_decoder)pDecoder;
-	struct _ac_decoder_frame_internal *frame = (struct _ac_decoder_frame_internal *)pFrame;
-	AVFrame *pAVFrame = frame->pFrame;
-
-	if (!pAVFrame || pAVFrame->format != AV_PIX_FMT_VAAPI) {
-		if (vDecoder->hw_transfer_fail_count < 5) {
-			vDecoder->hw_transfer_fail_count++;
-			VADBG("present: frame is not a VAAPI surface (fmt %d)", pAVFrame ? (int)pAVFrame->format : -1);
-		}
-		return -1;
-	}
-
-	if (!vDecoder->pHWDeviceCtx) {
-		VADBG("present: no VAAPI device context");
-		return -1;
-	}
-
-	AVHWDeviceContext *pHWCtx = (AVHWDeviceContext *)vDecoder->pHWDeviceCtx->data;
-	AVVAAPIDeviceContext *pVACtx = (AVVAAPIDeviceContext *)pHWCtx->hwctx;
-	VADisplay display = pVACtx->display;
-	VASurfaceID surface = (VASurfaceID)(uintptr_t)pAVFrame->data[3];
-
-	unsigned int flags = VA_FILTER_SCALING_FAST | VA_FRAME_PICTURE |
-		((pAVFrame->height > 576) ? VA_SRC_BT709 : VA_SRC_BT601);
-
-	if (!vDecoder->hw_first_frame_done) {
-		VADBG("present: first vaPutSurface (surface %d, src %d,%d %dx%d -> dst %d,%d %dx%d, flags 0x%x)",
-			(int)surface, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, flags);
-	}
-
-	// Log around the call itself: if the log shows "calling" without the
-	// matching "returned" line, vaPutSurface hung inside the driver.
-	vDecoder->hw_present_count++;
-	int logPresent = (vDecoder->hw_present_count <= 5) || (vDecoder->hw_present_count % 100 == 0);
-	if (logPresent)
-		VADBG("present #%d: calling vaPutSurface (surface %d, dst %d,%d %dx%d)",
-			vDecoder->hw_present_count, (int)surface, dstX, dstY, dstW, dstH);
-
-	VAStatus status = vaPutSurface(display, surface, VADT_RastPort, rastPort,
-		(short)srcX, (short)srcY, (unsigned short)srcW, (unsigned short)srcH,
-		(short)dstX, (short)dstY, (unsigned short)dstW, (unsigned short)dstH,
-		flags);
-
-	if (logPresent)
-		VADBG("present #%d: vaPutSurface returned %d", vDecoder->hw_present_count, (int)status);
-
-	if (status != VA_STATUS_SUCCESS) {
-		if (vDecoder->hw_transfer_fail_count < 5) {
-			vDecoder->hw_transfer_fail_count++;
-			VADBG("present: vaPutSurface failed (status %d, failure %d of max 5 logged)",
-				(int)status, vDecoder->hw_transfer_fail_count);
-		}
-		return -1;
-	}
-
-	if (!vDecoder->hw_first_frame_done) {
-		vDecoder->hw_first_frame_done = 1;
-		VADBG("present: first VAAPI frame on screen (%dx%d)", pAVFrame->width, pAVFrame->height);
-	}
-	return 0;
-}
-
 // Convert a decoded VAAPI frame to ARGB in system memory: vaPutSurface does
-// the GPU-side scale + NV12->ARGB into an offscreen VRAM BitMap, then
+// the GPU-side scale + NV12->ARGB into an offscreen BitMap, then
 // ReadPixelArray DMAs the pixels out. This is the only working readback on
-// the OS4 driver (vaGetImage/vaDeriveImage fail); it lets the browser
-// composite page content (video controls) over the video.
+// the OS4 driver (vaGetImage/vaDeriveImage fail); the result is blitted by
+// the browser like a software frame.
 // Must be called on the decode thread (VA task affinity).
 int CALL_CONVT ac_vaapi_readback_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
 	int dstW, int dstH, void *dstARGB, int dstStride)
@@ -1046,372 +963,6 @@ int CALL_CONVT ac_vaapi_readback_frame(lp_ac_decoder pDecoder, lp_ac_decoder_fra
 	return 0;
 }
 
-// ---------------------------------------------------------------------------
-// GPU overlay compositing: the video stays in VRAM (vaPutSurface -> hw_bitmap),
-// page content (video controls) is composited over it with graphics.library
-// CompositeTags (GPU SRC_OVER), and a single BltBitMapRastPort puts the result
-// in the window. Zero per-frame VRAM->CPU reads.
-//
-// A small registry maps each active decoder to its window placement plus the
-// browser's offscreen page BitMap; it is shared between the decoder thread
-// (per-frame updates, VA task affinity) and the main thread (Draw-time repair
-// via ac_overlay_repaint, no VA calls there).
-// ---------------------------------------------------------------------------
-
-#define AC_OVERLAY_MAX 4
-
-struct ac_overlay_entry {
-	lp_ac_video_decoder decoder;
-	void *window;                       // struct Window* the video belongs to
-	int dstX, dstY, dstW, dstH;         // element rect, window coordinates
-	int clipX1, clipY1, clipX2, clipY2; // visible clip, x2/y2 exclusive
-	void *srcBM;                        // browser rp_offscreen BitMap (page + controls)
-	int srcOffX, srcOffY;               // window coords -> srcBM coords offset
-};
-
-static struct SignalSemaphore ac_overlay_sem;
-static struct ac_overlay_entry ac_overlay_entries[AC_OVERLAY_MAX];
-
-static void __attribute__((constructor)) ac_overlay_ctor(void)
-{
-	InitSemaphore(&ac_overlay_sem);
-}
-
-static struct ac_overlay_entry *ac_overlay_find(lp_ac_video_decoder decoder)
-{
-	int i;
-	for (i = 0; i < AC_OVERLAY_MAX; i++)
-		if (ac_overlay_entries[i].decoder == decoder)
-			return &ac_overlay_entries[i];
-	return NULL;
-}
-
-// Compose video + page controls into hw_compose_bitmap and compute the
-// visible window rect. Called with ac_overlay_sem held. Returns 1 with
-// *pX1..*pY2 filled (window coords) when there is something to blit.
-// Deliberately does NOT touch the window RastPort: blitting to the window
-// needs the layer lock, and holding ac_overlay_sem while waiting for it
-// deadlocks against the main thread (Draw holds the layer lock and takes
-// the semaphore in ac_overlay_repaint).
-static int ac_overlay_compose_locked(lp_ac_video_decoder v, struct ac_overlay_entry *e,
-	int *pX1, int *pY1, int *pX2, int *pY2)
-{
-	if (!v || !e || !v->hw_bitmap || !v->hw_compose_bitmap)
-		return 0;
-	// Size transition in progress: the cached frame no longer matches the
-	// element rect, skip until the decoder thread renders the next frame
-	if (v->hw_bitmap_width != e->dstW || v->hw_bitmap_height != e->dstH)
-		return 0;
-	if (v->hw_compose_width != e->dstW || v->hw_compose_height != e->dstH)
-		return 0;
-
-	int x1 = e->dstX > e->clipX1 ? e->dstX : e->clipX1;
-	int y1 = e->dstY > e->clipY1 ? e->dstY : e->clipY1;
-	int x2 = (e->dstX + e->dstW) < e->clipX2 ? (e->dstX + e->dstW) : e->clipX2;
-	int y2 = (e->dstY + e->dstH) < e->clipY2 ? (e->dstY + e->dstH) : e->clipY2;
-	if (x2 <= x1 || y2 <= y1)
-		return 0;
-
-	// VRAM->VRAM copy of the video frame (letterbox bars included)
-	BltBitMap(v->hw_bitmap, 0, 0, v->hw_compose_bitmap, 0, 0,
-		e->dstW, e->dstH, 0xC0, ~0, NULL);
-
-	if (e->srcBM) {
-		// Page pixels covering the element rect; paint() punched a transparent
-		// hole where the video sits, so SRC_OVER keeps the video visible and
-		// lays the (partially transparent) controls on top. Clamp to the
-		// source bitmap bounds or the composite fails.
-		struct BitMap *src = (struct BitMap *)e->srcBM;
-		int bmW = (int)GetBitMapAttr(src, BMA_WIDTH);
-		int bmH = (int)GetBitMapAttr(src, BMA_HEIGHT);
-		int ix1 = e->dstX > e->srcOffX ? e->dstX : e->srcOffX;
-		int iy1 = e->dstY > e->srcOffY ? e->dstY : e->srcOffY;
-		int ix2 = (e->dstX + e->dstW) < (e->srcOffX + bmW) ? (e->dstX + e->dstW) : (e->srcOffX + bmW);
-		int iy2 = (e->dstY + e->dstH) < (e->srcOffY + bmH) ? (e->dstY + e->dstH) : (e->srcOffY + bmH);
-
-		if (ix2 > ix1 && iy2 > iy1) {
-			uint32 comperr = CompositeTags(COMPOSITE_Src_Over_Dest, src, v->hw_compose_bitmap,
-				COMPTAG_SrcX,       ix1 - e->srcOffX,
-				COMPTAG_SrcY,       iy1 - e->srcOffY,
-				COMPTAG_SrcWidth,   ix2 - ix1,
-				COMPTAG_SrcHeight,  iy2 - iy1,
-				COMPTAG_OffsetX,    ix1 - e->dstX,
-				COMPTAG_OffsetY,    iy1 - e->dstY,
-				COMPTAG_DestX,      0,
-				COMPTAG_DestY,      0,
-				COMPTAG_DestWidth,  e->dstW,
-				COMPTAG_DestHeight, e->dstH,
-				COMPTAG_Flags,      COMPFLAG_HardwareOnly,
-				TAG_DONE);
-			if (comperr != COMPERR_Success && v->hw_transfer_fail_count < 5) {
-				v->hw_transfer_fail_count++;
-				VADBG("compose: CompositeTags failed (err %d), video shown without controls",
-					(int)comperr);
-			}
-		}
-	}
-
-	*pX1 = x1; *pY1 = y1;
-	*pX2 = x2; *pY2 = y2;
-	return 1;
-}
-
-// Register (or update) the overlay target for a decoder; window == NULL
-// unregisters. Called from the video decoder whenever element coordinates
-// change. Any thread.
-void CALL_CONVT ac_overlay_register(lp_ac_decoder pDecoder, void *window,
-	int dstX, int dstY, int dstW, int dstH,
-	int clipX1, int clipY1, int clipX2, int clipY2)
-{
-	if (!pDecoder || pDecoder->type != AC_DECODER_TYPE_VIDEO)
-		return;
-	lp_ac_video_decoder v = (lp_ac_video_decoder)pDecoder;
-
-	ObtainSemaphore(&ac_overlay_sem);
-	struct ac_overlay_entry *e = ac_overlay_find(v);
-
-	if (!window) {
-		if (e)
-			memset(e, 0, sizeof(*e));
-		ReleaseSemaphore(&ac_overlay_sem);
-		return;
-	}
-
-	if (!e) {
-		e = ac_overlay_find(NULL);
-		if (!e) {
-			ReleaseSemaphore(&ac_overlay_sem);
-			VADBG("overlay: registry full, decoder not registered");
-			return;
-		}
-		memset(e, 0, sizeof(*e));
-		e->decoder = v;
-	}
-
-	if (e->window != window) {
-		// New window: the cached page bitmap belongs to the old one
-		e->srcBM = NULL;
-		e->srcOffX = e->srcOffY = 0;
-	}
-	e->window = window;
-	e->dstX = dstX; e->dstY = dstY;
-	e->dstW = dstW; e->dstH = dstH;
-	e->clipX1 = clipX1; e->clipY1 = clipY1;
-	e->clipX2 = clipX2; e->clipY2 = clipY2;
-	ReleaseSemaphore(&ac_overlay_sem);
-}
-
-static void ac_overlay_unregister_decoder(lp_ac_video_decoder v)
-{
-	ObtainSemaphore(&ac_overlay_sem);
-	struct ac_overlay_entry *e = ac_overlay_find(v);
-	if (e)
-		memset(e, 0, sizeof(*e));
-	ReleaseSemaphore(&ac_overlay_sem);
-}
-
-// The browser is about to free its offscreen page BitMap: drop any cached
-// pointer to it so a concurrent repaint can't touch freed memory. Main thread.
-void CALL_CONVT ac_overlay_source_gone(void *srcBM)
-{
-	int i;
-	if (!srcBM)
-		return;
-	ObtainSemaphore(&ac_overlay_sem);
-	for (i = 0; i < AC_OVERLAY_MAX; i++) {
-		if (ac_overlay_entries[i].srcBM == srcBM) {
-			ac_overlay_entries[i].srcBM = NULL;
-			ac_overlay_entries[i].srcOffX = 0;
-			ac_overlay_entries[i].srcOffY = 0;
-		}
-	}
-	ReleaseSemaphore(&ac_overlay_sem);
-}
-
-// Called from the browser Draw method right after it blitted page pixels into
-// the window: refreshes the cached page bitmap and, if the damaged rect
-// touches a video element, re-composites video + controls over the stomped
-// area. GPU-only, no VA calls -> legal on the main thread and works while the
-// video is paused.
-void CALL_CONVT ac_overlay_repaint(void *rastPort, void *window, void *srcBM,
-	int srcOffX, int srcOffY, int dmgX, int dmgY, int dmgW, int dmgH)
-{
-	int i;
-	if (!rastPort || !window)
-		return;
-	// Never block the main thread here: Draw can run with the window layer
-	// locked (intuition refresh) and the decoder thread might hold the
-	// semaphore - waiting would deadlock. Skipping is harmless, the next
-	// presented frame re-composites the controls anyway.
-	if (!AttemptSemaphore(&ac_overlay_sem))
-		return;
-	for (i = 0; i < AC_OVERLAY_MAX; i++) {
-		struct ac_overlay_entry *e = &ac_overlay_entries[i];
-		if (!e->decoder || e->window != window)
-			continue;
-		e->srcBM = srcBM;
-		e->srcOffX = srcOffX;
-		e->srcOffY = srcOffY;
-		if (dmgX < e->dstX + e->dstW && dmgX + dmgW > e->dstX &&
-		    dmgY < e->dstY + e->dstH && dmgY + dmgH > e->dstY) {
-			int x1, y1, x2, y2;
-			if (ac_overlay_compose_locked(e->decoder, e, &x1, &y1, &x2, &y2))
-				BltBitMapRastPort(e->decoder->hw_compose_bitmap,
-					x1 - e->dstX, y1 - e->dstY,
-					(struct RastPort *)rastPort, x1, y1, x2 - x1, y2 - y1, 0xC0);
-		}
-	}
-	ReleaseSemaphore(&ac_overlay_sem);
-}
-
-// Render a decoded VAAPI frame into the registered overlay target:
-// vaPutSurface (GPU scale + CSC) into hw_bitmap, then composite the page
-// controls over it and blit to the window. Decoder thread only (VA task
-// affinity). Returns 0 on success.
-int CALL_CONVT ac_vaapi_overlay_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame)
-{
-	if (!pDecoder || !pFrame || pDecoder->type != AC_DECODER_TYPE_VIDEO)
-		return -1;
-
-	lp_ac_video_decoder v = (lp_ac_video_decoder)pDecoder;
-	struct _ac_decoder_frame_internal *frame = (struct _ac_decoder_frame_internal *)pFrame;
-	AVFrame *pAVFrame = frame->pFrame;
-
-	if (!pAVFrame || pAVFrame->format != AV_PIX_FMT_VAAPI || !v->pHWDeviceCtx)
-		return -1;
-	if (pAVFrame->width <= 0 || pAVFrame->height <= 0)
-		return -1;
-
-	AVHWDeviceContext *pHWCtx = (AVHWDeviceContext *)v->pHWDeviceCtx->data;
-	AVVAAPIDeviceContext *pVACtx = (AVVAAPIDeviceContext *)pHWCtx->hwctx;
-	VADisplay display = pVACtx->display;
-	VASurfaceID surface = (VASurfaceID)(uintptr_t)pAVFrame->data[3];
-
-	ObtainSemaphore(&ac_overlay_sem);
-	struct ac_overlay_entry *e = ac_overlay_find(v);
-	if (!e || !e->window || e->dstW <= 0 || e->dstH <= 0) {
-		ReleaseSemaphore(&ac_overlay_sem);
-		return -1;
-	}
-	int dstW = e->dstW, dstH = e->dstH;
-
-	// (Re)allocate the VRAM target bitmaps at the element size. Only this
-	// thread allocates/frees them; the main thread reads them under the
-	// semaphore we're holding.
-	if (v->hw_bitmap && (v->hw_bitmap_width != dstW || v->hw_bitmap_height != dstH || v->hw_bitmap_in_ram)) {
-		FreeBitMap(v->hw_bitmap);
-		v->hw_bitmap = NULL;
-	}
-	if (v->hw_compose_bitmap && (v->hw_compose_width != dstW || v->hw_compose_height != dstH)) {
-		FreeBitMap(v->hw_compose_bitmap);
-		v->hw_compose_bitmap = NULL;
-	}
-	int freshBitmap = 0;
-	if (!v->hw_bitmap) {
-		v->hw_bitmap = AllocBitMapTags(dstW, dstH, 32,
-			BMATags_PixelFormat, PIXF_A8R8G8B8,
-			BMATags_Displayable, TRUE,
-			TAG_DONE);
-		if (!v->hw_bitmap) {
-			ReleaseSemaphore(&ac_overlay_sem);
-			VADBG("overlay: AllocBitMapTags %dx%d (video) failed", dstW, dstH);
-			return -1;
-		}
-		v->hw_bitmap_width = dstW;
-		v->hw_bitmap_height = dstH;
-		v->hw_bitmap_in_ram = 0;
-		v->hw_inner_w = v->hw_inner_h = 0;
-		freshBitmap = 1;
-	}
-	if (!v->hw_compose_bitmap) {
-		v->hw_compose_bitmap = AllocBitMapTags(dstW, dstH, 32,
-			BMATags_PixelFormat, PIXF_A8R8G8B8,
-			BMATags_Displayable, TRUE,
-			TAG_DONE);
-		if (!v->hw_compose_bitmap) {
-			ReleaseSemaphore(&ac_overlay_sem);
-			VADBG("overlay: AllocBitMapTags %dx%d (compose) failed", dstW, dstH);
-			return -1;
-		}
-		v->hw_compose_width = dstW;
-		v->hw_compose_height = dstH;
-	}
-
-	// Letterbox: fit the frame into the element rect preserving aspect
-	int innerW = dstW;
-	int innerH = (dstW * pAVFrame->height) / pAVFrame->width;
-	if (innerH > dstH) {
-		innerH = dstH;
-		innerW = (dstH * pAVFrame->width) / pAVFrame->height;
-	}
-	if (innerW < 1) innerW = 1;
-	if (innerH < 1) innerH = 1;
-	int innerX = (dstW - innerW) / 2;
-	int innerY = (dstH - innerH) / 2;
-
-	if (freshBitmap || innerX != v->hw_inner_x || innerY != v->hw_inner_y ||
-	    innerW != v->hw_inner_w || innerH != v->hw_inner_h) {
-		struct RastPort rp;
-		InitRastPort(&rp);
-		rp.BitMap = v->hw_bitmap;
-		RectFillColor(&rp, 0, 0, dstW - 1, dstH - 1, 0xFF000000);
-		v->hw_inner_x = innerX;
-		v->hw_inner_y = innerY;
-		v->hw_inner_w = innerW;
-		v->hw_inner_h = innerH;
-	}
-	ReleaseSemaphore(&ac_overlay_sem);
-
-	// vaPutSurface outside the semaphore: a Draw-time repaint racing with the
-	// GPU write is at worst a single torn frame; blocking the main thread on
-	// the driver would be worse.
-	unsigned int flags = VA_FILTER_SCALING_FAST | VA_FRAME_PICTURE |
-		((pAVFrame->height > 576) ? VA_SRC_BT709 : VA_SRC_BT601);
-
-	VAStatus status = vaPutSurface(display, surface, VADT_BitMap, v->hw_bitmap,
-		0, 0, (unsigned short)pAVFrame->width, (unsigned short)pAVFrame->height,
-		(short)innerX, (short)innerY, (unsigned short)innerW, (unsigned short)innerH,
-		flags);
-
-	if (status != VA_STATUS_SUCCESS) {
-		if (v->hw_transfer_fail_count < 5) {
-			v->hw_transfer_fail_count++;
-			VADBG("overlay: vaPutSurface(VADT_BitMap) failed (status %d)", (int)status);
-		}
-		return -1;
-	}
-
-	// Compose under the semaphore, but blit to the window OUTSIDE it: the
-	// window blit waits for the layer lock, which the main thread holds
-	// during refresh while it may be trying to take this semaphore.
-	// hw_compose_bitmap is only ever freed by this thread, so using it
-	// after release is safe.
-	struct RastPort *winRP = NULL;
-	int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
-	int srcX = 0, srcY = 0;
-	int doBlit = 0;
-	ObtainSemaphore(&ac_overlay_sem);
-	e = ac_overlay_find(v);
-	if (e && e->window) {
-		winRP = ((struct Window *)e->window)->RPort;
-		doBlit = ac_overlay_compose_locked(v, e, &x1, &y1, &x2, &y2);
-		srcX = x1 - e->dstX;
-		srcY = y1 - e->dstY;
-	}
-	ReleaseSemaphore(&ac_overlay_sem);
-
-	if (doBlit && winRP)
-		BltBitMapRastPort(v->hw_compose_bitmap, srcX, srcY,
-			winRP, x1, y1, x2 - x1, y2 - y1, 0xC0);
-
-	if (!v->hw_first_frame_done) {
-		v->hw_first_frame_done = 1;
-		VADBG("overlay: first VAAPI frame composited (%dx%d -> %dx%d, inner %dx%d)",
-			pAVFrame->width, pAVFrame->height, dstW, dstH, innerW, innerH);
-	}
-	return 0;
-}
-
 static void ac_vaapi_init(lp_ac_video_decoder pDecoder, AVCodecContext *pCodecCtx)
 {
 	pDecoder->pHWDeviceCtx = NULL;
@@ -1425,13 +976,6 @@ static void ac_vaapi_init(lp_ac_video_decoder pDecoder, AVCodecContext *pCodecCt
 	pDecoder->hw_bitmap_height = 0;
 	pDecoder->hw_bitmap_in_ram = 0;
 	pDecoder->hw_bitmap_ram_failed = 0;
-	pDecoder->hw_compose_bitmap = NULL;
-	pDecoder->hw_compose_width = 0;
-	pDecoder->hw_compose_height = 0;
-	pDecoder->hw_inner_x = 0;
-	pDecoder->hw_inner_y = 0;
-	pDecoder->hw_inner_w = 0;
-	pDecoder->hw_inner_h = 0;
 
 	if (!ac_vaapi_codec_supported(pCodecCtx->codec_id)) {
 		VADBG("codec id %d not accelerated by VAAPI, software decode", (int)pCodecCtx->codec_id);
@@ -1452,16 +996,6 @@ static void ac_vaapi_init(lp_ac_video_decoder pDecoder, AVCodecContext *pCodecCt
 
 #if defined(__amigaos4__) && !defined(AC_VAAPI)
 // Old SDK ffmpeg without VAAPI support: keep the exported symbol as a no-op.
-int CALL_CONVT ac_vaapi_present_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
-	void *rastPort, int srcX, int srcY, int srcW, int srcH,
-	int dstX, int dstY, int dstW, int dstH)
-{
-	(void)pDecoder; (void)pFrame; (void)rastPort;
-	(void)srcX; (void)srcY; (void)srcW; (void)srcH;
-	(void)dstX; (void)dstY; (void)dstW; (void)dstH;
-	return -1;
-}
-
 int CALL_CONVT ac_vaapi_readback_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame,
 	int dstW, int dstH, void *dstARGB, int dstStride)
 {
@@ -1470,33 +1004,6 @@ int CALL_CONVT ac_vaapi_readback_frame(lp_ac_decoder pDecoder, lp_ac_decoder_fra
 	return -1;
 }
 
-int CALL_CONVT ac_vaapi_overlay_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame)
-{
-	(void)pDecoder; (void)pFrame;
-	return -1;
-}
-
-void CALL_CONVT ac_overlay_register(lp_ac_decoder pDecoder, void *window,
-	int dstX, int dstY, int dstW, int dstH,
-	int clipX1, int clipY1, int clipX2, int clipY2)
-{
-	(void)pDecoder; (void)window;
-	(void)dstX; (void)dstY; (void)dstW; (void)dstH;
-	(void)clipX1; (void)clipY1; (void)clipX2; (void)clipY2;
-}
-
-void CALL_CONVT ac_overlay_source_gone(void *srcBM)
-{
-	(void)srcBM;
-}
-
-void CALL_CONVT ac_overlay_repaint(void *rastPort, void *window, void *srcBM,
-	int srcOffX, int srcOffY, int dmgX, int dmgY, int dmgW, int dmgH)
-{
-	(void)rastPort; (void)window; (void)srcBM;
-	(void)srcOffX; (void)srcOffY;
-	(void)dmgX; (void)dmgY; (void)dmgW; (void)dmgH;
-}
 #endif
 
 static void *ac_create_video_decoder(lp_ac_instance pacInstance,
@@ -1605,9 +1112,6 @@ void CALL_CONVT ac_vaapi_decoder_shutdown(lp_ac_decoder pDecoder)
 #if defined(AC_VAAPI)
 	if (pDecoder && pDecoder->type == AC_DECODER_TYPE_VIDEO) {
 		lp_ac_video_decoder p = (lp_ac_video_decoder)pDecoder;
-		// Unhook from the overlay registry first so a main-thread repaint
-		// can't touch the bitmaps we're about to free
-		ac_overlay_unregister_decoder(p);
 		if (p->hwaccel_active && !p->hw_closed) {
 			VADBG("decoder shutdown: releasing VAAPI codec + device on decode thread");
 			if (p->pFrame)
@@ -1622,10 +1126,6 @@ void CALL_CONVT ac_vaapi_decoder_shutdown(lp_ac_decoder pDecoder)
 		if (p->hw_bitmap) {
 			FreeBitMap(p->hw_bitmap);
 			p->hw_bitmap = NULL;
-		}
-		if (p->hw_compose_bitmap) {
-			FreeBitMap(p->hw_compose_bitmap);
-			p->hw_compose_bitmap = NULL;
 		}
 	}
 #else
@@ -2086,7 +1586,7 @@ void ac_scale_to_scaled_rgb_decoder_frame(lp_ac_decoder_frame pFrame, lp_ac_deco
 #if defined(AC_VAAPI)
 	// GPU surfaces have no CPU-accessible pixel data; sws_scale would crash.
 	if (frame->pFrame && frame->pFrame->format == AV_PIX_FMT_VAAPI) {
-		VADBG("scale_to_scaled_rgb: called on a VAAPI surface, skipping (use ac_vaapi_present_frame)");
+		VADBG("scale_to_scaled_rgb: called on a VAAPI surface, skipping (use ac_vaapi_readback_frame)");
 		return;
 	}
 #endif
@@ -2160,7 +1660,7 @@ ac_receive_frame_rc ac_receive_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame
 		frame->needs_unref = 1;
 
 		// AC_VAAPI: hardware frames stay in GPU surfaces (AV_PIX_FMT_VAAPI);
-		// they are presented later with ac_vaapi_present_frame (no readback).
+		// they are read back with ac_vaapi_readback_frame when shown.
 
 		if (pDecoder->type == AC_DECODER_TYPE_AUDIO) {
 			lp_ac_audio_decoder aDecoder = (lp_ac_audio_decoder)pDecoder;
@@ -2352,7 +1852,6 @@ static void ac_free_video_decoder(lp_ac_video_decoder pDecoder) {
 		av_free(pDecoder->pCodecCtx);
 #endif /* LIBAVCODEC_VERSION_MAJOR >= 57 */
 #if defined(AC_VAAPI)
-		ac_overlay_unregister_decoder(pDecoder);
 		// After avcodec_close dropped the codec's own references
 		if (pDecoder->pHWDeviceCtx) {
 			VADBG("releasing VAAPI device");
@@ -2361,10 +1860,6 @@ static void ac_free_video_decoder(lp_ac_video_decoder pDecoder) {
 		if (pDecoder->hw_bitmap) {
 			FreeBitMap(pDecoder->hw_bitmap);
 			pDecoder->hw_bitmap = NULL;
-		}
-		if (pDecoder->hw_compose_bitmap) {
-			FreeBitMap(pDecoder->hw_compose_bitmap);
-			pDecoder->hw_compose_bitmap = NULL;
 		}
 #endif
 		av_free(pDecoder->decoder.pBuffer);

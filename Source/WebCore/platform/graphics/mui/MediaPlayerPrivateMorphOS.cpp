@@ -634,21 +634,6 @@ void MediaPlayerPrivateMorphOS::accNextFrameReady()
 		}
 
 		m_didDrawFrame = true;
-
-		if (MediaPlayerMorphOSSettings::settings().m_overlayRequest)
-		{
-			MediaPlayerMorphOSSettings::settings().m_overlayRequest(m_player,
-				[weak = makeWeakPtr(this)](void *ptr, int sx, int sy, int ml, int mt, int mr, int mb, int w, int h) {
-				if (weak) {
-					if (weak->m_acinerella)
-						weak->m_acinerella->setOverlayWindowCoords((struct ::Window *)ptr, sx, sy, ml, mt, mr, mb, w, h);
-#if ENABLE(MEDIA_SOURCE)
-					else if (weak->m_mediaSourcePrivate)
-						weak->m_mediaSourcePrivate->setOverlayWindowCoords((struct ::Window *)ptr, sx, sy, ml, mt, mr, mb, w, h);
-#endif
-				}
-			});
-		}
 	}
     else
     {
@@ -676,8 +661,6 @@ void MediaPlayerPrivateMorphOS::accSetVideoSize(int width, int height)
 
 void MediaPlayerPrivateMorphOS::accFrameUpdateNeeded()
 {
-	if (MediaPlayerMorphOSSettings::settings().m_overlayUpdate)
-		MediaPlayerMorphOSSettings::settings().m_overlayUpdate(m_player);
 }
 
 bool MediaPlayerPrivateMorphOS::accCodecSupported(const String &codec)
