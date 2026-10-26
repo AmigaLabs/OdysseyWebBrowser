@@ -2931,6 +2931,19 @@ DEFMMETHOD(ContextMenuBuild)
     if (!coreMenu)
         return 0;
 
+    auto& controller = page->contextMenuController();
+    const HitTestResult& hitTestResult = controller.hitTestResult();
+    bool hasLink = !hitTestResult.absoluteLinkURL().isEmpty();
+    bool hasImage = !hitTestResult.absoluteImageURL().isEmpty();
+    bool hasMedia = !hitTestResult.absoluteMediaURL().isEmpty();
+
+    if (hasLink)
+        DoMethod(app, MM_OWBApp_BuildUserMenu, MV_OWBApp_BuildUserMenu_Link, &controller, coreMenu);
+    if (hasImage)
+        DoMethod(app, MM_OWBApp_BuildUserMenu, MV_OWBApp_BuildUserMenu_Image, &controller, coreMenu);
+    if (!hasLink && !hasImage && !hasMedia)
+        DoMethod(app, MM_OWBApp_BuildUserMenu, MV_OWBApp_BuildUserMenu_Page, &controller, coreMenu);
+
     Object* nativeMenu = createNativeContextMenu(coreMenu->items());
     if (!nativeMenu)
         return 0;
@@ -2958,7 +2971,11 @@ DEFMMETHOD(ContextMenuChoice)
         GetAttr(MUIA_UserData, (Object*) msg->item, &action);
         if (action != ContextMenuItemTagNoAction) {
             const char* title = (const char*) getv((Object*) msg->item, MUIA_Menuitem_Title);
-            data->menucontroller->contextMenuItemSelected((ContextMenuAction) action, String(title ? title : ""));
+            if (action >= ContextMenuItemBaseApplicationTag) {
+                ContextMenuItem selectedItem(ActionType, (ContextMenuAction) action, String(title ? title : ""));
+                DoMethod(app, MM_OWBApp_SelectUserMenu, &selectedItem, data->menucontroller);
+            } else
+                data->menucontroller->contextMenuItemSelected((ContextMenuAction) action, String(title ? title : ""));
         }
     }
 

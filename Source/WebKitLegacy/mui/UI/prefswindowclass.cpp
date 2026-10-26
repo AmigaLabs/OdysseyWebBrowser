@@ -48,10 +48,7 @@ STATIC STRPTR prefslist[] =
 {
     LABEL(CATEGORY_GENERAL),
     LABEL(CATEGORY_INTERFACE),
-#if 0
-// broken 2.12
     LABEL(CATEGORY_CONTEXTUAL_MENUS),
-#endif
     LABEL(CATEGORY_MIMETYPES),
     LABEL(CATEGORY_CONTENT),
     LABEL(CATEGORY_FONTS),
@@ -459,10 +456,7 @@ struct Data
     Object *sl_quicklinkrows;
 
     /**/
-#if 0
-// broken 2.12
     Object *gr_contextmenus;
-#endif
 
     /**/
     Object *gr_mimetypes;
@@ -558,11 +552,7 @@ DEFNEW
     Object *ch_favicon_tab, *ch_favicon_bookmark, *ch_favicon_history, *ch_favicon_historypanel, *ch_favicon_quicklink;
     Object *cy_quicklinklook, *sl_quicklinkrows, *cy_quicklinklayout;
 
-#if 0
-// broken 2.12
     Object *gr_contextmenus;
-#endif
-
     Object *gr_mimetypes;
 
     Object *sl_connections, *cy_useragent;
@@ -697,11 +687,8 @@ DEFNEW
                                 Child, HVSpace,
                             End,
 
-#if 0
-// broken 2.12
                         // ContextMenus
                             Child, gr_contextmenus = (Object *) NewObject(getcontextmenugroupclass(), NULL, TAG_DONE),
-#endif
 
                         // Mimetypes
                             Child, gr_mimetypes = (Object *) NewObject(getmimetypegroupclass(), NULL, TAG_DONE),
@@ -1111,11 +1098,7 @@ DEFNEW
         data->ch_favicon_historypanel = ch_favicon_historypanel;
         data->ch_favicon_quicklink = ch_favicon_quicklink;
 
-#if 0
-// broken 2.12
         data->gr_contextmenus = gr_contextmenus;
-#endif
-
         data->gr_mimetypes = gr_mimetypes;
 
         data->cy_quicklinklook = cy_quicklinklook;
