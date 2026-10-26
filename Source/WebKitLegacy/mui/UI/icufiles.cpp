@@ -2,6 +2,10 @@
 #include <libraries/mui.h>
 #include <proto/muimaster.h>
 
+#if OS(AMIGAOS)
+#define ACCESS_READ SHARED_LOCK
+#endif
+
 #ifndef __amigaos4__
 const char *icufiles [] = { 
 "PROGDIR:Resource/icudt49b/af.res",

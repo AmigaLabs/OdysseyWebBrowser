@@ -20,6 +20,10 @@
 
 #define MAINTASK
 
+#if defined(__amigaos4__)
+#define ACCESS_READ SHARED_LOCK
+#endif
+
 /* MUI Macros */
 #ifndef MAKE_ID
 #define MAKE_ID(a,b,c,d) ((ULONG) (a)<<24 | (ULONG) (b)<<16 | (ULONG) (c)<<8 | (ULONG) (d))

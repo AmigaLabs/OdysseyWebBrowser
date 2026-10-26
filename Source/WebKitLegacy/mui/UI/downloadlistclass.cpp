@@ -38,6 +38,7 @@
 #include <proto/wb.h>
 #if OS(AMIGAOS)
 #define ODYSSEY
+#define ACCESS_READ SHARED_LOCK
 #endif
 #include <proto/dos.h>
 #include <proto/timer.h>

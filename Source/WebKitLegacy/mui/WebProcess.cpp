@@ -56,6 +56,10 @@
 #define ODYSSEY
 #include <proto/dos.h>
 
+#if defined(__amigaos4__)
+#define ACCESS_READ SHARED_LOCK
+#endif
+
 #define USE_ADFILTER 0
 
 #define D(x)
