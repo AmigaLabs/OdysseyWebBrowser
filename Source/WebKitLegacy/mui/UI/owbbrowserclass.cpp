@@ -2863,6 +2863,40 @@ DEFSMETHOD(OWBBrowser_PopupMenu)
     return 0;
 }
 
+static Object* createNativeContextMenu(const Vector<ContextMenuItem>& items, const String& title = String())
+{
+    CString menuTitle = title.latin1();
+    Object* menu = (Object*) NewObject(getmenuclass(), NULL, MUIA_Menu_Title, menuTitle.data() ? strdup(menuTitle.data()) : NULL, TAG_DONE);
+    if (!menu)
+        return NULL;
+
+    for (const auto& item : items) {
+        Object* nativeItem = NULL;
+        if (item.type() == SubmenuType) {
+            nativeItem = createNativeContextMenu(item.subMenuItems(), item.title());
+        } else {
+            CString label = item.title().latin1();
+            const char* labelText = item.type() == SeparatorType || !label.data() ? NM_BARLABEL : strdup(label.data());
+            nativeItem = (Object*) NewObject(getmenuitemclass(), NULL,
+                MUIA_UserData, (IPTR) item.action(),
+                MA_MenuItem_FreeUserData, FALSE,
+                MUIA_Menuitem_Title, (IPTR) labelText,
+                MUIA_Menuitem_Enabled, (IPTR) item.enabled(),
+                MUIA_Menuitem_Checkit, (IPTR) (item.type() == CheckableActionType),
+                item.type() == CheckableActionType ? MUIA_Menuitem_Checked : TAG_IGNORE, (IPTR) item.checked(),
+                TAG_DONE);
+        }
+
+        if (!nativeItem) {
+            MUI_DisposeObject(menu);
+            return NULL;
+        }
+        DoMethod(menu, OM_ADDMEMBER, nativeItem);
+    }
+
+    return menu;
+}
+
 DEFMMETHOD(ContextMenuBuild)
 {
     GETDATA;
@@ -2897,14 +2931,17 @@ DEFMMETHOD(ContextMenuBuild)
     if (!coreMenu)
         return 0;
 
-#if 0
-// broken 2.12
-    data->contextmenu = (Object *) MenustripObject,
-                                    Child, (Object *) coreMenu->platformDescription(),
-                                    End;
-#else
-    return 0;
-#endif
+    Object* nativeMenu = createNativeContextMenu(coreMenu->items());
+    if (!nativeMenu)
+        return 0;
+
+    data->contextmenu = (Object*) MenustripObject,
+        Child, nativeMenu,
+    End;
+    if (!data->contextmenu) {
+        MUI_DisposeObject(nativeMenu);
+        return 0;
+    }
 
     data->menucontroller = &page->contextMenuController();
 
@@ -2917,11 +2954,12 @@ DEFMMETHOD(ContextMenuChoice)
 
     if (msg->item && data->menucontroller)
     {
-#if 0
-// broken 2.12
-        ContextMenuItem contextItem(msg->item);
-        data->menucontroller->contextMenuItemSelected(&contextItem);
-#endif
+        IPTR action = ContextMenuItemTagNoAction;
+        GetAttr(MUIA_UserData, (Object*) msg->item, &action);
+        if (action != ContextMenuItemTagNoAction) {
+            const char* title = (const char*) getv((Object*) msg->item, MUIA_Menuitem_Title);
+            data->menucontroller->contextMenuItemSelected((ContextMenuAction) action, String(title ? title : ""));
+        }
     }
 
     return 0;
