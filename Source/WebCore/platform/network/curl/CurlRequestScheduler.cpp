@@ -202,12 +202,18 @@ void CurlRequestScheduler::stopCurlThread()
 
 void CurlRequestScheduler::setMaxTotalConnections(long val)
 {
-    m_maxTotalConnections = val;
-    Locker locker { m_multiHandleMutex };
-    m_curlMultiHandle.emplace();
-    m_curlMultiHandle->setMaxTotalConnections(val);
-    m_curlMultiHandle.reset();
-    /* TODO: need to change in m_curlMultiHandle to take effect without need to restart Odyssey */
+    {
+        Locker locker { m_mutex };
+        if (m_maxTotalConnections == val)
+            return;
+        m_maxTotalConnections = val;
+        // CurlMultiHandle is worker-owned; update it on that thread, not while it performs requests.
+        m_taskQueue.append([this, val] {
+            if (m_curlMultiHandle)
+                m_curlMultiHandle->setMaxTotalConnections(val);
+        });
+    }
+    startOrWakeUpThread();
 }
 
 CurlStreamID CurlRequestScheduler::createStream(const URL& url, CurlStream::Client& client)
@@ -295,11 +301,16 @@ void CurlRequestScheduler::workerThread()
 {
     ASSERT(!isMainThread());
 
+    long maxTotalConnections;
+    {
+        Locker locker { m_mutex };
+        maxTotalConnections = m_maxTotalConnections;
+    }
     {
         Locker locker { m_multiHandleMutex };
         m_curlMultiHandle.emplace();
         m_curlMultiHandle->setMaxConnects(m_maxConnects);
-        m_curlMultiHandle->setMaxTotalConnections(m_maxTotalConnections);
+        m_curlMultiHandle->setMaxTotalConnections(maxTotalConnections);
         m_curlMultiHandle->setMaxHostConnections(m_maxHostConnections);
     }
 

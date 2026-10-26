@@ -2619,26 +2619,26 @@ DEFSMETHOD(OWBWindow_UpdateUserScript)
 DEFTMETHOD(OWBWindow_BuildSpoofMenu)
 {
     ULONG i = 0;
-    Object *item;
+    Object *item, *previous = NULL;
     Object *strip = (Object *) getv(obj, MUIA_Window_Menustrip);
     Object *menu  = (Object *) DoMethod(strip, MUIM_FindUData, MNA_SETTINGS_SPOOF_AS);
     CONST_STRPTR * labels = get_user_agent_labels();
     CONST_STRPTR * agents = get_user_agent_strings();
+    ULONG agentCount = get_user_agent_count();
 
     DoMethod(menu, MUIM_Menustrip_InitChange);
+    while ((item = (Object *)DoMethod(menu, MUIM_Family_GetChild, MUIV_Family_GetChild_Next, previous))) {
+        DoMethod(menu, OM_REMMEMBER, item);
+        DoMethod(item, OM_DISPOSE);
+    }
 
     while(*labels)
     {
         ULONG bits = 0;
-        ULONG count = get_user_agent_count() + 1; /* +1 for default entry */
         struct menu_entry *menu_entry;
-
-        while(count--)
-        {
-            if(count != i)
-            {
-                bits |= 1 << count;
-            }
+        for (ULONG excluded = 0; excluded <= agentCount; ++excluded) {
+            if (excluded != i)
+                bits |= 1UL << excluded;
         }
 
         menu_entry = (struct menu_entry *) malloc(sizeof(*menu_entry) + strlen(*agents) + 1);
@@ -2679,12 +2679,8 @@ DEFTMETHOD(OWBWindow_BuildSpoofMenu)
     if(item)
     {
         ULONG bits = 0;
-        ULONG count = get_user_agent_count() + 1 - 1; /* +1 for default entry, -1 to not exclude us */
-
-        while(count--)
-        {
-            bits |= 1 << count;
-        }
+        for (ULONG excluded = 0; excluded < agentCount; ++excluded)
+            bits |= 1UL << excluded;
 
         set(item, MUIA_Menuitem_Exclude, bits);
 
@@ -2789,8 +2785,8 @@ DEFSMETHOD(OWBWindow_UpdateMenu)
         // User agent settings
 
         ULONG found = FALSE;
-        int index = getv(widget->browser, MA_OWBBrowser_UserAgent);
-        String useragent = (index != USERAGENT_DEFAULT) ? get_user_agent_strings()[index] : "";
+        LONG index = getv(widget->browser, MA_OWBBrowser_UserAgent);
+        String useragent = index >= 0 && (ULONG)index < get_user_agent_count() ? get_user_agent_strings()[index] : "";
         menu = (Object *) DoMethod(strip, MUIM_FindUData, MNA_SETTINGS_SPOOF_AS);
 
         FORCHILD(menu, MUIA_Family_List)

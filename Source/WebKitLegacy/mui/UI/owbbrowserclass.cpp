@@ -945,7 +945,8 @@ static void doset(APTR obj, struct Data *data, struct TagItem *tags)
         case MA_OWBBrowser_UserAgent:
         {
             data->settings.useragent = (ULONG) tag->ti_Data;
-            char *useragent = (char *) (data->settings.useragent != USERAGENT_DEFAULT ? get_user_agent_strings()[data->settings.useragent] : "");
+            LONG index = data->settings.useragent;
+            char *useragent = (char *) (index >= 0 && (ULONG)index < get_user_agent_count() ? get_user_agent_strings()[index] : "");
             data->view->webView->setCustomUserAgent(useragent);
         }
         break;

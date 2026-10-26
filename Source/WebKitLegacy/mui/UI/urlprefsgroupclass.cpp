@@ -50,6 +50,12 @@
 extern CONST_STRPTR * get_user_agent_strings();
 extern CONST_STRPTR * get_user_agent_labels();
 
+static const char* userAgentForIndex(LONG index)
+{
+    ULONG count = get_user_agent_count();
+    return index >= 0 && (ULONG)index < count ? get_user_agent_strings()[index] : "";
+}
+
 // Reuse prefswindow cookie labels
 #define LABEL(x) (STRPTR)MSG_PREFSWINDOW_##x
 STATIC STRPTR cookiepolicies[] =
@@ -129,6 +135,17 @@ struct Data
     Object *ch_localstorage;
 };
 
+static Object *urlPrefsGroup;
+static Object *urlUserAgentCycle;
+
+void refresh_urlprefs_user_agent_cycle()
+{
+    if (!urlPrefsGroup || !urlUserAgentCycle)
+        return;
+    nnset(urlUserAgentCycle, MUIA_Cycle_Entries, get_user_agent_labels());
+    DoMethod(urlPrefsGroup, MM_URLPrefsGroup_Refresh);
+}
+
 DEFNEW
 {
     Object *lv_url, *bt_add, *bt_remove, *st_url, *gr_settings,
@@ -198,6 +215,8 @@ DEFNEW
         data->cy_cookie_policy     = cy_cookie_policy;
         data->st_cookie_filter     = st_cookie_filter;
         data->ch_localstorage      = ch_localstorage;
+        urlPrefsGroup = obj;
+        urlUserAgentCycle = cy_user_agent;
 
         set(bt_remove,   MUIA_Disabled, TRUE);
         set(gr_settings, MUIA_Disabled, TRUE);
@@ -226,6 +245,10 @@ DEFDISP
     APTR n, m;
 
     DoMethod(data->lv_url, MUIM_List_Clear);
+    if (urlPrefsGroup == obj) {
+        urlPrefsGroup = nullptr;
+        urlUserAgentCycle = nullptr;
+    }
 
     ITERATELISTSAFE(n, m, &urlsetting_list)
     {
@@ -507,7 +530,7 @@ DEFSMETHOD(URLPrefsGroup_ApplySettingsForURL)
                 webView->page()->settings().setPluginsEnabled(un->settings.plugins != FALSE);
                 webView->page()->settings().setLocalStorageEnabled(un->settings.localstorage != FALSE);
                 webView->page()->settings().setOfflineWebApplicationCacheEnabled(un->settings.localstorage != FALSE);
-                webView->setCustomUserAgent(get_user_agent_strings()[un->settings.useragent]);
+                webView->setCustomUserAgent(userAgentForIndex(un->settings.useragent));
                 break;
             }
         }
@@ -536,7 +559,7 @@ DEFSMETHOD(URLPrefsGroup_ApplySettingsForURL)
         if((int) getv(widget->browser, MA_OWBBrowser_UserAgent) != USERAGENT_DEFAULT)
         {
             int index = getv(widget->browser, MA_OWBBrowser_UserAgent);
-            webView->setCustomUserAgent(get_user_agent_strings()[index]);
+            webView->setCustomUserAgent(userAgentForIndex(index));
         }
     }
 
@@ -576,7 +599,7 @@ DEFSMETHOD(URLPrefsGroup_UserAgentForURL)
 
         if(re.match(msg->url) >=0)
         {
-            return (IPTR) get_user_agent_strings()[un->settings.useragent];
+            return (IPTR) userAgentForIndex(un->settings.useragent);
         }
     }
 

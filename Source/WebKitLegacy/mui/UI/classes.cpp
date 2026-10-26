@@ -86,6 +86,8 @@ static const struct classdesc cd[] = {
     CLASSENT(bookmarkpanelgroup),
     CLASSENT(contextmenugroup),
     CLASSENT(contextmenulist),
+    CLASSENT(useragentgroup),
+    CLASSENT(useragentlist),
     CLASSENT(mimetypegroup),
     CLASSENT(mimetypelist),
     CLASSENT(choosetitlegroup),

@@ -178,6 +178,8 @@ struct MinList contextmenu_list;
 struct MinList mimetype_list;
 struct MinList urlsetting_list;
 struct MinList family_list;
+struct MinList useragent_list;
+struct MinList ua_list_bak;
 
 static const CONST_STRPTR classlist[] = {
     "Lamp.mcc",
@@ -1012,6 +1014,8 @@ DEFNEW
     NEWLIST(&mimetype_list);
     NEWLIST(&urlsetting_list);
     NEWLIST(&family_list);
+    NEWLIST(&useragent_list);
+    NEWLIST(&ua_list_bak);
 
     installClipboardMonitor();
 
@@ -2606,26 +2610,36 @@ DEFSMETHOD(OWBApp_PrefsLoad)
 DEFSMETHOD(OWBApp_PrefsSave)
 {
     GETDATA;
+    APTR node;
 
-    if (msg->SaveENVARC)
-    {
+    if (msg->SaveENVARC) {
+        DoMethod(data->prefswin, MM_PrefsWindow_SaveUserAgents);
         DoMethod(obj, MUIM_Application_Save, APPLICATION_ENVARC_PREFS);
-    }
+    } else
+        DoMethod(data->prefswin, MM_PrefsWindow_UseUserAgents);
     DoMethod(obj, MUIM_Application_Save, APPLICATION_ENV_PREFS);
 
     prefs_update(obj, data);
-
+    ITERATELIST(node, &window_list) {
+        auto* window = (struct windownode*)node;
+        DoMethod(window->window, MM_OWBWindow_BuildSpoofMenu);
+    }
     return set(data->prefswin, MUIA_Window_Open, FALSE);
 }
 
 DEFTMETHOD(OWBApp_PrefsCancel)
 {
     GETDATA;
+    APTR node;
 
+    DoMethod(data->prefswin, MM_PrefsWindow_CancelUserAgents);
     DoMethod(obj, MUIM_Application_Load, APPLICATION_ENV_PREFS);
 
     prefs_update(obj, data);
-
+    ITERATELIST(node, &window_list) {
+        auto* window = (struct windownode*)node;
+        DoMethod(window->window, MM_OWBWindow_BuildSpoofMenu);
+    }
     return set(data->prefswin, MUIA_Window_Open, FALSE);
 }
 

@@ -57,6 +57,7 @@ STATIC STRPTR prefslist[] =
     LABEL(CATEGORY_PRIVACY),
     LABEL(CATEGORY_SECURITY),
     LABEL(CATEGORY_MEDIA),
+    LABEL(CATEGORY_SPOOFING),
     NULL
 };
 
@@ -236,114 +237,6 @@ STATIC CONST int proxy_values[] =
     0,
 };
 
-struct useragent_pair
-{
-    STRPTR label;
-    STRPTR string;
-};
-
-/* Keep the two arrays below in sync */
-STATIC CONST CONST_STRPTR useragents_labels[] =
-{
-    "Odyssey Web Browser",
-
-    "Firefox (Linux)",
-    "Firefox (Windows)",
-
-    "Windows 10 Edge",
-    "Windows 10 Chrome",
-    "Internet Explorer 6",
-
-    "Opera (Windows)",
-
-    "Safari 13.1 (Mac)",
-    "Chrome 42 (Linux)",
-
-    "Apple IPhone 16e",
-    "Apple IPad Pro",
-
-    "Samsung Galaxy S25 Ultra",
-    "Google Pixel 9 Pro",
-
-    NULL
-};
-
-#if OS(AROS) && CPU(X86)
-#define OSHEADER "AROS i686"
-#elif OS(AROS) && CPU(X86_64)
-#define OSHEADER "AROS x86_64"
-#elif OS(MORPHOS)
-#define OSHEADER "Macintosh; PowerPC MorphOS %u.%u"
-#elif OS(AMIGAOS)
-#define OSHEADER "PowerPC AmigaOS"
-#endif
-const char verfmt[] = "Mozilla/5.0 (" OSHEADER "; Odyssey Web Browser; rv:" VERSION ") AppleWebKit/" WEBKITVER " (KHTML, like Gecko) OWB/" VERSION " Safari/" WEBKITVER;
-STATIC char odysseyuseragent[sizeof(verfmt) + 2 * (10 - 2)];
-
-void init_useragent()
-{
-#if OS(AROS) || OS(AMIGAOS)
-    strcpy(odysseyuseragent, verfmt);
-#elif OS(MORPHOS)
-    ULONG version = 0, revision = 0;
-    struct Resident *res = FindResident("MorphOS");
-    if (res)
-    {
-        version = res->rt_Version;
-        if (res->rt_Flags & RTF_EXTENDED)
-        {
-            revision = res->rt_Revision;
-        }
-        else
-        {
-            char *p = index((char *)res->rt_IdString, '.');
-            if (p) revision = strtoul(p + 1, NULL, 10);
-        }
-    }
-
-    sprintf(odysseyuseragent, verfmt, version, revision);
-#endif
-}
-
-STATIC CONST CONST_STRPTR useragents_strings[] =
-{
-    odysseyuseragent,
- 
-    "Mozilla/5.0 (X11; Linux i686; rv:138.0) Gecko/20100101 Firefox/138.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
-
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-    "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; .NET CLR 1.1.4322)",
-
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 OPR/118.0.0.0",
-
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-
-    "Mozilla/5.0 (iPhone17,5; CPU iPhone OS 18_3_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 FireKeepers/1.7.0",
-    "Mozilla/5.0 (iPad16,3; CPU OS 18_3_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Tropicana_NJ/5.7.1",
-
-    "Mozilla/5.0 (Linux; Android 15; SM-S931B Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/127.0.6533.103 Mobile Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 9 Pro Build/AD1A.240418.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.54 Mobile Safari/537.36",
-
-    NULL
-};
-
-ULONG get_user_agent_count()
-{
-    return sizeof(useragents_labels)/sizeof(CONST_STRPTR) - 1 ;
-}
-
-CONST_STRPTR * get_user_agent_labels()
-{
-    return (CONST_STRPTR *) useragents_labels;
-}
-
-CONST_STRPTR * get_user_agent_strings()
-{
-    return (CONST_STRPTR *) useragents_strings;
-}
 
 static void cycles_init(void)
 {
@@ -457,6 +350,7 @@ struct Data
 
     /**/
     Object *gr_contextmenus;
+    Object *gr_useragents;
 
     /**/
     Object *gr_mimetypes;
@@ -494,7 +388,6 @@ struct Data
     Object *lv_fixedfamily;
 
     /**/
-    Object *cy_useragent;
     Object *sl_connections;
     Object *cy_proxytype;
     Object *ch_proxyenabled;
@@ -553,9 +446,10 @@ DEFNEW
     Object *cy_quicklinklook, *sl_quicklinkrows, *cy_quicklinklayout;
 
     Object *gr_contextmenus;
+    Object *gr_useragents;
     Object *gr_mimetypes;
 
-    Object *sl_connections, *cy_useragent;
+    Object *sl_connections;
     Object *ch_proxyenabled, *cy_proxytype, *str_proxyhost, *str_proxyport, *str_proxyusername, *str_proxypassword;
 
     Object /**cy_temporarycookiespolicy, *cy_persistantcookiespolicy,*/*cy_cookiespolicy, *ch_savecookies, *ch_savehistory, *sl_historyitems, *sl_historymaxage, *ch_savesession, *ch_deletesessionatexit, *cy_sessionrestore, *ch_savecredentials, *ch_formautofill, *ch_enablelocalstorage;
@@ -564,6 +458,7 @@ DEFNEW
 
     Object *cy_loopfilter, *ch_partialcontent, *ch_webm, *ch_flv, *ch_ogg, *ch_mp4;
 
+    init_useragents();
     cycles_init();
 
     obj = (Object *) DoSuperNew(cl, obj,
@@ -820,11 +715,6 @@ DEFNEW
 
                                 Child, VGroup,
                                     Child, ColGroup(2),
-                                        Child, MakeLabel(GSI(MSG_PREFSWINDOW_NETWORK_SPOOF)),
-                                        Child, cy_useragent = (Object *) MakePrefsCycle(GSI(MSG_PREFSWINDOW_NETWORK_SPOOF), useragents_labels, MAKE_ID('S','N','U','A')),
-                                    End,
-
-                                    Child, ColGroup(2),
                                         Child, MakeLabel(GSI(MSG_PREFSWINDOW_NETWORK_ACTIVE_CONNECTIONS)),
                                         Child, sl_connections = (Object *) MakePrefsSlider(GSI(MSG_PREFSWINDOW_NETWORK_ACTIVE_CONNECTIONS), 2, 32, 16, MAKE_ID('S', 'N','E','C')),
                                     End,
@@ -1006,6 +896,9 @@ DEFNEW
 
                             End,
 
+                        // Spoofing
+                            Child, gr_useragents = (Object *) NewObject(getuseragentgroupclass(), NULL, TAG_DONE),
+
                         End,
                     End,
                 End,
@@ -1099,6 +992,7 @@ DEFNEW
         data->ch_favicon_quicklink = ch_favicon_quicklink;
 
         data->gr_contextmenus = gr_contextmenus;
+        data->gr_useragents = gr_useragents;
         data->gr_mimetypes = gr_mimetypes;
 
         data->cy_quicklinklook = cy_quicklinklook;
@@ -1106,7 +1000,6 @@ DEFNEW
         data->sl_quicklinkrows = sl_quicklinkrows;
 
         data->sl_connections = sl_connections;
-        data->cy_useragent = cy_useragent;
         data->ch_proxyenabled = ch_proxyenabled;
         data->cy_proxytype = cy_proxytype;
         data->str_proxyhost = str_proxyhost;
@@ -1552,7 +1445,9 @@ DEFGET
 
         case MA_OWBApp_UserAgent:
         {
-            *msg->opg_Storage = (IPTR) useragents_strings[getv(data->cy_useragent, MUIA_Cycle_Active)];
+            ULONG count = get_user_agent_count();
+            ULONG index = get_default_user_agent_idx();
+            *msg->opg_Storage = count && index < count ? (IPTR)get_user_agent_strings()[index] : 0;
         }
         return TRUE;
 
@@ -1728,7 +1623,6 @@ DEFTMETHOD(PrefsWindow_Fill)
 {
     GETDATA;
     APTR n;
-
     /* Fill pop strings */
     ITERATELIST(n, &family_list)
     {
@@ -1745,10 +1639,31 @@ DEFTMETHOD(PrefsWindow_Fill)
     return 0;
 }
 
+DEFTMETHOD(PrefsWindow_SaveUserAgents)
+{
+    save_useragents();
+    return 0;
+}
+
+DEFTMETHOD(PrefsWindow_UseUserAgents)
+{
+    use_useragents();
+    return 0;
+}
+
+DEFTMETHOD(PrefsWindow_CancelUserAgents)
+{
+    cancel_useragents();
+    return 0;
+}
+
 BEGINMTABLE
 DECNEW
 DECGET
 DECTMETHOD(PrefsWindow_Fill)
+DECTMETHOD(PrefsWindow_SaveUserAgents)
+DECTMETHOD(PrefsWindow_UseUserAgents)
+DECTMETHOD(PrefsWindow_CancelUserAgents)
 ENDMTABLE
 
 DECSUBCLASS_NC(MUIC_Window, prefswindowclass)

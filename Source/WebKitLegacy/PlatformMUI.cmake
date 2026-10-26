@@ -37,6 +37,8 @@ list(APPEND WebKitLegacy_SOURCES
     mui/UI/consolewindowclass.cpp
     mui/UI/contextmenugroupclass.cpp
     mui/UI/contextmenulistclass.cpp
+    mui/UI/useragentgroupclass.cpp
+    mui/UI/useragentlistclass.cpp
     mui/UI/cookiemanagerlistclass.cpp
     mui/UI/cookiemanagergroupclass.cpp
     mui/UI/cookiemanagerlistclass.cpp

@@ -78,6 +78,8 @@ DEFCLASS(consolelist);
 DEFCLASS(bookmarkpanelgroup);
 DEFCLASS(contextmenugroup);
 DEFCLASS(contextmenulist);
+DEFCLASS(useragentgroup);
+DEFCLASS(useragentlist);
 DEFCLASS(mimetypegroup);
 DEFCLASS(mimetypelist);
 DEFCLASS(choosetitlegroup);
@@ -642,6 +644,9 @@ enum {
 
     /* Prefs Window */
     MM_PrefsWindow_Fill,
+    MM_PrefsWindow_SaveUserAgents,
+    MM_PrefsWindow_UseUserAgents,
+    MM_PrefsWindow_CancelUserAgents,
 
     /* ContextMenuGroup */
     MM_ContextMenuGroup_Add,
@@ -649,6 +654,14 @@ enum {
     MM_ContextMenuGroup_Refresh,
     MM_ContextMenuGroup_Change,
     MM_ContextMenuGroup_AddPlaceholder,
+
+    /* UserAgentGroup */
+    MM_UserAgentGroup_Add,
+    MM_UserAgentGroup_Remove,
+    MM_UserAgentGroup_Refresh,
+    MM_UserAgentGroup_Change,
+    MM_UserAgentGroup_ShowInMenu,
+    MM_UserAgentGroup_Active,
 
     /* MimeTypeGroup */
     MM_MimeTypeGroup_Add,

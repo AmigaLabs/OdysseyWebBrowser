@@ -227,6 +227,15 @@ struct contextmenunode
     char *commandString;
 };
 
+struct useragentnode
+{
+    struct MinNode node;
+    int uan_flags;
+    char *uan_status;
+    char *uan_label;
+    char *uan_string;
+};
+
 struct mimetypenode
 {
     struct MinNode node;
@@ -249,6 +258,18 @@ enum { COOKIES_REJECT, COOKIES_ACCEPT, COOKIES_ASK, COOKIES_DEFAULT };
 enum { BLOCK_DISABLED, BLOCK_ENABLED, BLOCK_DEFAULT };
 enum { PRIVATE_BROWSING_DISABLED, PRIVATE_BROWSING_ENABLED, PRIVATE_BROWSING_DEFAULT };
 enum { USERAGENT_DEFAULT = -1 };
+
+extern struct MinList useragent_list;
+extern struct MinList ua_list_bak;
+CONST_STRPTR *get_user_agent_labels();
+CONST_STRPTR *get_user_agent_strings();
+ULONG get_user_agent_count();
+void init_useragents();
+void save_useragents();
+void use_useragents();
+void cancel_useragents();
+ULONG get_default_user_agent_idx();
+void refresh_urlprefs_user_agent_cycle();
 
 struct browsersettings
 {
