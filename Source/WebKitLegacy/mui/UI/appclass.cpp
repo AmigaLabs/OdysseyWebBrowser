@@ -1497,6 +1497,12 @@ DEFGET
         }
         return TRUE;
 
+        case MA_OWBApp_ActiveConnections:
+        {
+            *msg->opg_Storage = (IPTR) getv(data->prefswin, MA_OWBApp_ActiveConnections);
+        }
+        return TRUE;
+
         case MA_OWBApp_DidReceiveFavIcon:
         {
             *msg->opg_Storage = (IPTR) data->favicon_url;
@@ -2492,10 +2498,7 @@ void prefs_update(Object *obj, struct Data *data)
 
             set((Object *) getv(child, MA_OWBWindow_SearchGroup), MA_SearchBarGroup_SearchButton, data->showvalidationbuttons);
             set((Object *) getv(child, MA_OWBWindow_AddressBarGroup), MA_AddressBarGroup_GoButton, data->showvalidationbuttons);
-#if 0
-// broken 2.24
             set((Object *) getv(child, MA_OWBWindow_NetworkLedsGroup), MA_NetworkLedsGroup_Count, activeconnections);
-#endif
             SetAttrs((Object *) getv(child, MA_OWBWindow_FastLinkGroup),
                        MA_QuickLinkGroup_Mode, data->quicklinklook | data->quicklinklayout,
                        MA_QuickLinkGroup_Row, data->quicklinkrows,

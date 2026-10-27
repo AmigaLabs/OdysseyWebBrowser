@@ -62,6 +62,21 @@ struct LedState
     Object *led;
 };
 
+static ULONG networkJobColor(ResourceHandle *job)
+{
+    switch (job->getInternal()->m_state) {
+        case STATUS_WAITING_DATA:
+            return MUIV_Lamp_Color_Processing;
+        case STATUS_RECEIVING_DATA:
+            return MUIV_Lamp_Color_ReceivingData;
+        case STATUS_SENDING_DATA:
+            return MUIV_Lamp_Color_SendingData;
+        case STATUS_CONNECTING:
+        default:
+            return MUIV_Lamp_Color_Connecting;
+    }
+}
+
 struct Data
 {
     int count;
@@ -74,39 +89,40 @@ static void doset(APTR obj, struct Data *data, struct TagItem *tags)
     {
         case MA_NetworkLedsGroup_Count:
         {
-            int i;
+            int count = (int)tag->ti_Data;
+            if (count <= 0 || count == data->count)
+                break;
+
+            struct LedState *leds = (struct LedState *)calloc(count, sizeof(*leds));
+            if (!leds)
+                break;
+
+            int preserved = data->count < count ? data->count : count;
+            for (int i = 0; i < preserved; ++i)
+                leds[i].job = data->leds[i].job;
 
             DoMethod((Object *)obj, MUIM_Group_InitChange);
-
-            if(data->leds)
-            {
-                for(i = 0; i < data->count; i++)
-                {
-                    if(data->leds[i].led)
-                    {
+            if (data->leds) {
+                for (int i = 0; i < data->count; ++i) {
+                    if (data->leds[i].led) {
                         DoMethod((Object *)obj, OM_REMMEMBER, data->leds[i].led);
                         MUI_DisposeObject(data->leds[i].led);
                     }
                 }
-
                 free(data->leds);
             }
 
-            data->count = (int) tag->ti_Data;
-            data->leds = (struct LedState *) malloc(data->count*sizeof(struct LedState));
-
-            for(i = 0; i < data->count; i++)
-            {
+            data->count = count;
+            data->leds = leds;
+            for (int i = 0; i < data->count; ++i) {
                 Object *led = LampObject,
-                                MUIA_Lamp_Type, MUIV_Lamp_Type_Big,
-                                MUIA_Lamp_ColorType, MUIV_Lamp_ColorType_Color,
-                                MUIA_Lamp_Color, MUIV_Lamp_Color_Off,
-                                End;
+                               MUIA_Lamp_Type, MUIV_Lamp_Type_Big,
+                               MUIA_Lamp_ColorType, MUIV_Lamp_ColorType_Color,
+                               MUIA_Lamp_Color, data->leds[i].job ? networkJobColor((ResourceHandle *)data->leds[i].job) : MUIV_Lamp_Color_Off,
+                               End;
 
                 data->leds[i].led = led;
-                data->leds[i].job = NULL;
-
-                DoMethod((Object *)obj, OM_ADDMEMBER, data->leds[i].led);
+                DoMethod((Object *)obj, OM_ADDMEMBER, led);
             }
 
             DoMethod((Object *)obj, MUIM_Group_ExitChange);
@@ -126,10 +142,7 @@ DEFNEW
 
     if (obj)
     {
-#if OS(AMIGAOS)
-// broken 2.18
-        set(obj, MA_NetworkLedsGroup_Count, 16);
-#endif
+        set(obj, MA_NetworkLedsGroup_Count, getv(app, MA_OWBApp_ActiveConnections));
 
         DoMethod(obj, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MM_OWBApp_OpenWindow, MV_OWB_Window_Network);
 
@@ -195,28 +208,7 @@ DEFSMETHOD(Network_UpdateJob)
 
     if(job)
     {
-        ULONG color;
-        ResourceHandleInternal *d = (ResourceHandleInternal*) job->getInternal();
-
-        switch(d->m_state)
-        {
-            default:
-            case STATUS_CONNECTING:
-                color = MUIV_Lamp_Color_Connecting;
-                break;
-            case STATUS_WAITING_DATA:
-                color = MUIV_Lamp_Color_Processing;
-                break;
-            case STATUS_RECEIVING_DATA:
-                color = MUIV_Lamp_Color_ReceivingData;
-                break;
-            case STATUS_SENDING_DATA:
-                color = MUIV_Lamp_Color_SendingData;
-                break;
-
-        }
-
-        set(data->leds[i].led, MUIA_Lamp_Color, color);
+        set(data->leds[i].led, MUIA_Lamp_Color, networkJobColor(job));
         data->leds[i].job = job;
     }
 
