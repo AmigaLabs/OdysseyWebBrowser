@@ -116,8 +116,18 @@ bool ResourceHandle::start()
 // broken 2.34.6
     d->m_curlRequest->setStartTime(d->m_startTime);
 #endif
-    if (d->m_startCurlRequestAtStart)
+    if (d->m_startCurlRequestAtStart) {
+#if PLATFORM(MUI)
+        d->m_received = 0;
+        d->m_totalSize = 0;
+        d->m_bodyDataSent = 0;
+        d->m_bodySize = 0;
+        d->m_state = STATUS_CONNECTING;
+        if (app)
+            methodstack_push_sync(app, 2, MM_Network_AddJob, this);
+#endif
         d->m_curlRequest->start();
+    }
 
     return true;
 }
@@ -127,6 +137,10 @@ void ResourceHandle::cancel()
     ASSERT(isMainThread());
 
     d->m_cancelled = true;
+#if PLATFORM(MUI)
+    if (app)
+        methodstack_push_sync(app, 2, MM_Network_RemoveJob, this);
+#endif
 
     if (d->m_curlRequest)
         d->m_curlRequest->cancel();

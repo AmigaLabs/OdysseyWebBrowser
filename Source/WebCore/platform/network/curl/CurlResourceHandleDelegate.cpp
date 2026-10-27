@@ -40,9 +40,30 @@
 
 #include <wtf/CompletionHandler.h>
 
+#if PLATFORM(MUI)
+#include "gui.h"
+#undef String
+#undef set
+#undef get
+#endif
+
 #if USE(CURL)
 
 namespace WebCore {
+
+#if PLATFORM(MUI)
+static void updateNetworkActivity(ResourceHandle& handle)
+{
+    if (app)
+        methodstack_push_sync(app, 2, MM_Network_UpdateJob, &handle);
+}
+
+static void removeNetworkActivity(ResourceHandle& handle)
+{
+    if (app)
+        methodstack_push_sync(app, 2, MM_Network_RemoveJob, &handle);
+}
+#endif
 
 CurlResourceHandleDelegate::CurlResourceHandleDelegate(ResourceHandle& handle)
     : m_handle(handle)
@@ -82,6 +103,12 @@ void CurlResourceHandleDelegate::curlDidSendData(CurlRequest&, unsigned long lon
     if (cancelledOrClientless())
         return;
 
+#if PLATFORM(MUI)
+    d()->m_bodyDataSent = bytesSent;
+    d()->m_bodySize = totalBytesToBeSent;
+    d()->m_state = STATUS_SENDING_DATA;
+    updateNetworkActivity(m_handle);
+#endif
     client()->didSendData(&m_handle, bytesSent, totalBytesToBeSent);
 }
 
@@ -106,6 +133,13 @@ void CurlResourceHandleDelegate::curlDidReceiveResponse(CurlRequest& request, Cu
         return;
 
     m_response = ResourceResponse(receivedResponse);
+#if PLATFORM(MUI)
+    d()->m_state = STATUS_WAITING_DATA;
+    d()->m_received = 0;
+    auto totalSize = m_response.expectedContentLength();
+    d()->m_totalSize = totalSize > 0 ? totalSize : 0;
+    updateNetworkActivity(m_handle);
+#endif
     m_response.setCertificateInfo(WTFMove(receivedResponse.certificateInfo));
     m_response.setDeprecatedNetworkLoadMetrics(Box<NetworkLoadMetrics>::create(WTFMove(receivedResponse.networkLoadMetrics)));
 
@@ -152,13 +186,22 @@ void CurlResourceHandleDelegate::curlDidReceiveBuffer(CurlRequest&, Ref<SharedBu
     if (cancelledOrClientless())
         return;
 
-    CurlCacheManager::singleton().didReceiveData(m_handle, buffer->data(), buffer->size());
-    client()->didReceiveBuffer(&m_handle, WTFMove(buffer), buffer->size());
+    auto size = buffer->size();
+#if PLATFORM(MUI)
+    d()->m_received += size;
+    d()->m_state = STATUS_RECEIVING_DATA;
+    updateNetworkActivity(m_handle);
+#endif
+    CurlCacheManager::singleton().didReceiveData(m_handle, buffer->data(), size);
+    client()->didReceiveBuffer(&m_handle, WTFMove(buffer), size);
 }
 
 void CurlResourceHandleDelegate::curlDidComplete(CurlRequest&, NetworkLoadMetrics&& metrics)
 {
     ASSERT(isMainThread());
+#if PLATFORM(MUI)
+    removeNetworkActivity(m_handle);
+#endif
 
     if (cancelledOrClientless())
         return;
@@ -170,6 +213,9 @@ void CurlResourceHandleDelegate::curlDidComplete(CurlRequest&, NetworkLoadMetric
 void CurlResourceHandleDelegate::curlDidFailWithError(CurlRequest&, ResourceError&& resourceError, CertificateInfo&&)
 {
     ASSERT(isMainThread());
+#if PLATFORM(MUI)
+    removeNetworkActivity(m_handle);
+#endif
 
     if (cancelledOrClientless())
         return;
@@ -183,6 +229,8 @@ void CurlResourceHandleDelegate::curlDidCancel(CurlRequest& request)
 {
     ASSERT(isMainThread());
 
+    if (cancelledOrClientless())
+        removeNetworkActivity(m_handle);
     CurlCacheManager::singleton().didCancel(m_handle);
 }
 #endif

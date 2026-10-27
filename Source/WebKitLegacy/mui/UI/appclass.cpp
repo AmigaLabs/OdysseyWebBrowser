@@ -2652,12 +2652,7 @@ DEFSMETHOD(Network_AddJob)
     FORCHILD(app, MUIA_Application_WindowList)
     {
         if(getv(child, MA_OWB_WindowType) == MV_OWB_Window_Browser)
-        {
-#if 0
-// broken 2.24
             DoMethod((Object *)getv(child, MA_OWBWindow_NetworkLedsGroup), MM_Network_AddJob, msg->job);
-#endif
-        }
     }
     NEXTCHILD
 
@@ -2673,12 +2668,7 @@ DEFSMETHOD(Network_RemoveJob)
     FORCHILD(app, MUIA_Application_WindowList)
     {
         if(getv(child, MA_OWB_WindowType) == MV_OWB_Window_Browser)
-        {
-#if 0
-// broken 2.24
             DoMethod((Object *) getv(child, MA_OWBWindow_NetworkLedsGroup), MM_Network_RemoveJob, msg->job);
-#endif
-        }
     }
     NEXTCHILD
 
@@ -2694,12 +2684,7 @@ DEFSMETHOD(Network_UpdateJob)
     FORCHILD(app, MUIA_Application_WindowList)
     {
         if(getv(child, MA_OWB_WindowType) == MV_OWB_Window_Browser)
-        {
-#if 0
-// broken 2.24
             DoMethod((Object *)getv(child, MA_OWBWindow_NetworkLedsGroup), MM_Network_UpdateJob, msg->job);
-#endif
-        }
     }
     NEXTCHILD
 
