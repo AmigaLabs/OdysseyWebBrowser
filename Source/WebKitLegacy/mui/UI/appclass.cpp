@@ -188,6 +188,9 @@ static const CONST_STRPTR classlist[] = {
 
 static CONST TEXT credits[] =
     "\033b%p\033n\n"
+    "\tGeorge Sokianos\n"
+    "\tAndrea Palmate\n"
+    "\tRoman Kargin\n"
     "\tFabien Coeurjoly\n"
     "\tKrzysztof Smiechowicz\n"
     "\tSandLabs\n"
@@ -214,7 +217,7 @@ static CONST TEXT credits[] =
     "\tRoman Brychta\n\n"
 
     "\033b%W\033n\n"
-    "\thttps://github.com/deadwood2/OdysseyWebBrowser";
+    "\https://github.com/AmigaLabs/OdysseyWebBrowser";
 
 struct AppSettings
 {
@@ -1044,7 +1047,7 @@ DEFNEW
     obj = (Object *) DoSuperNew(cl, obj,
             MUIA_Application_Title      , "Odyssey Web Browser",
             MUIA_Application_Version    , "$VER: Odyssey Web Browser " VERSION " (" OWB_BUILD_DATE ")",
-            MUIA_Application_Copyright  , "2025 - AmigaLabs\n2014-2025 Krzysztof Smiechowicz\n2020 Jacek Piszczek\n2009-2014 Fabien Coeurjoly",
+            MUIA_Application_Copyright  , "\n2025 - AmigaLabs\n2014-2025 Krzysztof Smiechowicz\n2020 Jacek Piszczek\n2009-2014 Fabien Coeurjoly",
             MUIA_Application_Author     , "Fabien Coeurjoly",
             MUIA_Application_Description, APPLICATION_DESCRIPTION,
             MUIA_Application_UsedClasses, classlist,
