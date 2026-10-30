@@ -27,7 +27,6 @@
  */
 
 #include <WebCore/GraphicsContext.h>
-#include "WebIconDatabase.h"
 #include <WebCore/BitmapImage.h>
 #include <wtf/text/CString.h>
 #include <wtf/URL.h>
@@ -57,6 +56,22 @@
 
 using namespace WebCore;
 
+// Written by WebFrameLoaderClient::getLoadDecisionForIcons().
+String favIconPathForPageURL(const String& pageURL);
+
+static RefPtr<WebCore::BitmapImage> favIconForPageURL(const char* pageURL)
+{
+    RefPtr<WebCore::SharedBuffer> buffer = WebCore::SharedBuffer::createWithContentsOfFile(favIconPathForPageURL(String::fromUTF8(pageURL)));
+    if (!buffer)
+        return nullptr;
+
+    RefPtr<WebCore::BitmapImage> image = WebCore::BitmapImage::create();
+    image->setData(WTFMove(buffer), true);
+    if (!image->nativeImageForCurrentFrame())
+        return nullptr;
+    return image;
+}
+
 struct Data
 {
     ULONG need_redraw;
@@ -68,7 +83,6 @@ struct Data
 #endif
     cairo_t *cr;
     ULONG scalefactor;
-    ULONG retain;
 };
 
 STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
@@ -83,12 +97,6 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
         switch (tag->ti_Tag)
         {
-            case MA_FavIcon_Retain:
-            {
-                data->retain = tag_data;
-            }
-            break;
-
             case MA_FavIcon_Folder:
             {
                 data->isfolder = tag_data;
@@ -104,22 +112,10 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
             case MA_FavIcon_PageURL:
             {
-#if ENABLE(ICONDATABASE)
-                WebIconDatabase* sharedWebIconDatabase = WebIconDatabase::sharedWebIconDatabase();
-#else
-                APTR sharedWebIconDatabase = NULL;
-#endif
                 ULONG sameURL = data->url && tag_data && strcmp((char *) tag_data, data->url) == 0;
 
                 if(!sameURL)
                 {
-                    if(data->retain && data->url && sharedWebIconDatabase)
-                    {
-#if ENABLE(ICONDATABASE)
-                        sharedWebIconDatabase->releaseIconForURL(data->url);
-#endif
-                    }
-
                     char *tmp = (STRPTR) strdup(tag_data ? (char *)tag_data : (char *) "");
 
                     if(data->url)
@@ -157,6 +153,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
                 if(data->cr)
                 {
                     WebCore::BitmapImage* icon = 0;
+                    RefPtr<WebCore::BitmapImage> cachedIcon;
 
                     static RefPtr<WebCore::Image> defaultIcon = 0;
                     if (!defaultIcon)
@@ -194,16 +191,10 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
                     {
                         icon = (WebCore::BitmapImage *) aboutIcon.get();
                     }
-                    else if(sharedWebIconDatabase)
+                    else
                     {
-#if ENABLE(ICONDATABASE)
-                        if(data->retain && !sameURL)
-                        {
-                            sharedWebIconDatabase->retainIconForURL(data->url);
-                        }
-
-                        icon = (WebCore::BitmapImage*) sharedWebIconDatabase->iconForURL((const char *) data->url, IntSize(FAVICON_WIDTH*FACTOR, FAVICON_HEIGHT*FACTOR), false);
-#endif
+                        cachedIcon = favIconForPageURL(data->url);
+                        icon = cachedIcon.get();
                     }
 
                     if(!icon)
@@ -274,7 +265,6 @@ DEFNEW
         data->surface = NULL;
         data->cr = NULL;
         data->need_redraw = FALSE;
-        data->retain = (ULONG) GetTagData(MA_FavIcon_Retain, TRUE, msg->ops_AttrList);
         data->scalefactor = (ULONG) GetTagData(MA_FavIcon_ScaleFactor, MV_FavIcon_Scale_Normal, msg->ops_AttrList);
 
         doset(data, obj, INITTAGS);
@@ -289,21 +279,9 @@ DEFNEW
 DEFDISP
 {
     GETDATA;
-#if ENABLE(ICONDATABASE)
-    WebIconDatabase* sharedWebIconDatabase = WebIconDatabase::sharedWebIconDatabase();
-#else
-    APTR sharedWebIconDatabase = NULL;
-#endif
 
     DoMethod(app, MUIM_KillNotifyObj, MA_OWBApp_DidReceiveFavIcon, obj);
     DoMethod(app, MUIM_KillNotifyObj, MA_OWBApp_FavIconImportComplete, obj);
-
-    if(data->retain && data->url && sharedWebIconDatabase)
-    {
-#if ENABLE(ICONDATABASE)
-        sharedWebIconDatabase->releaseIconForURL(data->url);
-#endif
-    }
 
     if(data->cr)
     {
@@ -412,12 +390,11 @@ DEFSMETHOD(FavIcon_DidReceiveFavIcon)
 {
     GETDATA;
 
-    if(msg->url)
+    // Icons are cached per host, so refresh every favicon on that host. Exact URL
+    // matching misses bookmarks stored without a trailing slash, www., or before a redirect.
+    if(msg->url && data->url && URL({ }, msg->url).host() == URL({ }, data->url).host())
     {
-        if(data->url && !strcmp(msg->url, data->url))
-        {
-            set(obj, MA_FavIcon_PageURL, data->url);
-        }
+        set(obj, MA_FavIcon_PageURL, data->url);
     }
 
     return 0;

@@ -193,6 +193,7 @@ public:
     bool shouldAlwaysUsePluginDocument(const WTF::String& mimeType) const override;
 
     void prefetchDNS(const String&) override;
+    void getLoadDecisionForIcons(const Vector<std::pair<WebCore::LinkIcon&, uint64_t>>&) final;
     void sendH2Ping(const URL&, CompletionHandler<void(Expected<Seconds, WebCore::ResourceError>&&)>&&) final;
 
 private:

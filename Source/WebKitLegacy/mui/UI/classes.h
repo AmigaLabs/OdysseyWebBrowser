@@ -687,7 +687,6 @@ enum {
     MA_FavIcon_NeedRedraw,
     MA_FavIcon_ScaleFactor,
     MA_FavIcon_Folder,
-    MA_FavIcon_Retain,
     
     MM_FavIcon_DidReceiveFavIcon,
     MM_FavIcon_Update,
