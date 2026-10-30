@@ -127,7 +127,7 @@ void CurlRequest::start()
     // Then StartWithJobManager is called with completeDidReceiveResponse and start transfer with libcurl.
 
     // http : didReceiveHeader => didReceiveData[PAUSE] => invokeDidReceiveResponse => (MainThread)curlDidReceiveResponse => completeDidReceiveResponse[RESUME] => didReceiveData
-    // file : invokeDidReceiveResponseForFile => (MainThread)curlDidReceiveResponse => completeDidReceiveResponse => didReceiveData
+    // file : prepareResponseForFile => startWithJobManager => didReceiveData/didCompleteTransfer[sendResponseForFileIfNeeded] => (MainThread)curlDidReceiveResponse => didReceiveData
 
     ASSERT(isMainThread());
 
@@ -142,9 +142,8 @@ void CurlRequest::start()
     m_startState = StartState::DidStart;
 
     if (m_request.url().isLocalFile())
-        invokeDidReceiveResponseForFile(m_request.url());
-    else
-        startWithJobManager();
+        prepareResponseForFile(m_request.url());
+    startWithJobManager();
 }
 
 void CurlRequest::startWithJobManager()
@@ -464,6 +463,8 @@ size_t CurlRequest::didReceiveData(Ref<SharedBuffer>&& buffer)
     if (isCompletedOrCancelled())
         return 0;
 
+    sendResponseForFileIfNeeded();
+
     if (needToInvokeDidReceiveResponse()) {
         // Pause until completeDidReceiveResponse() is called.
         setCallbackPaused(true);
@@ -529,6 +530,9 @@ void CurlRequest::didCompleteTransfer(CURLcode result)
         didCancelTransfer();
         return;
     }
+
+    if (result == CURLE_OK)
+        sendResponseForFileIfNeeded();
 
     if (isWaitingForDidReceiveResponseCompletion()) {
         Locker locker { m_notifyStateMutex };
@@ -689,28 +693,24 @@ void CurlRequest::setupSendData(bool forPutMethod)
     m_curlHandle->setReadCallbackFunction(willSendDataCallback, this);
 }
 
-void CurlRequest::invokeDidReceiveResponseForFile(const URL& url)
+void CurlRequest::prepareResponseForFile(const URL& url)
 {
-    // Since the code in didReceiveHeader() will not have run for local files
-    // the code to set the URL and fire didReceiveResponse is never run,
-    // which means the ResourceLoader's response does not contain the URL.
-    // Run the code here for local files to resolve the issue.
-
+    // libcurl sends no headers for file://, so build the response here (main thread).
+    // It is sent later by sendResponseForFileIfNeeded().
     ASSERT(isMainThread());
-    ASSERT(url.isLocalFile());
+    m_response.url = url;
+    m_response.statusCode = 200;
+    m_response.headers.append("Content-Type: " + MIMETypeRegistry::mimeTypeForPath(url.path().toString()));
+}
 
-    // Determine the MIME type based on the path.
-    auto mimeType = MIMETypeRegistry::mimeTypeForPath(url.path().toString());
+void CurlRequest::sendResponseForFileIfNeeded()
+{
+    // Action::None: file:// transfers cannot be paused, so no pause/resume handshake.
+    if (!m_request.url().isLocalFile() || m_fileResponseSent)
+        return;
 
-    // DidReceiveResponse must not be called immediately
-    runOnWorkerThreadIfRequired([this, protectedThis = makeRef(*this), url = crossThreadCopy(url), mimeType = crossThreadCopy(WTFMove(mimeType))]() mutable {
-        CurlResponse response;
-        response.url = WTFMove(url);
-        response.statusCode = 200;
-        response.headers.append("Content-Type: " + mimeType);
-
-        invokeDidReceiveResponse(response, Action::StartTransfer);
-    });
+    m_fileResponseSent = true;
+    invokeDidReceiveResponse(m_response, Action::None);
 }
 
 void CurlRequest::invokeDidReceiveResponse(const CurlResponse& response, Action behaviorAfterInvoke)

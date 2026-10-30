@@ -154,7 +154,8 @@ private:
     bool needToInvokeDidReceiveResponse() const;
     bool needToInvokeDidCancelTransfer() const;
     bool isWaitingForDidReceiveResponseCompletion() const;
-    void invokeDidReceiveResponseForFile(const URL&);
+    void prepareResponseForFile(const URL&);
+    void sendResponseForFileIfNeeded();
     void invokeDidReceiveResponse(const CurlResponse&, Action);
     void setRequestPaused(bool);
     void setCallbackPaused(bool);
@@ -200,6 +201,7 @@ private:
     CurlResponse m_response;
     mutable Lock m_notifyStateMutex;
     bool m_didReceiveResponse { false };
+    bool m_fileResponseSent { false };
     bool m_didNotifyResponse { false };
     bool m_didReturnFromNotify { false };
     Action m_actionAfterInvoke { Action::None };
