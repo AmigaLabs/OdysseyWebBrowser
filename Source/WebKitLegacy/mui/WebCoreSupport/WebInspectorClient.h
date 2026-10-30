@@ -107,6 +107,16 @@ public:
     void attachWindow(DockSide) override;
     void detachWindow() override;
 
+    // Remaining InspectorFrontendClient API. Fixed values: this port has no docking or sheets.
+    Inspector::DebuggableType debuggableType() const override { return Inspector::DebuggableType::Page; }
+    WTF::String targetPlatformName() const override { return "AmigaOS"; }
+    WTF::String targetBuildVersion() const override { return { }; }
+    WTF::String targetProductVersion() const override { return { }; }
+    bool targetIsSimulator() const override { return false; }
+    void setForcedAppearance(WebCore::InspectorFrontendClient::Appearance) override { }
+    bool supportsDockSide(WebCore::InspectorFrontendClient::DockSide side) override { return side == WebCore::InspectorFrontendClient::DockSide::Undocked; }
+    void setSheetRect(const WebCore::FloatRect&) override { }
+
     void destroyInspectorView(bool notifyInspectorController);
 
 private:

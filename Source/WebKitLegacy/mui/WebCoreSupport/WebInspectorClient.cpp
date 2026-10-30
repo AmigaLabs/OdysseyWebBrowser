@@ -101,26 +101,8 @@ void WebInspectorClient::updateHighlight()
 
 void WebInspectorClient::sendMessageToFrontend(const String& message)
 {
-//    m_frontendClient>dispatchMessageAsync(message);
-
-    /*
-    if (!m_frontendPage)
-        return false;
-
-    Frame* frame = m_frontendPage->mainFrame();
-    if (!frame)
-        return false;
-
-    ScriptController* scriptController = frame->script();
-    if (!scriptController)
-        return false;
-
-    String dispatchToFrontend("WebInspector.dispatchMessageFromBackend(");
-    dispatchToFrontend.append(message);
-    dispatchToFrontend.append(");");
-    scriptController->executeScript(dispatchToFrontend);
-    return true;
-    */
+    if (m_frontendClient)
+        m_frontendClient->frontendAPIDispatcher().dispatchMessageAsync(message);
 }
 
 WebInspectorFrontendClient::WebInspectorFrontendClient(WebView* inspectedWebView, WebView* frontendWebView, Page* inspectorPage, WebInspectorClient* inspectorClient, std::unique_ptr<Settings> settings)
@@ -151,7 +133,8 @@ void WebInspectorFrontendClient::frontendLoaded()
 
 String WebInspectorFrontendClient::localizedStringsURL() const
 {
-    return String();
+    // Installed with the inspector UI (see openLocalFrontend).
+    return "file:///PROGDIR:webinspector/Localizations/en.lproj/localizedStrings.js";
 }
 
 void WebInspectorFrontendClient::bringToFront()
@@ -243,7 +226,18 @@ void WebInspectorFrontendClient::destroyInspectorView(bool notifyInspectorContro
 
 Inspector::FrontendChannel* WebInspectorClient::openLocalFrontend(WebCore::InspectorController*)
 {
-    return nullptr;
+    // Main.html is the WebKit inspector UI, installed to PROGDIR:webinspector.
+    BalWidget *widget = (BalWidget *) DoMethod(app, MM_OWBApp_AddWindow, (char *) "file:///PROGDIR:webinspector/Main.html", FALSE, NULL, FALSE, NULL, FALSE);
+    if (!widget || !widget->webView)
+        return nullptr;
+
+    m_frontendPage = core(widget->webView);
+    if (!m_frontendPage)
+        return nullptr;
+
+    m_frontendClient = new WebInspectorFrontendClient(m_webView, widget->webView, m_frontendPage, this, std::make_unique<WebCore::InspectorFrontendClientLocal::Settings>());
+    m_frontendPage->inspectorController().setInspectorFrontendClient(m_frontendClient);
+    return this;
 }
 
 void WebInspectorClient::inspectedPageDestroyed()

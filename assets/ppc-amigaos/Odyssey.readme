@@ -256,6 +256,8 @@ History
 * Fixed the manipulation of the clipboard. No more crashes when Odyssey is running
 * Fixed loading of the local html files
 * Enabled again the XSLT support
+* Fixed the "Show Source Code" window to show the code
+* Enabled WebInspector but it is slow
 
 - 27.10.2026: Odyssey Web Browser 3.2.2
 
