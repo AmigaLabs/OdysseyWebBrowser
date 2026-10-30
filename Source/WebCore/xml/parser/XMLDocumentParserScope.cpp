@@ -26,6 +26,7 @@
 #include "config.h"
 #include "XMLDocumentParserScope.h"
 
+#if !OS(AMIGAOS)
 #if ENABLE(XSLT)
 #ifdef xmlGenericError
 #undef xmlGenericError
@@ -43,6 +44,7 @@ extern "C" {
     XMLPUBVAR void* xmlGenericErrorContext;
 }
 #endif
+#endif // not AMIGAOS
 
 namespace WebCore {
 
