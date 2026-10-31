@@ -1244,6 +1244,9 @@ DEFDISP
     WebCore::CurlContext::singleton().stopThread();
     /* Destroy all network storage sessions so CookieJarDB closes cookies.db.
        NetworkStorageSessionMap is never explicitly torn down otherwise. */
+    /* Close the cookie window first: it uses the sessions destroyed below. */
+    if(data->cookiemanagerwin)
+        set(data->cookiemanagerwin, MUIA_Window_Open, FALSE);
     NetworkStorageSessionMap::destroyAllSessions();
     WebDatabaseProvider::singleton().shutdownServers();
     WebKit::WebStorageNamespaceProvider::closeLocalStorage();

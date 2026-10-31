@@ -174,11 +174,10 @@ DEFTMETHOD(CookieManagerGroup_Load)
 
     D(kprintf("Loading cookies\n"));
 
-    NetworkStorageSession& storageSession = NetworkStorageSessionMap::defaultStorageSession();
-
+    // Get the session at each use: it is destroyed at app shutdown, so no reference is kept.
     HashSet<String> hosts;
-    storageSession.getHostnamesWithCookies(hosts);
-    Vector<Cookie> cookies = storageSession.cookieDatabase().getAllCookies();
+    NetworkStorageSessionMap::defaultStorageSession().getHostnamesWithCookies(hosts);
+    Vector<Cookie> cookies = NetworkStorageSessionMap::defaultStorageSession().cookieDatabase().getAllCookies();
 
     for (HashSet<String>::iterator it = hosts.begin(); it != hosts.end(); ++it)
     {
@@ -224,7 +223,7 @@ DEFTMETHOD(CookieManagerGroup_Load)
                 node.domain = strdup(domain);
                 node.protocol = cookie.secure ? strdup("https") : strdup("http");
                 node.path = strdup(cookie.path.utf8().data());
-                node.expiry = cookie.expires.value();
+                node.expiry = cookie.expires.value_or(0);
                 node.secure = cookie.secure;
                 node.http_only = cookie.httpOnly;
                 node.session = cookie.session;
@@ -270,8 +269,7 @@ DEFTMETHOD(CookieManagerGroup_Clear)
     DoMethod(data->lt_cookies, MUIM_Listtree_Remove, MUIV_Listtree_Remove_ListNode_Root, MUIV_Listtree_Remove_TreeNode_All, 0);
 
     /* Remove from database */
-    NetworkStorageSession& storageSession = NetworkStorageSessionMap::defaultStorageSession();
-    storageSession.deleteAllCookies();
+    NetworkStorageSessionMap::defaultStorageSession().deleteAllCookies();
 
     return 0;
 }
@@ -421,8 +419,6 @@ DEFTMETHOD(CookieManagerGroup_Remove)
     if(tn)
     {
         struct cookie_entry *entry = (struct cookie_entry *) tn->tn_User;
-        NetworkStorageSession& storageSession = NetworkStorageSessionMap::defaultStorageSession();
-
         if(entry && entry->flags == COOKIEFLAG_COOKIE)
         {
             String cookieURL = String(entry->protocol);
@@ -433,12 +429,12 @@ DEFTMETHOD(CookieManagerGroup_Remove)
             cookieURL.append(domain);
             cookieURL.append(entry->path);
             URL url({ }, cookieURL);
-            storageSession.deleteCookie(url, entry->name);
+            NetworkStorageSessionMap::defaultStorageSession().deleteCookie(url, entry->name);
             DoMethod(data->lt_cookies, MUIM_Listtree_Remove, NULL, MUIV_Listtree_Remove_TreeNode_Active, 0);
         }
         else if(entry && entry->flags == COOKIEFLAG_DOMAIN)
         {
-            storageSession.cookieDatabase().deleteCookiesForHostname(entry->domain, IncludeHttpOnlyCookies::Yes);
+            NetworkStorageSessionMap::defaultStorageSession().cookieDatabase().deleteCookiesForHostname(entry->domain, IncludeHttpOnlyCookies::Yes);
             DoMethod(data->lt_cookies, MUIM_Listtree_Remove, NULL, MUIV_Listtree_Remove_TreeNode_Active, 0);
         }
     }
