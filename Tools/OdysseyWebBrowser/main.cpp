@@ -102,7 +102,7 @@ unsigned long __stack = 2*1024*1024;
 jmp_buf bailout_env;
 
 #ifdef __amigaos4__
-TEXT version[] __attribute__((section(".text"))) = "$VER: Odyssey Web Browser 3.2.2 (27.10.2026)";
+TEXT version[] __attribute__((section(".text"))) = "$VER: Odyssey Web Browser 3.2.3 (31.10.2026)";
 static const char * __attribute__((used)) stackcookie = "$STACK: 20000000";
 struct Library 			*IntuitionBase	= NULL;
 struct IntuitionIFace	*IIntuition 	= NULL;

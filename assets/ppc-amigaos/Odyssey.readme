@@ -1,4 +1,4 @@
-Odyssey 3.2.2 - AmigaOS4
+Odyssey 3.2.3 - AmigaOS4
 
 ***********************************************************************************
 *                                                                                 *
@@ -250,7 +250,7 @@ What's missing and might be supported in next versions
 History
 -------
 
-- Future: Odyssey Web Browser 3.2.x
+- Future: Odyssey Web Browser 3.2.3
 
 * Fixed the favicon download and display. Now they are stored in PROGDIR:Conf/Cache/FavIcons
 * Fixed the manipulation of the clipboard. No more crashes when Odyssey is running
