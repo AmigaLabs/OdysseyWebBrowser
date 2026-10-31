@@ -153,7 +153,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
     m_thread = Thread::create("curlThread", [this] {
 #if PLATFORM(MUI)
         init_SocketBase();
-        CDBG(("[CURL] worker thread started SocketBase=%p\n", SocketBase));
+        // CDBG(("[CURL] worker thread started SocketBase=%p\n", SocketBase));
         /* Increase priority so that network data is transported immediatelly */
         SetTaskPri(FindTask(NULL), 1);
 #endif
@@ -336,7 +336,7 @@ void CurlRequestScheduler::workerThread()
         int activeCount = 0;
         CURLMcode mc = m_curlMultiHandle->perform(activeCount);
         if (mc != CURLM_OK) {
-            CDBG(("[CURL] perform failed mc=%d\n", (int)mc));
+            // CDBG(("[CURL] perform failed mc=%d\n", (int)mc));
             break;
         }
 
@@ -385,14 +385,14 @@ void CurlRequestScheduler::startTransfer(CurlRequestSchedulerClient* client)
     auto task = [this, client]() {
         CURL* handle = client->setupTransfer();
         if (!handle) {
-            CDBG(("[CURL] setupTransfer returned NULL -> CURLE_FAILED_INIT\n"));
+            // CDBG(("[CURL] setupTransfer returned NULL -> CURLE_FAILED_INIT\n"));
             completeTransfer(client, CURLE_FAILED_INIT);
             return;
         }
 
         auto addResult = m_curlMultiHandle->addHandle(handle);
         if (addResult != CURLM_OK) {
-            CDBG(("[CURL] addHandle failed\n"));
+            // CDBG(("[CURL] addHandle failed\n"));
             completeTransfer(client, CURLE_FAILED_INIT);
             return;
         }
