@@ -36,7 +36,7 @@ if (ENABLE_INTROSPECTION)
     )
 endif ()
 
-add_definitions(-DJSC_COMPILATION)
+list(APPEND JavaScriptCore_PRIVATE_DEFINITIONS JSC_COMPILATION)
 
 list(APPEND JavaScriptCore_LIBRARIES
     ${GLIB_LIBRARIES}
@@ -71,7 +71,7 @@ if (ENABLE_INTROSPECTION)
     add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/JavaScriptCore-${WEBKITGTK_API_VERSION}.gir
         DEPENDS JavaScriptCore
-        COMMAND CC=${CMAKE_C_COMPILER} CFLAGS=-Wno-deprecated-declarations LDFLAGS=
+        COMMAND CC=${CMAKE_C_COMPILER} CFLAGS="-Wno-deprecated-declarations ${CMAKE_C_FLAGS}" LDFLAGS=
             ${LOADER_LIBRARY_PATH_VAR}="${INTROSPECTION_ADDITIONAL_LIBRARY_PATH}"
             ${INTROSPECTION_SCANNER}
             --quiet

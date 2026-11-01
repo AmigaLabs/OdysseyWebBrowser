@@ -25,7 +25,9 @@
 
 #pragma once
 
+#if OS(AMIGAOS)
 #undef Exception
+#endif
 #include "JSDOMConvertAny.h"
 #include "JSDOMConvertBoolean.h"
 #include "JSDOMConvertBufferSource.h"

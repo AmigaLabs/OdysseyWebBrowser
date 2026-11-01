@@ -44,6 +44,7 @@ public:
 
     bool supportsPictureInPicture() const override { return false; }
     bool supportsFullscreen() const override { return true; }
+    DestinationColorSpace colorSpace() final { return DestinationColorSpace::SRGB(); }
 
 	void play() final;
     void pause() final;

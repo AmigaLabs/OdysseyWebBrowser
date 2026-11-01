@@ -89,7 +89,10 @@ public:
     bool canRunBeforeUnloadConfirmPanel() final;
     bool runBeforeUnloadConfirmPanel(const WTF::String& message, WebCore::Frame&) final;
 
-    void closeWindowSoon() final;
+    void closeWindow() final;
+    void requestCookieConsent(CompletionHandler<void(WebCore::CookieConsentDecisionResult)>&& completion) final { completion(WebCore::CookieConsentDecisionResult::NotSupported); }
+    void classifyModalContainerControls(Vector<String>&&, CompletionHandler<void(Vector<WebCore::ModalContainerControlType>&&)>&& completion) final { completion({ }); }
+    void decidePolicyForModalContainer(OptionSet<WebCore::ModalContainerControlType>, CompletionHandler<void(WebCore::ModalContainerDecision)>&& completion) final { completion(WebCore::ModalContainerDecision::Show); }
 
     void runJavaScriptAlert(WebCore::Frame&, const WTF::String&) final;
     bool runJavaScriptConfirm(WebCore::Frame&, const WTF::String&) final;

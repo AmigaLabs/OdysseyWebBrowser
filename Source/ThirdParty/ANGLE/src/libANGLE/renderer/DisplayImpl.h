@@ -90,13 +90,15 @@ class DisplayImpl : public EGLImplFactory, public angle::Subject
                                                  EGLenum target,
                                                  EGLClientBuffer clientBuffer,
                                                  const egl::AttributeMap &attribs) const;
-    virtual egl::Error validatePixmap(egl::Config *config,
+    virtual egl::Error validatePixmap(const egl::Config *config,
                                       EGLNativePixmapType pixmap,
                                       const egl::AttributeMap &attributes) const;
 
-    virtual std::string getVendorString() const = 0;
+    virtual std::string getRendererDescription()                  = 0;
+    virtual std::string getVendorString()                         = 0;
+    virtual std::string getVersionString(bool includeFullVersion) = 0;
 
-    virtual DeviceImpl *createDevice() = 0;
+    virtual DeviceImpl *createDevice();
 
     virtual egl::Error waitClient(const gl::Context *context)                = 0;
     virtual egl::Error waitNative(const gl::Context *context, EGLint engine) = 0;
@@ -118,6 +120,17 @@ class DisplayImpl : public EGLImplFactory, public angle::Subject
     const egl::DisplayState &getState() const { return mState; }
 
     virtual egl::Error handleGPUSwitch();
+    virtual egl::Error forceGPUSwitch(EGLint gpuIDHigh, EGLint gpuIDLow);
+
+    virtual bool isX11() const;
+
+    virtual bool supportsDmaBufFormat(EGLint format) const;
+    virtual egl::Error queryDmaBufFormats(EGLint max_formats, EGLint *formats, EGLint *num_formats);
+    virtual egl::Error queryDmaBufModifiers(EGLint format,
+                                            EGLint max_modifiers,
+                                            EGLuint64KHR *modifiers,
+                                            EGLBoolean *external_only,
+                                            EGLint *num_modifiers);
 
   protected:
     const egl::DisplayState &mState;

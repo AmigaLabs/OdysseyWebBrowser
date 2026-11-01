@@ -5,7 +5,6 @@
 //
 
 #include "compiler/translator/TranslatorMetalDirect/Pipeline.h"
-#include "compiler/translator/TranslatorMetalDirect/Debug.h"
 #include "compiler/translator/tree_util/BuiltIn.h"
 
 using namespace sh;
@@ -123,7 +122,7 @@ bool Pipeline::uses(const TVariable &var) const
             }
 
         case Type::UniformBuffer:
-            switch(qualifier)
+            switch (qualifier)
             {
                 case TQualifier::EvqBuffer:
                     return true;
@@ -131,7 +130,7 @@ bool Pipeline::uses(const TVariable &var) const
                     return false;
             }
         case Type::AngleUniforms:
-            LOGIC_ERROR();  // globalInstanceVar should be non-null and thus never reach here.
+            UNREACHABLE();  // globalInstanceVar should be non-null and thus never reach here.
             return false;
 
         case Type::Texture:
@@ -304,8 +303,8 @@ static bool CompareBy(Compare op, const T &x, const T &y)
     }
 }
 
-template <TBasicType BT, Compare Cmp, int MatchDim, int NewDim>
-static int SaturateVectorOf(const TField &field)
+template <TBasicType BT, Compare Cmp, uint8_t MatchDim, uint8_t NewDim>
+static uint8_t SaturateVectorOf(const TField &field)
 {
     static_assert(NewDim >= MatchDim, "");
 
@@ -313,7 +312,8 @@ static int SaturateVectorOf(const TField &field)
     ASSERT(type.isScalar() || type.isVector());
 
     const bool cond = type.getBasicType() == BT && !type.isArray() &&
-                      CompareBy(Cmp, type.getNominalSize(), MatchDim) && type.getQualifier() != TQualifier::EvqFragDepth;
+                      CompareBy(Cmp, type.getNominalSize(), MatchDim) &&
+                      type.getQualifier() != TQualifier::EvqFragDepth;
 
     if (cond)
     {
@@ -357,20 +357,20 @@ ModifyStructConfig Pipeline::externalStructModifyConfig() const
             config.inlineArray            = Pred::True;
             config.splitMatrixColumns     = Pred::True;
             config.inlineStruct           = Pred::True;
-            config.saturateScalarOrVector = [](const TField &field) {
+            config.saturateScalarOrVector = [](const TField &field) -> uint8_t {
                 if (field.type()->getQualifier() == TQualifier::EvqSampleMask)
                 {
                     return 1;
                 }
-                if (int s = SaturateVectorOf<TBasicType::EbtInt, LT, 4, 4>(field))
+                if (uint8_t s = SaturateVectorOf<TBasicType::EbtInt, LT, 4, 4>(field))
                 {
                     return s;
                 }
-                if (int s = SaturateVectorOf<TBasicType::EbtUInt, LT, 4, 4>(field))
+                if (uint8_t s = SaturateVectorOf<TBasicType::EbtUInt, LT, 4, 4>(field))
                 {
                     return s;
                 }
-                if (int s = SaturateVectorOf<TBasicType::EbtFloat, LT, 4, 4>(field))
+                if (uint8_t s = SaturateVectorOf<TBasicType::EbtFloat, LT, 4, 4>(field))
                 {
                     return s;
                 }

@@ -8,7 +8,6 @@ list(APPEND WebKitLegacy_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBKITLEGACY_DIR}/mui/UI"
     "${WEBKITLEGACY_DIR}/mui/WebCoreSupport"
     "${WEBKITLEGACY_DIR}/mui/Widgets"
-    "${WEBKITLEGACY_DIR}/mui/Plugins"
     "${WEBKITLEGACY_DIR}/mui/UI/AROS/include/"
 )
 

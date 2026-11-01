@@ -41,7 +41,7 @@ private:
     bool hasPlatformContext() const override { return false; }
     PlatformGraphicsContext* platformContext() const override { return nullptr; }
 
-    void updateState(const WebCore::GraphicsContextState&, WebCore::GraphicsContextState::StateChangeFlags) override;
+    void didUpdateState(const WebCore::GraphicsContextState&, WebCore::GraphicsContextState::StateChangeFlags) override;
 
     void setLineCap(WebCore::LineCap) override;
     void setLineDash(const WebCore::DashArray&, float) override;
@@ -65,8 +65,9 @@ private:
     void drawGlyphs(const WebCore::Font&, const WebCore::GlyphBufferGlyph*, const WebCore::GlyphBufferAdvance*, unsigned numGlyphs, const WebCore::FloatPoint&, WebCore::FontSmoothingMode) override;
 
     void drawImageBuffer(WebCore::ImageBuffer&, const WebCore::FloatRect& destination, const WebCore::FloatRect& source, const WebCore::ImagePaintingOptions&) override;
+    void drawFilteredImageBuffer(WebCore::ImageBuffer*, const WebCore::FloatRect&, WebCore::Filter&, WebCore::FilterResults&) override;
     void drawNativeImage(WebCore::NativeImage&, const WebCore::FloatSize&, const WebCore::FloatRect&, const WebCore::FloatRect&, const WebCore::ImagePaintingOptions&) override;
-    void drawPattern(WebCore::NativeImage&, const WebCore::FloatSize&, const WebCore::FloatRect&, const WebCore::FloatRect&, const WebCore::AffineTransform&, const WebCore::FloatPoint&, const WebCore::FloatSize&, const WebCore::ImagePaintingOptions&) override;
+    void drawPattern(WebCore::NativeImage&, const WebCore::FloatRect&, const WebCore::FloatRect&, const WebCore::AffineTransform&, const WebCore::FloatPoint&, const WebCore::FloatSize&, const WebCore::ImagePaintingOptions&) override;
 
     void drawRect(const WebCore::FloatRect&, float) override;
     void drawLine(const WebCore::FloatPoint&, const WebCore::FloatPoint&) override;
@@ -96,7 +97,6 @@ private:
     void clipPath(const WebCore::Path&, WebCore::WindRule) override;
     WebCore::IntRect clipBounds() const override;
     void clipToImageBuffer(WebCore::ImageBuffer&, const WebCore::FloatRect&) override;
-    WebCore::GraphicsContext::ClipToDrawingCommandsResult clipToDrawingCommands(const WebCore::FloatRect& destination, const WebCore::DestinationColorSpace&, Function<void(WebCore::GraphicsContext&)>&&) override;
 #if ENABLE(VIDEO)
     void paintFrameForMedia(WebCore::MediaPlayer&, const WebCore::FloatRect& destination) override;
 #endif

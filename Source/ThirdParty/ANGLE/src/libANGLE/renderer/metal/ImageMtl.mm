@@ -72,6 +72,14 @@ angle::Result TextureImageSiblingMtl::initImpl(DisplayMtl *displayMtl)
         mtl::Format::MetalToAngleFormatID(mNativeTexture->pixelFormat());
     mFormat = displayMtl->getPixelFormat(angleFormatId);
 
+    if (mNativeTexture)
+    {
+        size_t resourceSize = EstimateTextureSizeInBytes(
+            mFormat, mNativeTexture->widthAt0(), mNativeTexture->heightAt0(),
+            mNativeTexture->depthAt0(), mNativeTexture->samples(), mNativeTexture->mipmapLevels());
+        mNativeTexture->setEstimatedByteSize(resourceSize);
+    }
+
     mGLFormat = gl::Format(mFormat.intendedAngleFormat().glInternalFormat);
 
     mRenderable = mFormat.getCaps().depthRenderable || mFormat.getCaps().colorRenderable;
@@ -110,6 +118,17 @@ size_t TextureImageSiblingMtl::getSamples() const
 {
     uint32_t samples = mNativeTexture ? mNativeTexture->samples() : 0;
     return samples > 1 ? samples : 0;
+}
+
+bool TextureImageSiblingMtl::isYUV() const
+{
+    // NOTE(hqle): not supporting YUV image yet.
+    return false;
+}
+
+bool TextureImageSiblingMtl::hasProtectedContent() const
+{
+    return false;
 }
 
 // ImageMtl implementation

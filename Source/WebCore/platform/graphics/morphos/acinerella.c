@@ -28,6 +28,8 @@
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 
+#define FFMPEG_LOGS_ENABLED 0
+
 #include "acinerella.h"
 #if LIBAVCODEC_VERSION_MAJOR < 57
 #define codecpar codec
@@ -93,10 +95,6 @@ struct _ac_video_decoder {
 	AVFrame *pFrame;
 	AVFrame *pFrameRGB;
 	struct SwsContext *pSwsCtx;
-	AVFrame *pScaledFrameRGB;
-	struct SwsContext *pScaledSwsCtx;
-	int scaled_frame_width;
-	int scaled_frame_height;
 };
 
 typedef struct _ac_video_decoder ac_video_decoder;
@@ -429,8 +427,12 @@ error:
 	return -1;
 }
 
+extern void vdprintf(const char *,va_list);
 void __av_log_default_callback(void *ig, int no, const char *re, va_list me)
 {
+#if FFMPEG_LOGS_ENABLED
+vdprintf(re, me);
+#endif
 }
 
 int CALL_CONVT ac_open(lp_ac_instance pacInstance, void *sender,
@@ -443,11 +445,11 @@ int CALL_CONVT ac_open(lp_ac_instance pacInstance, void *sender,
 		return -1;
 	}
 
-#ifdef OS(AMIGAOS)	
+#if FFMPEG_LOGS_ENABLED
 	av_log_set_level(AV_LOG_DEBUG);
 #else
 	av_log_set_level(AV_LOG_QUIET);
-#endif	
+#endif
 	av_log_set_callback(&__av_log_default_callback);
 
 	// Reference at the underlying lp_ac_data instance
@@ -683,7 +685,7 @@ void CALL_CONVT ac_free_package(lp_ac_package pPackage) {
 	if (pPackage && pPackage != ac_flush_packet()) {
 		lp_ac_package_data self = (lp_ac_package_data)pPackage;
 		av_packet_unref(self->pPack);
-		av_packet_free(self->pPack);
+		av_packet_free(&self->pPack);
 		av_free(self);
 	}
 }
@@ -816,8 +818,7 @@ static void *ac_create_audio_decoder(lp_ac_instance pacInstance,
 
 	// Manually create a codec context
 	AVFormatContext *pFormatCtx = self->pFormatCtx;
-	AVCodec *pCodec =
-	    avcodec_find_decoder(pFormatCtx->streams[nb]->codecpar->codec_id);
+	AVCodec *pCodec = avcodec_find_decoder(pFormatCtx->streams[nb]->codecpar->codec_id);
 	AVCodecContext *pCodecCtx;
 	ERR(pCodecCtx = avcodec_alloc_context3(pCodec));
 	AV_ERR(avcodec_parameters_to_context(pCodecCtx, pFormatCtx->streams[nb]->codecpar));
@@ -834,8 +835,7 @@ static void *ac_create_audio_decoder(lp_ac_instance pacInstance,
 	pDecoder->decoder.stream_info = *info;
 	pDecoder->pCodecCtx = pCodecCtx;
 
-	// Find correspondenting codec
-	ERR(pDecoder->pCodec = avcodec_find_decoder(pCodecCtx->codec_id));
+	pDecoder->pCodec = pCodec;
 
 	// Open codec
 	AV_ERR(avcodec_open2(pCodecCtx, pDecoder->pCodec, NULL));
@@ -877,7 +877,7 @@ static void *ac_create_audio_decoder(lp_ac_instance pacInstance,
 		{
 			desiredFmt = AV_SAMPLE_FMT_FLT;
 		}
-	
+
 		ERR(pDecoder->pSwrCtx = swr_alloc_set_opts(NULL, desiredLayout, desiredFmt, pacInstance->audio_rate,
 			layout, fmt, rate, 0, NULL));
 
@@ -961,54 +961,6 @@ void ac_free_decoder_frame(lp_ac_decoder_frame pFrame)
 	if (frame->own_buffer_size > 0)
 		av_free(frame->frame.pBuffer);
 	av_free(frame);
-}
-
-void ac_scale_to_scaled_rgb_decoder_frame(lp_ac_decoder_frame pFrame, lp_ac_decoder pDecoder, int dst_width, int dst_height)
-{
-	struct _ac_decoder_frame_internal *frame = (struct _ac_decoder_frame_internal *)pFrame;
-	lp_ac_video_decoder vDecoder = (lp_ac_video_decoder)pDecoder;
-
-	if (vDecoder->pScaledFrameRGB == NULL || vDecoder->scaled_frame_width != dst_width ||
-		vDecoder->scaled_frame_height != dst_height)
-	{
-		if (vDecoder->pScaledFrameRGB) av_frame_free(&(vDecoder->pScaledFrameRGB));
-
-		vDecoder->pScaledFrameRGB = av_frame_alloc();
-
-		vDecoder->scaled_frame_width = dst_width;
-		vDecoder->scaled_frame_height = dst_height;
-
-		enum AVPixelFormat pix_fmt_out = convert_pix_format(vDecoder->decoder.pacInstance->output_format);
-		size_t buffer_size = av_image_get_buffer_size(pix_fmt_out, dst_width, dst_height, 1);
-		uint8_t *pBuffer = (uint8_t *)av_malloc(buffer_size);
-
-		memset(pBuffer, 0, buffer_size);
-
-		av_image_fill_arrays(vDecoder->pScaledFrameRGB->data, vDecoder->pScaledFrameRGB->linesize,
-									pBuffer, pix_fmt_out,
-									dst_width,
-									dst_height, 1);
-	}
-
-	if (NULL == (vDecoder->pScaledSwsCtx = sws_getCachedContext(
-		vDecoder->pScaledSwsCtx, vDecoder->pCodecCtx->width,
-		vDecoder->pCodecCtx->height, vDecoder->pCodecCtx->pix_fmt,
-		dst_width, dst_height,
-		convert_pix_format(vDecoder->decoder.pacInstance->output_format),
-		/*SWS_BICUBIC*/SWS_FAST_BILINEAR, NULL, NULL, NULL)))
-	{
-		return;
-	}
-
-	if (sws_scale(vDecoder->pScaledSwsCtx,
-		 (const uint8_t *const *)(frame->pFrame->data),
-		 frame->pFrame->linesize,
-		 0,  //?
-		 vDecoder->pCodecCtx->height, vDecoder->pScaledFrameRGB->data,
-		 vDecoder->pScaledFrameRGB->linesize) < 0)
-	{
-		return;
-	}
 }
 
 ac_receive_frame_rc ac_receive_frame(lp_ac_decoder pDecoder, lp_ac_decoder_frame pFrame)
@@ -1145,8 +1097,11 @@ ac_push_package_rc ac_push_package(lp_ac_decoder pDecoder, lp_ac_package pPackag
 
 void ac_decoder_fake_seek(lp_ac_decoder pDecoder)
 {
-	lp_ac_decoder_data dec_dat = (lp_ac_decoder_data)pDecoder;
-	dec_dat->doseek = 0;
+	if (pDecoder)
+	{
+		lp_ac_decoder_data dec_dat = (lp_ac_decoder_data)pDecoder;
+		dec_dat->doseek = 0;
+	}
 }
 
 
@@ -1179,8 +1134,6 @@ static void ac_free_video_decoder(lp_ac_video_decoder pDecoder) {
 		av_frame_free(&(pDecoder->pFrame));
 		av_frame_free(&(pDecoder->pFrameRGB));
 		sws_freeContext(pDecoder->pSwsCtx);
-		if (pDecoder->pScaledFrameRGB) av_frame_free(&(pDecoder->pScaledFrameRGB));
-		if (pDecoder->pScaledSwsCtx) sws_freeContext(pDecoder->pScaledSwsCtx);
 		avcodec_close(pDecoder->pCodecCtx);
 		av_free(pDecoder->pCodecCtx);
 		av_free(pDecoder->decoder.pBuffer);
@@ -1302,18 +1255,6 @@ AVFrame * CALL_CONVT ac_get_frame(lp_ac_decoder decoder) {
 
 	lp_ac_video_decoder pDecoder = (lp_ac_video_decoder) decoder;
 	return pDecoder->pFrameRGB;
-
-error:
-	return NULL;
-}
-
-AVFrame * CALL_CONVT ac_get_frame_scaled(lp_ac_decoder decoder) {
-	ERR(decoder);
-
-	ERR(decoder->type == AC_DECODER_TYPE_VIDEO);
-
-	lp_ac_video_decoder pDecoder = (lp_ac_video_decoder) decoder;
-	return pDecoder->pScaledFrameRGB;
 
 error:
 	return NULL;

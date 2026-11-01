@@ -65,3 +65,23 @@ build: ## Build Odyssey Web Browser
 clean: ## Clean the latest build
 	@echo "${CCPINK}${CCBOLD}\n-> Clean the build folder\n${CCEND}"
 	@rm -rf build
+
+.PHONY: release
+#  You're right, and I gave you the wrong folder earlier. The folder to copy is
+#  build/WebInspectorUI/DerivedSources/InspectorResources/WebInspectorUI/, not the
+#  DerivedSources root.
+
+#  - InspectorResources/WebInspectorUI/ is the folder the build's own resource script
+#    writes to. It has Main.html with Protocol/ (including InspectorBackendCommands.js),
+#    Workers/, Images/, Localizations/, and the scripts it references, all at the same
+#    level.
+#  - The DerivedSources root also has Main.html, but its Main.js, Main.css and
+#    CodeMirror.js differ from the ones in InspectorResources. Its Protocol is under
+#    UserInterface/, which is why it doesn't match what Main.html expects.
+
+#  So copy the whole InspectorResources/WebInspectorUI/ contents to PROGDIR:webinspector/.
+#  I haven't checked which of the two Main.js versions the browser expects, but the
+#  InspectorResources one is the layout the build targets.
+
+#  No code change is needed for this. The openLocalFrontend change is still on the host
+#  only, not synced or built.

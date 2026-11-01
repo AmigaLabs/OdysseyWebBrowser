@@ -26,11 +26,7 @@
 
 #pragma once
 
-#if defined(__WEBCORELEAKS__)
-#include <WebCore/LiveNodeList.h>
-#else
 #include "LiveNodeList.h"
-#endif
 
 namespace WebCore {
 
@@ -46,10 +42,10 @@ public:
 
 private:
     RadioNodeList(ContainerNode&, const AtomString& name);
-    bool isRootedAtDocument() const final { return m_isRootedAtDocument; }
+    bool isRootedAtTreeScope() const final { return m_isRootedAtTreeScope; }
 
     AtomString m_name;
-    bool m_isRootedAtDocument;
+    bool m_isRootedAtTreeScope;
 };
 
 } // namespace WebCore

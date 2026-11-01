@@ -25,6 +25,7 @@
 
 #include "config.h"
 #include "CSSFontFaceSrcValue.h"
+#include "CSSMarkup.h"
 #include "CachedFont.h"
 #include "CachedFontLoadRequest.h"
 #include "CachedResourceLoader.h"
@@ -38,6 +39,8 @@
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
+
+CSSFontFaceSrcValue::~CSSFontFaceSrcValue() = default;
 
 bool CSSFontFaceSrcValue::isSVGFontFaceSrc() const
 {
@@ -63,15 +66,26 @@ bool CSSFontFaceSrcValue::isSupportedFormat() const
     return FontCustomPlatformData::supportsFormat(m_format) || isSVGFontFaceSrc();
 }
 
-String CSSFontFaceSrcValue::customCSSText() const
+SVGFontFaceElement* CSSFontFaceSrcValue::svgFontFaceElement() const
 {
-    const char* prefix = isLocal() ? "local(" : "url(";
-    if (m_format.isEmpty())
-        return makeString(prefix, m_resource, ')');
-    return makeString(prefix, m_resource, ')', " format(", m_format, ')');
+    return m_svgFontFaceElement.get();
 }
 
-bool CSSFontFaceSrcValue::traverseSubresources(const WTF::Function<bool (const CachedResource&)>& handler) const
+void CSSFontFaceSrcValue::setSVGFontFaceElement(SVGFontFaceElement* element)
+{
+    m_svgFontFaceElement = element;
+}
+
+String CSSFontFaceSrcValue::customCSSText() const
+{
+    // FIXME: URLs should not be absolutized, but instead should be serialized exactly as they were specified.
+    const char* prefix = isLocal() ? "local(" : "url(";
+    if (m_format.isEmpty())
+        return makeString(prefix, serializeString(m_resource), ")");
+    return makeString(prefix, serializeString(m_resource), ")", " format(", serializeString(m_format), ")");
+}
+
+bool CSSFontFaceSrcValue::traverseSubresources(const Function<bool(const CachedResource&)>& handler) const
 {
     if (!m_cachedFont)
         return false;
@@ -84,7 +98,7 @@ std::unique_ptr<FontLoadRequest> CSSFontFaceSrcValue::fontLoadRequest(ScriptExec
         return makeUnique<CachedFontLoadRequest>(*m_cachedFont);
 
     auto request = context->fontLoadRequest(m_resource, isSVG, isInitiatingElementInUserAgentShadowTree, m_loadedFromOpaqueSource);
-    if (is<CachedFontLoadRequest>(request.get()))
+    if (is<CachedFontLoadRequest>(request))
         m_cachedFont = &downcast<CachedFontLoadRequest>(request.get())->cachedFont();
 
     return request;

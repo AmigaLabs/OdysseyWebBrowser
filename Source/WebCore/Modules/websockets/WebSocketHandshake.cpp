@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
  * Copyright (C) Research In Motion Limited 2011. All rights reserved.
- * Copyright (C) 2018 Apple Inc. All rights reserved.
+ * Copyright (C) 2018-2021 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -59,9 +59,11 @@
 #include <wtf/text/WTFString.h>
 #include <wtf/unicode/CharacterNames.h>
 
+#if OS(AMIGAOS)
 extern "C" {
     void *memmem(const void *h0, size_t k, const void *n0, size_t l);
 }
+#endif
 
 namespace WebCore {
 
@@ -116,7 +118,7 @@ String WebSocketHandshake::getExpectedWebSocketAccept(const String& secWebSocket
     return base64EncodeToString(hash.data(), SHA1::hashSize);
 }
 
-WebSocketHandshake::WebSocketHandshake(const URL& url, const String& protocol, const String& userAgent, const String& clientOrigin, bool allowCookies)
+WebSocketHandshake::WebSocketHandshake(const URL& url, const String& protocol, const String& userAgent, const String& clientOrigin, bool allowCookies, bool isAppInitiated)
     : m_url(url)
     , m_clientProtocol(protocol)
     , m_secure(m_url.protocolIs("wss"))
@@ -124,6 +126,7 @@ WebSocketHandshake::WebSocketHandshake(const URL& url, const String& protocol, c
     , m_userAgent(userAgent)
     , m_clientOrigin(clientOrigin)
     , m_allowCookies(allowCookies)
+    , m_isAppInitiated(isAppInitiated)
 {
     m_secWebSocketKey = generateSecWebSocketKey();
     m_expectedAccept = getExpectedWebSocketAccept(m_secWebSocketKey);
@@ -216,6 +219,7 @@ ResourceRequest WebSocketHandshake::clientHandshakeRequest(const Function<String
     if (!extensions.isEmpty())
         request.setHTTPHeaderField(HTTPHeaderName::SecWebSocketExtensions, extensions);
     request.setHTTPUserAgent(m_userAgent);
+    request.setIsAppInitiated(m_isAppInitiated);
     return request;
 }
 

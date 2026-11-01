@@ -712,7 +712,7 @@ void DOMHTMLInputElement::select()
 {
     ASSERT(m_element && m_element->hasTagName(inputTag));
     HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(m_element);
-    inputElement->select();
+    inputElement->setSelectionRange(0, inputElement->value().length()); // select() removed in 2.36
 }
     
 void DOMHTMLInputElement::click()
@@ -911,7 +911,7 @@ void DOMHTMLTextAreaElement::select()
 {
     ASSERT(m_element && m_element->hasTagName(textareaTag));
     HTMLTextAreaElement* textareaElement = static_cast<HTMLTextAreaElement*>(m_element);
-    textareaElement->select();
+    textareaElement->setSelectionRange(0, textareaElement->value().length()); // select() removed in 2.36
 }
 
 // DOMHTMLTextAreaElement -- FormPromptAdditions ------------------------------------

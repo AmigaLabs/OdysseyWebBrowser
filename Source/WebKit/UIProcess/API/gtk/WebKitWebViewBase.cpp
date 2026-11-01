@@ -692,9 +692,11 @@ static void webkitWebViewBaseDispose(GObject* gobject)
 #else
     g_clear_pointer(&webView->priv->dialog, gtk_widget_destroy);
     webkitWebViewBaseSetToplevelOnScreenWindow(webView, nullptr);
-#endif
+#if ENABLE(ACCESSIBILITY)
     if (webView->priv->accessible)
         webkitWebViewAccessibleSetWebView(WEBKIT_WEB_VIEW_ACCESSIBLE(webView->priv->accessible.get()), nullptr);
+#endif // ENABLE(ACCESSIBILITY)
+#endif
 #if GTK_CHECK_VERSION(3, 24, 0)
     webkitWebViewBaseCompleteEmojiChooserRequest(webView, emptyString());
 #endif
@@ -705,7 +707,9 @@ static void webkitWebViewBaseDispose(GObject* gobject)
     webView->priv->inputMethodFilter.setContext(nullptr);
     webView->priv->pageProxy->close();
     webView->priv->acceleratedBackingStore = nullptr;
+#if ENABLE(FULLSCREEN_API)
     webView->priv->sleepDisabler = nullptr;
+#endif
     webView->priv->keyBindingTranslator.invalidate();
     G_OBJECT_CLASS(webkit_web_view_base_parent_class)->dispose(gobject);
 }
@@ -911,6 +915,16 @@ static void webkitWebViewBaseMap(GtkWidget* widget)
     if (priv->toplevelOnScreenWindow) {
         if (!(priv->activityState & ActivityState::IsInWindow))
             flagsToUpdate.add(ActivityState::IsInWindow);
+
+#if ENABLE(DEVELOPER_MODE)
+        // Xvfb doesn't support toplevel focus, so gtk_window_is_active() always returns false. We consider
+        // toplevel window to be always active since it's the only one.
+        if (WebCore::PlatformDisplay::sharedDisplay().type() == WebCore::PlatformDisplay::Type::X11) {
+            if (!g_strcmp0(g_getenv("UNDER_XVFB"), "yes"))
+                flagsToUpdate.add(ActivityState::WindowIsActive);
+        }
+#endif
+
         if (gtk_window_is_active(GTK_WINDOW(priv->toplevelOnScreenWindow)) && !(priv->activityState & ActivityState::WindowIsActive))
             flagsToUpdate.add(ActivityState::WindowIsActive);
     }
@@ -1298,7 +1312,7 @@ static gboolean webkitWebViewBaseScrollEvent(GtkWidget* widget, GdkEventScroll* 
 #endif
 
 #if USE(GTK4)
-static gboolean webkitWebViewBaseScroll(WebKitWebViewBase* webViewBase, double deltaX, double deltaY, GtkEventController* eventController)
+static gboolean handleScroll(WebKitWebViewBase* webViewBase, double deltaX, double deltaY, bool isEnd, GtkEventController* eventController)
 {
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
     if (priv->dialog)
@@ -1312,27 +1326,37 @@ static gboolean webkitWebViewBaseScroll(WebKitWebViewBase* webViewBase, double d
 
         int32_t eventTime = static_cast<int32_t>(gtk_event_controller_get_current_event_time(eventController));
 
-        GdkDevice* device = gdk_event_get_device(event);
-        GdkInputSource source = gdk_device_get_source(device);
-
-        bool isEnd = gdk_scroll_event_is_stop(event) ? true : false;
+        GdkDevice* device = gtk_event_controller_get_current_event_device(eventController);
+        // We only have hold events on touchpads, so assume one if we get no event.
+        GdkInputSource source = device ? gdk_device_get_source(device) : GDK_SOURCE_TOUCHPAD;
 
         PlatformGtkScrollData scrollData = { .delta = delta, .eventTime = eventTime, .source = source, .isEnd = isEnd };
         if (controller->handleScrollWheelEvent(&scrollData))
             return GDK_EVENT_STOP;
     }
 
-    if (shouldInvertDirectionForScrollEvent(priv->mouseIsOverScrollbar, gdk_event_get_modifier_state(event) & GDK_SHIFT_MASK))
+    if (!isEnd && shouldInvertDirectionForScrollEvent(priv->mouseIsOverScrollbar, gdk_event_get_modifier_state(event) & GDK_SHIFT_MASK))
         std::swap(deltaX, deltaY);
 
-    priv->pageProxy->handleWheelEvent(NativeWebWheelEvent(event, priv->lastMotionEvent ? IntPoint(priv->lastMotionEvent->position) : IntPoint(), FloatSize(-deltaX, -deltaY)));
+    if (event)
+        priv->pageProxy->handleWheelEvent(NativeWebWheelEvent(event, priv->lastMotionEvent ? IntPoint(priv->lastMotionEvent->position) : IntPoint(), FloatSize(-deltaX, -deltaY)));
 
     return GDK_EVENT_STOP;
 }
 
+static void webkitWebViewBaseScrollBegin(WebKitWebViewBase* webViewBase, GtkEventController* controller)
+{
+    handleScroll(webViewBase, 0, 0, false, controller);
+}
+
+static gboolean webkitWebViewBaseScroll(WebKitWebViewBase* webViewBase, double deltaX, double deltaY, GtkEventController* eventController)
+{
+    return handleScroll(webViewBase, deltaX, deltaY, false, eventController);
+}
+
 static void webkitWebViewBaseScrollEnd(WebKitWebViewBase* webViewBase, GtkEventController* controller)
 {
-    webkitWebViewBaseScroll(webViewBase, 0, 0, controller);
+    handleScroll(webViewBase, 0, 0, true, controller);
 }
 #endif
 
@@ -1628,6 +1652,28 @@ bool webkitWebViewBaseCompleteBackSwipeForTesting(WebKitWebViewBase* webViewBase
     return FALSE;
 }
 
+GVariant* webkitWebViewBaseContentsOfUserInterfaceItem(WebKitWebViewBase* webViewBase, const char* userInterfaceItem)
+{
+    if (g_strcmp0(userInterfaceItem, "validationBubble"))
+        return nullptr;
+
+    WebPageProxy* page = webViewBase->priv->pageProxy.get();
+    auto* validationBubble = page->validationBubble();
+    String message = validationBubble ? validationBubble->message() : emptyString();
+    double fontSize = validationBubble ? validationBubble->fontSize() : 0;
+
+    GVariantBuilder subBuilder;
+    g_variant_builder_init(&subBuilder, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&subBuilder, "{sv}", "message", g_variant_new_string(message.utf8().data()));
+    g_variant_builder_add(&subBuilder, "{sv}", "fontSize", g_variant_new_double(fontSize));
+
+    GVariantBuilder builder;
+    g_variant_builder_init(&builder, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&builder, "{sv}", userInterfaceItem, g_variant_builder_end(&subBuilder));
+
+    return g_variant_builder_end(&builder);
+}
+
 static gboolean webkitWebViewBaseQueryTooltip(GtkWidget* widget, gint /* x */, gint /* y */, gboolean keyboardMode, GtkTooltip* tooltip)
 {
     WebKitWebViewBasePrivate* priv = WEBKIT_WEB_VIEW_BASE(widget)->priv;
@@ -1651,7 +1697,7 @@ static gboolean webkitWebViewBaseQueryTooltip(GtkWidget* widget, gint /* x */, g
     return TRUE;
 }
 
-#if !USE(GTK4)
+#if !USE(GTK4) && ENABLE(ACCESSIBILITY)
 static AtkObject* webkitWebViewBaseGetAccessible(GtkWidget* widget)
 {
     WebKitWebViewBasePrivate* priv = WEBKIT_WEB_VIEW_BASE(widget)->priv;
@@ -1820,6 +1866,25 @@ static gboolean webkitWebViewBaseFocus(GtkWidget* widget, GtkDirectionType direc
     return GTK_WIDGET_CLASS(webkit_web_view_base_parent_class)->focus(widget, direction);
 }
 
+#if USE(GTK4)
+static void webkitWebViewBaseCssChanged(GtkWidget* widget, GtkCssStyleChange* change)
+{
+    GTK_WIDGET_CLASS(webkit_web_view_base_parent_class)->css_changed(widget, change);
+
+    WebKitWebViewBase* webViewBase = WEBKIT_WEB_VIEW_BASE(widget);
+    WebKitWebViewBasePrivate* priv = webViewBase->priv;
+    priv->pageProxy->accentColorDidChange();
+}
+#else
+static void webkitWebViewBaseStyleUpdated(GtkWidget* widget)
+{
+    GTK_WIDGET_CLASS(webkit_web_view_base_parent_class)->style_updated(widget);
+
+    WebKitWebViewBase* webViewBase = WEBKIT_WEB_VIEW_BASE(widget);
+    WebKitWebViewBasePrivate* priv = webViewBase->priv;
+    priv->pageProxy->accentColorDidChange();
+}
+#endif
 
 static void webkitWebViewBaseZoomBegin(WebKitWebViewBase* webViewBase, GdkEventSequence* sequence, GtkGesture* gesture)
 {
@@ -2027,6 +2092,7 @@ static void webkitWebViewBaseConstructed(GObject* object)
 
 #if USE(GTK4)
     auto* controller = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+    g_signal_connect_object(controller, "scroll-begin", G_CALLBACK(webkitWebViewBaseScrollBegin), viewWidget, G_CONNECT_SWAPPED);
     g_signal_connect_object(controller, "scroll", G_CALLBACK(webkitWebViewBaseScroll), viewWidget, G_CONNECT_SWAPPED);
     g_signal_connect_object(controller, "scroll-end", G_CALLBACK(webkitWebViewBaseScrollEnd), viewWidget, G_CONNECT_SWAPPED);
     gtk_widget_add_controller(viewWidget, controller);
@@ -2166,7 +2232,7 @@ static void webkit_web_view_base_class_init(WebKitWebViewBaseClass* webkitWebVie
     widgetClass->touch_event = webkitWebViewBaseTouchEvent;
 #endif
     widgetClass->query_tooltip = webkitWebViewBaseQueryTooltip;
-#if !USE(GTK4)
+#if !USE(GTK4) && ENABLE(ACCESSIBILITY)
     widgetClass->get_accessible = webkitWebViewBaseGetAccessible;
 #endif
 #if USE(GTK4)
@@ -2174,6 +2240,11 @@ static void webkit_web_view_base_class_init(WebKitWebViewBaseClass* webkitWebVie
     widgetClass->unroot = webkitWebViewBaseUnroot;
 #else
     widgetClass->hierarchy_changed = webkitWebViewBaseHierarchyChanged;
+#endif
+#if USE(GTK4)
+    widgetClass->css_changed = webkitWebViewBaseCssChanged;
+#else
+    widgetClass->style_updated = webkitWebViewBaseStyleUpdated;
 #endif
 
     GObjectClass* gobjectClass = G_OBJECT_CLASS(webkitWebViewBaseClass);
@@ -2381,6 +2452,12 @@ void webkitWebViewBaseSetFocus(WebKitWebViewBase* webViewBase, bool focused)
     webkitWebViewBaseScheduleUpdateActivityState(webViewBase, flagsToUpdate);
 }
 
+void webkitWebViewBaseSetEditable(WebKitWebViewBase* webViewBase, bool editable)
+{
+    WebKitWebViewBasePrivate* priv = webViewBase->priv;
+    priv->pageProxy->setEditable(editable);
+}
+
 IntSize webkitWebViewBaseGetViewSize(WebKitWebViewBase* webViewBase)
 {
     WebKitWebViewBasePrivate* priv = webViewBase->priv;
@@ -2433,6 +2510,14 @@ bool webkitWebViewBaseIsInWindowActive(WebKitWebViewBase* webViewBase)
 
 bool webkitWebViewBaseIsFocused(WebKitWebViewBase* webViewBase)
 {
+#if ENABLE(DEVELOPER_MODE)
+    // Xvfb doesn't support toplevel focus, so the view is never focused. We consider it to tbe focused when
+    // its window is marked as active.
+    if (WebCore::PlatformDisplay::sharedDisplay().type() == WebCore::PlatformDisplay::Type::X11) {
+        if (!g_strcmp0(g_getenv("UNDER_XVFB"), "yes") && webViewBase->priv->activityState.contains(ActivityState::WindowIsActive))
+            return true;
+    }
+#endif
     return webViewBase->priv->activityState.contains(ActivityState::IsFocused);
 }
 

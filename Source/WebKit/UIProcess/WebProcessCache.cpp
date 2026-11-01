@@ -29,7 +29,6 @@
 #include "LegacyGlobalSettings.h"
 #include "Logging.h"
 #include "WebProcessPool.h"
-#include "WebProcessProxy.h"
 #include <wtf/RAMSize.h>
 #include <wtf/StdLibExtras.h>
 
@@ -40,7 +39,12 @@ namespace WebKit {
 
 Seconds WebProcessCache::cachedProcessLifetime { 30_min };
 Seconds WebProcessCache::clearingDelayAfterApplicationResignsActive { 5_min };
-static constexpr Seconds cachedProcessSuspensionDelay { 30_s };
+static Seconds cachedProcessSuspensionDelay { 30_s };
+
+void WebProcessCache::setCachedProcessSuspensionDelayForTesting(Seconds delay)
+{
+    cachedProcessSuspensionDelay = delay;
+}
 
 static uint64_t generateAddRequestIdentifier()
 {
@@ -92,7 +96,7 @@ bool WebProcessCache::addProcessIfPossible(Ref<WebProcessProxy>&& process)
         return false;
 
     // CachedProcess can destroy the process pool (which owns the WebProcessCache), by making its reference weak in WebProcessProxy::setIsInProcessCache.
-    auto protectedProcessPool = makeRef(process->processPool());
+    Ref protectedProcessPool = process->processPool();
     uint64_t requestIdentifier = generateAddRequestIdentifier();
     m_pendingAddRequests.add(requestIdentifier, makeUnique<CachedProcess>(process.copyRef()));
 
@@ -133,19 +137,26 @@ bool WebProcessCache::addProcess(std::unique_ptr<CachedProcess>&& cachedProcess)
         m_processesPerRegistrableDomain.remove(it);
     }
 
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(WPE)
+    cachedProcess->startSuspensionTimer();
+#endif
+
     WEBPROCESSCACHE_RELEASE_LOG("addProcess: Added process to WebProcess cache (size=%u, capacity=%u)", cachedProcess->process().processIdentifier(), size() + 1, capacity());
     m_processesPerRegistrableDomain.add(registrableDomain, WTFMove(cachedProcess));
 
     return true;
 }
 
-RefPtr<WebProcessProxy> WebProcessCache::takeProcess(const WebCore::RegistrableDomain& registrableDomain, WebsiteDataStore& dataStore)
+RefPtr<WebProcessProxy> WebProcessCache::takeProcess(const WebCore::RegistrableDomain& registrableDomain, WebsiteDataStore& dataStore, WebProcessProxy::CaptivePortalMode captivePortalMode)
 {
     auto it = m_processesPerRegistrableDomain.find(registrableDomain);
     if (it == m_processesPerRegistrableDomain.end())
         return nullptr;
 
     if (&it->value->process().websiteDataStore() != &dataStore)
+        return nullptr;
+
+    if (it->value->process().captivePortalMode() != captivePortalMode)
         return nullptr;
 
     auto process = it->value->takeProcess();
@@ -260,7 +271,7 @@ void WebProcessCache::removeProcess(WebProcessProxy& process, ShouldShutDownProc
 WebProcessCache::CachedProcess::CachedProcess(Ref<WebProcessProxy>&& process)
     : m_process(WTFMove(process))
     , m_evictionTimer(RunLoop::main(), this, &CachedProcess::evictionTimerFired)
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(WPE)
     , m_suspensionTimer(RunLoop::main(), this, &CachedProcess::suspensionTimerFired)
 #endif
 {
@@ -268,9 +279,6 @@ WebProcessCache::CachedProcess::CachedProcess(Ref<WebProcessProxy>&& process)
     RELEASE_ASSERT_WITH_MESSAGE(!m_process->websiteDataStore().processes().contains(*m_process), "Only processes with pages should be registered with the data store");
     m_process->setIsInProcessCache(true);
     m_evictionTimer.startOneShot(cachedProcessLifetime);
-#if PLATFORM(MAC)
-    m_suspensionTimer.startOneShot(cachedProcessSuspensionDelay);
-#endif
 }
 
 WebProcessCache::CachedProcess::~CachedProcess()
@@ -282,7 +290,7 @@ WebProcessCache::CachedProcess::~CachedProcess()
     ASSERT(!m_process->provisionalPageCount());
     ASSERT(!m_process->suspendedPageCount());
 
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(WPE)
     if (isSuspended())
         m_process->platformResumeProcess();
 #endif
@@ -294,7 +302,7 @@ Ref<WebProcessProxy> WebProcessCache::CachedProcess::takeProcess()
 {
     ASSERT(m_process);
     m_evictionTimer.stop();
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(WPE)
     if (isSuspended())
         m_process->platformResumeProcess();
     else
@@ -310,7 +318,12 @@ void WebProcessCache::CachedProcess::evictionTimerFired()
     m_process->processPool().webProcessCache().removeProcess(*m_process, ShouldShutDownProcess::Yes);
 }
 
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(WPE)
+void WebProcessCache::CachedProcess::startSuspensionTimer()
+{
+    m_suspensionTimer.startOneShot(cachedProcessSuspensionDelay);
+}
+
 void WebProcessCache::CachedProcess::suspensionTimerFired()
 {
     ASSERT(m_process);

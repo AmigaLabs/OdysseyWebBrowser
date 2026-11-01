@@ -79,7 +79,7 @@ class Mutex final {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     constexpr Mutex() = default;
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
     WTF_EXPORT_PRIVATE Mutex(int type);
 #endif
     WTF_EXPORT_PRIVATE ~Mutex();

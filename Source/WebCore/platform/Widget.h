@@ -180,6 +180,8 @@ public:
     virtual void willBeDestroyed() { }
 
 #if PLATFORM(COCOA)
+    virtual id accessibilityHitTest(const IntPoint&) const { return nil; }
+    virtual id accessibilityObject() const { return nil; }
     NSView* getOuterView() const;
 
     void removeFromSuperview();

@@ -26,7 +26,9 @@
 
 #pragma once
 
-#undef Exception
+#if PLATFORM(MUI)
+#undef Exception // MUI headers define Exception as a macro
+#endif
 #include "WebCoreJSBuiltinInternals.h"
 #include <JavaScriptCore/HeapInlines.h>
 #include <JavaScriptCore/JSGlobalObject.h>
@@ -87,6 +89,7 @@ public:
     JSBuiltinInternalFunctions& builtinInternalFunctions() { return m_builtinInternalFunctions; }
 
     static void reportUncaughtExceptionAtEventLoop(JSGlobalObject*, JSC::Exception*);
+    static JSC::JSGlobalObject* deriveShadowRealmGlobalObject(JSC::JSGlobalObject*);
 
     void clearDOMGuardedObjects() const;
 

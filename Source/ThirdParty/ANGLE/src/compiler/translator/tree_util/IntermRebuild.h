@@ -4,8 +4,8 @@
 // found in the LICENSE file.
 //
 
-#ifndef COMPILER_TRANSLATOR_TREEUTIL_INTERMREBUILD_H_
-#define COMPILER_TRANSLATOR_TREEUTIL_INTERMREBUILD_H_
+#ifndef COMPILER_TRANSLATOR_TRANSLATORMETALDIRECT_INTERMREBUILD_H_
+#define COMPILER_TRANSLATOR_TRANSLATORMETALDIRECT_INTERMREBUILD_H_
 
 #include "compiler/translator/tree_util/IntermTraverse.h"
 #include "compiler/translator/tree_util/NodeType.h"
@@ -143,7 +143,7 @@ class TIntermRebuild : angle::NonCopyable
         PreResult(TIntermNode &node, VisitBits visit = VisitBits::BothWhenSame);
         PreResult(TIntermNode *node, VisitBits visit = VisitBits::BothWhenSame);
         PreResult(std::nullptr_t);  // Used to drop a node.
-        PreResult(Fail);       // Used to signal failure.
+        PreResult(Fail);            // Used to signal failure.
 
         void operator=(PreResult &&other);
 
@@ -176,7 +176,7 @@ class TIntermRebuild : angle::NonCopyable
         PostResult(TIntermNode &node);
         PostResult(TIntermNode *node);
         PostResult(std::nullptr_t);  // Used to drop a node
-        PostResult(Fail);       // Used to signal failure.
+        PostResult(Fail);            // Used to signal failure.
 
         void operator=(PostResult &&other);
 
@@ -325,4 +325,4 @@ class TIntermRebuild : angle::NonCopyable
 
 }  // namespace sh
 
-#endif  // COMPILER_TRANSLATOR_TREEUTIL_INTERMREBUILD_H_
+#endif  // COMPILER_TRANSLATOR_TRANSLATORMETALDIRECT_INTERMREBUILD_H_

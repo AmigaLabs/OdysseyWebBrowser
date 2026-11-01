@@ -27,10 +27,8 @@
 #include <seccomp.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <unistd.h>
 #include <wtf/FileSystem.h>
 #include <wtf/UniStdExtras.h>
-#include <wtf/glib/GLibUtilities.h>
 #include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/GUniquePtr.h>
 
@@ -166,6 +164,15 @@ enum class BindFlags {
     Device,
 };
 
+static void bindSymlinksRealPath(Vector<CString>& args, const char* path, const char* bindOption = "--ro-bind")
+{
+    WTF::String realPath = FileSystem::realPath(path);
+    if (path != realPath) {
+        CString rpath = realPath.utf8();
+        args.appendVector(Vector<CString>({ bindOption, rpath.data(), rpath.data() }));
+    }
+}
+
 static void bindIfExists(Vector<CString>& args, const char* path, BindFlags bindFlags = BindFlags::ReadOnly)
 {
     if (!path || path[0] == '\0')
@@ -178,7 +185,16 @@ static void bindIfExists(Vector<CString>& args, const char* path, BindFlags bind
         bindType = "--ro-bind-try";
     else
         bindType = "--bind-try";
-    args.appendVector(Vector<CString>({ bindType, path, path }));
+
+    // Canonicalize the source path, otherwise a symbolic link could
+    // point to a location outside of the namespace.
+    bindSymlinksRealPath(args, path, bindType);
+
+    // As /etc is exposed wholesale, do not layer extraneous bind
+    // directives on top, which could fail in the presence of symbolic
+    // links.
+    if (!g_str_has_prefix(path, "/etc/"))
+        args.appendVector(Vector<CString>({ bindType, path, path }));
 }
 
 static void bindDBusSession(Vector<CString>& args, bool allowPortals)
@@ -289,6 +305,7 @@ static void bindFonts(Vector<CString>& args)
     const char* homeDir = g_get_home_dir();
     const char* dataDir = g_get_user_data_dir();
     const char* cacheDir = g_get_user_cache_dir();
+    const char* const * dataDirs = g_get_system_data_dirs();
 
     // Configs can include custom dirs but then we have to parse them...
     GUniquePtr<char> fontConfig(g_build_filename(configDir, "fontconfig", nullptr));
@@ -305,6 +322,10 @@ static void bindFonts(Vector<CString>& args)
     bindIfExists(args, fontHomeConfigDir.get());
     bindIfExists(args, fontData.get());
     bindIfExists(args, fontHomeData.get());
+    for (auto* dataDir = dataDirs; dataDir && *dataDir; dataDir++) {
+        GUniquePtr<char> fontDataDir(g_build_filename(*dataDir, "fonts", nullptr));
+        bindIfExists(args, fontDataDir.get());
+    }
     bindIfExists(args, "/var/cache/fontconfig"); // Used by Debian.
 }
 
@@ -409,17 +430,6 @@ static void bindV4l(Vector<CString>& args)
         "--dev-bind-try", "/dev/video2", "/dev/video2",
         "--dev-bind-try", "/dev/media0", "/dev/media0",
     }));
-}
-
-static void bindSymlinksRealPath(Vector<CString>& args, const char* path)
-{
-    char realPath[PATH_MAX];
-
-    if (realpath(path, realPath) && strcmp(path, realPath)) {
-        args.appendVector(Vector<CString>({
-            "--ro-bind", realPath, realPath,
-        }));
-    }
 }
 
 // Translate a libseccomp error code into an error message. libseccomp
@@ -770,7 +780,7 @@ GRefPtr<GSubprocess> bubblewrapSpawn(GSubprocessLauncher* launcher, const Proces
         bindIfExists(sandboxArgs, parentDir.utf8().data());
     }
 
-    CString executablePath = getCurrentExecutablePath();
+    CString executablePath = FileSystem::currentExecutablePath();
     if (!executablePath.isNull()) {
         // Our executable is `/foo/bar/bin/Process`, we want `/foo/bar` as a usable prefix
         String parentDir = FileSystem::parentPath(FileSystem::parentPath(FileSystem::stringFromFileSystemRepresentation(executablePath.data())));

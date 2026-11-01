@@ -14,9 +14,6 @@
 #include "VideoTrackPrivateMorphOS.h"
 #include "MediaSampleMorphOS.h"
 
-#if OS(AMIGAOS)
-#define ODYSSEY
-#endif
 #include <proto/dos.h>
 #include <proto/exec.h>
 
@@ -542,7 +539,7 @@ void MediaSourceBufferPrivateMorphOS::appendComplete(bool success)
 	
 	m_appendCompletePending = true;
 	
-	WTF::callOnMainThread([success, this, protect = makeRef(*this)]() {
+	WTF::callOnMainThread([success, this, protect = Ref{*this}]() {
 
 		if (!m_appendCompletePending)
 			return;
@@ -779,7 +776,7 @@ void MediaSourceBufferPrivateMorphOS::removedFromMediaSource()
 {
 	D(dprintf("[MS]%s\n", __func__));
 	terminate();
-	RefPtr<MediaSourceBufferPrivateMorphOS> me = makeRef(*this);
+	RefPtr<MediaSourceBufferPrivateMorphOS> me = Ref{*this};
 	if (m_mediaSource)
 		m_mediaSource->onSourceBufferRemoved(me);
     m_segment = WebCore::SourceBufferPrivateClient::InitializationSegment();
@@ -867,7 +864,7 @@ void MediaSourceBufferPrivateMorphOS::becomeReadyForMoreSamples(int index)
 	{
 		DRMS(dprintf("[MS]%s: issuing appendComplete...\n", __func__));
 		m_appendCompleteDelayed = false;
-		WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+		WTF::callOnMainThread([this, protect = Ref{*this}]() {
 			if (m_mediaSource && !m_terminating)
 				appendCompleted(true, m_mediaSource ? m_mediaSource->isEnded() : true);
 		});
@@ -880,7 +877,7 @@ void MediaSourceBufferPrivateMorphOS::becomeReadyForMoreSamples(int index)
 
 		if (!!m_decoders[index])
 		{
-			WTF::callOnMainThread([this, protect = makeRef(*this), isVideo = m_decoders[index]->isVideo(), index]() {
+			WTF::callOnMainThread([this, protect = Ref{*this}, isVideo = m_decoders[index]->isVideo(), index]() {
 				AtomString id;
 
 				DRMS(dprintf("[MS:%c]becomeReadyForMoreSamples %d\n", isVideo?'V':'A', index));
@@ -966,7 +963,7 @@ void MediaSourceBufferPrivateMorphOS::setActive(bool isActive)
 	D(dprintf("[MS]%s\n", __func__));
     if (m_mediaSource)
     {
-		RefPtr<MediaSourceBufferPrivateMorphOS> me = makeRef(*this);
+		RefPtr<MediaSourceBufferPrivateMorphOS> me = Ref{*this};
         m_mediaSource->onSourceBufferDidChangeActiveState(me, isActive);
 	}
 }
@@ -1073,7 +1070,7 @@ void MediaSourceBufferPrivateMorphOS::initialize(bool success,
 		m_muxer->setDecoderMask(decoderIndexMask, m_audioDecoderMask);
 		for (int i = 0; i < std::min(Acinerella::AcinerellaMuxedBuffer::maxDecoders, acinerella->instance()->stream_count); i++)
 			m_maxBuffer[i] = m_muxer->maxBufferSizeForMediaSourceDecoder(i);
-		m_muxer->setSinkFunction([this, protectedThis = makeRef(*this)](int decoderIndex, int sizeLeft, uint32_t bytesInBuffer) {
+		m_muxer->setSinkFunction([this, protectedThis = Ref{*this}](int decoderIndex, int sizeLeft, uint32_t bytesInBuffer) {
 			if (bytesInBuffer < m_maxBuffer[decoderIndex] / 2)
 				becomeReadyForMoreSamples(decoderIndex);
 			return false; // avoid blocking the pipeline!
@@ -1082,7 +1079,7 @@ void MediaSourceBufferPrivateMorphOS::initialize(bool success,
 		warmUp();
 
 		DM(dprintf("[MS] duration %f size %dx%d\n", float(duration), m_info.m_width, m_info.m_height));
-		WTF::callOnMainThread([segment, duration, this, protect = makeRef(*this)]() {
+		WTF::callOnMainThread([segment, duration, this, protect = Ref{*this}]() {
 			DM(dprintf("[MS] calling sourceBufferPrivateDidReceiveInitializationSegment, duration %f size %dx%d\n", float(duration), m_info.m_width, m_info.m_height));
 			didReceiveInitializationSegment(SourceBufferPrivateClient::InitializationSegment(segment), [this]() {
 				DM(dprintf("[MS] eaten initialization segment!\n"));
@@ -1090,7 +1087,7 @@ void MediaSourceBufferPrivateMorphOS::initialize(bool success,
 		});
 
 		m_metaInitDone = true;
-		RefPtr<MediaSourceBufferPrivateMorphOS> me = makeRef(*this);
+		RefPtr<MediaSourceBufferPrivateMorphOS> me = Ref{*this};
 		if (m_mediaSource)
 			m_mediaSource->onSourceBufferInitialized(me);
 	}
@@ -1292,7 +1289,7 @@ void MediaSourceBufferPrivateMorphOS::onDecoderUpdatedPosition(RefPtr<Acinerella
 
 	if (m_mediaSource)
 	{
-		RefPtr<MediaSourceBufferPrivateMorphOS> me = makeRef(*this);
+		RefPtr<MediaSourceBufferPrivateMorphOS> me = Ref{*this};
 		if ((1ULL << decoder->index()) & m_audioDecoderMask)
 			m_mediaSource->onAudioSourceBufferUpdatedPosition(me, position);
 		else if (0 == m_audioDecoderMask)
@@ -1319,10 +1316,10 @@ MediaTime MediaSourceBufferPrivateMorphOS::currentMediaTime() const
 
 void MediaSourceBufferPrivateMorphOS::onDecoderEnded(RefPtr<Acinerella::AcinerellaDecoder> decoder)
 {
-	WTF::callOnMainThread([this, protect = makeRef(*this), decoder]() {
+	WTF::callOnMainThread([this, protect = Ref{*this}, decoder]() {
 		if (m_mediaSource && !m_terminating)
 		{
-			RefPtr<MediaSourceBufferPrivateMorphOS> me = makeRef(*this);
+			RefPtr<MediaSourceBufferPrivateMorphOS> me = Ref{*this};
 			m_mediaSource->onSourceBufferEnded(me);
 		}
 	});
@@ -1400,10 +1397,10 @@ void MediaSourceBufferPrivateMorphOS::onDecoderWantsToRender(RefPtr<Acinerella::
 	EP_EVENT(readyToPaint);
 	m_paintingDecoder = decoder;
 
-	WTF::callOnMainThread([this, protect = makeRef(*this), decoder]() {
+	WTF::callOnMainThread([this, protect = Ref{*this}, decoder]() {
 		if (m_mediaSource && !m_terminating)
 		{
-			RefPtr<MediaSourceBufferPrivateMorphOS> me = makeRef(*this);
+			RefPtr<MediaSourceBufferPrivateMorphOS> me = Ref{*this};
 			EP_EVENT(readyToPaintMT);
 			m_mediaSource->onSourceBufferReadyToPaint(me);
 		}
@@ -1420,9 +1417,9 @@ void MediaSourceBufferPrivateMorphOS::onDecoderRenderUpdate(RefPtr<Acinerella::A
 {
 	if (decoder == m_paintingDecoder)
 	{
-		WTF::callOnMainThread([this, protect = makeRef(*this), decoder]() {
+		WTF::callOnMainThread([this, protect = Ref{*this}, decoder]() {
 			if (m_mediaSource && !m_terminating) {
-				RefPtr<MediaSourceBufferPrivateMorphOS> me = makeRef(*this);
+				RefPtr<MediaSourceBufferPrivateMorphOS> me = Ref{*this};
 				m_mediaSource->onSourceBufferFrameUpdate(me);
 			}
 		});

@@ -55,7 +55,6 @@ MainThreadSharedTimer::MainThreadSharedTimer()
 #endif
 }
 
-
 void MainThreadSharedTimer::setFireInterval(Seconds interval)
 {
     ASSERT(m_firedFunction);
@@ -72,7 +71,7 @@ void MainThreadSharedTimer::invalidate()
 }
 #endif
 
-void MainThreadSharedTimer::setFiredFunction(WTF::Function<void()>&& firedFunction)
+void MainThreadSharedTimer::setFiredFunction(Function<void()>&& firedFunction)
 {
     RELEASE_ASSERT(!m_firedFunction || !firedFunction);
     m_firedFunction = WTFMove(firedFunction);

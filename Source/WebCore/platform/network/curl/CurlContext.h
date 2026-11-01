@@ -30,6 +30,7 @@
 #define PROTO_SOCKET_H
 #endif
 
+#include "CertificateInfo.h"
 #include "CurlProxySettings.h"
 #include "CurlSSLHandle.h"
 
@@ -114,13 +115,13 @@ public:
     CurlRequestScheduler& scheduler() { return *m_scheduler; }
     CurlStreamScheduler& streamScheduler();
 
-#if PLATFORM(MUI)
-	void stopThread();
+#if OS(MORPHOS) || OS(AMIGAOS)
+    void stopThread();
 #endif
 
     // Proxy
     const CurlProxySettings& proxySettings() const { return m_proxySettings; }
-    void setProxySettings(CurlProxySettings&& settings) { m_proxySettings = WTFMove(settings); }
+    void setProxySettings(const CurlProxySettings& settings) { m_proxySettings = settings; }
     void setProxyUserPass(const String& user, const String& password) { m_proxySettings.setUserPass(user, password); }
     void setDefaultProxyAuthMethod() { m_proxySettings.setDefaultAuthMethod(); }
     void setProxyAuthMethod(long authMethod) { m_proxySettings.setAuthMethod(authMethod); }
@@ -275,17 +276,12 @@ public:
     void enableHttpPutRequest();
     void setInFileSizeLarge(curl_off_t);
     void setHttpCustomRequest(const String&);
-#if PLATFORM(MUI)
     void setResumeOffset(long long);
-    void setSslMaxTLSVersion(long version);
-#endif
 
     void enableConnectionOnly();
 
     void enableAcceptEncoding();
-#if PLATFORM(MUI)
     void disableAcceptEncoding();
-#endif
     void enableAllowedProtocols();
 
     void setHttpAuthUserPass(const String&, const String&, long authType = CURLAUTH_ANY);
@@ -328,12 +324,10 @@ public:
 
     static long long maxCurlOffT();
 
-#if PLATFORM(MUI)
     // socket
     Expected<curl_socket_t, CURLcode> getActiveSocket();
     CURLcode send(const uint8_t*, size_t, size_t&);
     CURLcode receive(uint8_t*, size_t, size_t&);
-#endif
 
 #ifndef NDEBUG
     void enableVerboseIfUsed();
@@ -341,18 +335,29 @@ public:
 #endif
 
 private:
+    struct TLSConnectionInfo {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
+        String protocol;
+        String cipher;
+    };
+
     void enableRequestHeaders();
     static int expectedSizeOfCurlOffT();
 
     static CURLcode willSetupSslCtxCallback(CURL*, void* sslCtx, void* userData);
     CURLcode willSetupSslCtx(void* sslCtx);
 
+    std::optional<SSL*> sslConnection() const;
+
     CURL* m_handle { nullptr };
     char m_errorBuffer[CURL_ERROR_SIZE] { };
 
     URL m_url;
     CurlSList m_requestHeaders;
+
     std::unique_ptr<CurlSSLVerifier> m_sslVerifier;
+    std::unique_ptr<TLSConnectionInfo> m_tlsConnectionInfo;
+    mutable std::unique_ptr<CertificateInfo> m_certificateInfo;
 };
 
 } // namespace WebCore

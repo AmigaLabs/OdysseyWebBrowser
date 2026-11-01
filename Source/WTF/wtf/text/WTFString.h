@@ -97,7 +97,7 @@ public:
     String(StaticStringImpl*);
 
 #if OS(MORPHOS) || OS(AMIGAOS)
-    String(const char * characters, unsigned length, unsigned mib);
+       String(const char * characters, unsigned length, unsigned mib);
 #endif
 
     // Construct a string from a constant string literal.
@@ -141,7 +141,7 @@ public:
 
     WTF_EXPORT_PRIVATE CString ascii() const;
     WTF_EXPORT_PRIVATE CString latin1() const;
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
     CString native() const;
 #endif
 
@@ -253,7 +253,7 @@ public:
     static String createUninitialized(unsigned length, UChar*& data) { return StringImpl::createUninitialized(length, data); }
     static String createUninitialized(unsigned length, LChar*& data) { return StringImpl::createUninitialized(length, data); }
 
-    using SplitFunctor = WTF::Function<void(const StringView&)>;
+    using SplitFunctor = WTF::Function<void(StringView)>;
 
     WTF_EXPORT_PRIVATE void split(UChar separator, const SplitFunctor&) const;
     WTF_EXPORT_PRIVATE Vector<String> split(UChar separator) const;

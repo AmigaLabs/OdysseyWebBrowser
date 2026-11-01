@@ -26,8 +26,8 @@
 #pragma once
 
 #include <optional>
+#include <variant>
 #include <wtf/Forward.h>
-#include <wtf/Variant.h>
 
 #if OS(WINDOWS)
 #include <winsock2.h>
@@ -53,27 +53,6 @@ extern "C" {
 }
 #endif
 
-#if PLATFORM(MUI) && !OS(AMIGAOS)
-extern "C" {
-#define AF_INET  2
-#define AF_INET6 10
-
-#if OS(MORPHOS)
-	struct in6_addr {
-	   unsigned char   s6_addr[16];   /* IPv6 address */
-	};
-
-	struct sockaddr_in6 {
-	   uint32_t        sin6_family;   /* AF_INET6 */
-	   uint32_t        sin6_port;     /* port number */
-	   uint32_t        sin6_flowinfo; /* IPv6 flow information */
-	   struct in6_addr sin6_addr;     /* IPv6 address */
-	   uint32_t        sin6_scope_id; /* Scope ID (new in 2.4) */
-	};
-#endif
-}
-#endif
-
 namespace WebCore {
 
 class IPAddress {
@@ -89,14 +68,14 @@ public:
     {
     }
 
-    bool isIPv4() const { return WTF::holds_alternative<struct in_addr>(m_address); }
-    bool isIPv6() const { return WTF::holds_alternative<struct in6_addr>(m_address); }
+    bool isIPv4() const { return std::holds_alternative<struct in_addr>(m_address); }
+    bool isIPv6() const { return std::holds_alternative<struct in6_addr>(m_address); }
 
-    const struct in_addr& ipv4Address() const { return WTF::get<struct in_addr>(m_address); }
-    const struct in6_addr& ipv6Address() const { return WTF::get<struct in6_addr>(m_address); }
+    const struct in_addr& ipv4Address() const { return std::get<struct in_addr>(m_address); }
+    const struct in6_addr& ipv6Address() const { return std::get<struct in6_addr>(m_address); }
 
 private:
-    Variant<struct in_addr, struct in6_addr> m_address;
+    std::variant<struct in_addr, struct in6_addr> m_address;
 };
 
 enum class DNSError { Unknown, CannotResolve, Cancelled };

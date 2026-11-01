@@ -33,7 +33,6 @@
 
 #if USE(CAIRO)
 
-#include "Logging.h"
 #include "AffineTransform.h"
 #include "CairoOperations.h"
 #include "CairoUtilities.h"

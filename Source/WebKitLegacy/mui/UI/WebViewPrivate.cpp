@@ -1033,11 +1033,11 @@ bool WebViewPrivate::onKeyDown(BalEventKey event)
 
                 if(event.Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
                 {
-                    granularity = ScrollByPage;
+                    granularity = ScrollGranularity::Page;
                 }
                 else
                 {
-                    granularity = ScrollByLine;
+                    granularity = ScrollGranularity::Line;
                 }
                 break;
 
@@ -1046,11 +1046,11 @@ bool WebViewPrivate::onKeyDown(BalEventKey event)
 
                 if(event.Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
                 {
-                    granularity = ScrollByPage;
+                    granularity = ScrollGranularity::Page;
                 }
                 else
                 {
-                    granularity = ScrollByLine;
+                    granularity = ScrollGranularity::Line;
                 }
                 break;
 
@@ -1059,11 +1059,11 @@ bool WebViewPrivate::onKeyDown(BalEventKey event)
 
                 if(event.Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
                 {
-                    granularity = ScrollByPage;
+                    granularity = ScrollGranularity::Page;
                 }
                 else
                 {
-                    granularity = ScrollByLine;
+                    granularity = ScrollGranularity::Line;
                 }
                 break;
 
@@ -1072,16 +1072,16 @@ bool WebViewPrivate::onKeyDown(BalEventKey event)
 
                 if(event.Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
                 {
-                    granularity = ScrollByPage;
+                    granularity = ScrollGranularity::Page;
                 }
                 else
                 {
-                    granularity = ScrollByLine;
+                    granularity = ScrollGranularity::Line;
                 }
                 break;
 
             case RAWKEY_SPACE:
-                granularity = ScrollByPage;
+                granularity = ScrollGranularity::Page;
 
                 if(event.Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
                 {
@@ -1094,23 +1094,23 @@ bool WebViewPrivate::onKeyDown(BalEventKey event)
                 break;
 
             case RAWKEY_PAGEDOWN:
-                granularity = ScrollByPage;
+                granularity = ScrollGranularity::Page;
                 direction = ScrollDown;
                 break;
 
             case RAWKEY_BACKSPACE:
             case RAWKEY_PAGEUP:
-                granularity = ScrollByPage;
+                granularity = ScrollGranularity::Page;
                 direction = ScrollUp;
                 break;
 
             case RAWKEY_HOME:
-                granularity = ScrollByDocument;
+                granularity = ScrollGranularity::Document;
                 direction = ScrollUp;
                 break;
 
             case RAWKEY_END:
-                granularity = ScrollByDocument;
+                granularity = ScrollGranularity::Document;
                 direction = ScrollDown;
                 break;
         }
@@ -1147,16 +1147,16 @@ bool WebViewPrivate::onKeyDown(BalEventKey event)
 
             switch(granularity)
             {
-                case ScrollByPage:
+                case ScrollGranularity::Page:
                     step = max(max<int>(visible * Scrollbar::minFractionToStepWhenPaging(), visible - Scrollbar::maxOverlapBetweenPages()), 1);
                     break;
-                case ScrollByLine:
+                case ScrollGranularity::Line:
                     step = Scrollbar::pixelsPerLineStep();
                     break;
-                case ScrollByDocument:
+                case ScrollGranularity::Document:
                     step = total;
                     break;
-                case ScrollByPixel:
+                case ScrollGranularity::Pixel:
                     step = 1;
                     break;
             }
@@ -1692,7 +1692,6 @@ void WebViewPrivate::closeWindow()
 
 void WebViewPrivate::requestMemoryRelease()
 {
-    MemoryPressureHandler::singleton().setUnderMemoryPressure(true);
+    // setUnderMemoryPressure() was removed in 2.36; releaseMemory() alone
     MemoryPressureHandler::singleton().releaseMemory(Critical::Yes, Synchronous::Yes);
-    MemoryPressureHandler::singleton().setUnderMemoryPressure(false);
 }

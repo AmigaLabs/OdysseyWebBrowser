@@ -96,7 +96,7 @@ IntRect ScrollbarThemeBal::backButtonRect(Scrollbar& scrollbar, ScrollbarPart pa
     // we have < 34 pixels left.  This allows the scrollbar
     // to scale down and function even at tiny sizes.
     int thickness = scrollbarThickness();
-    if (scrollbar.orientation() == HorizontalScrollbar)
+    if (scrollbar.orientation() == ScrollbarOrientation::Horizontal)
         return IntRect(scrollbar.x(), scrollbar.y(),
                        scrollbar.width() < 2 * thickness ? scrollbar.width() / 2 : thickness, thickness);
     return IntRect(scrollbar.x(), scrollbar.y(),
@@ -114,7 +114,7 @@ IntRect ScrollbarThemeBal::forwardButtonRect(Scrollbar& scrollbar, ScrollbarPart
     // we have < 34 pixels left.  This allows the scrollbar
     // to scale down and function even at tiny sizes.
     int thickness = scrollbarThickness();
-    if (scrollbar.orientation() == HorizontalScrollbar) {
+    if (scrollbar.orientation() == ScrollbarOrientation::Horizontal) {
         int w = scrollbar.width() < 2 * thickness ? scrollbar.width() / 2 : thickness;
         return IntRect(scrollbar.x() + scrollbar.width() - w, scrollbar.y(), w, thickness);
     }
@@ -126,7 +126,7 @@ IntRect ScrollbarThemeBal::forwardButtonRect(Scrollbar& scrollbar, ScrollbarPart
 IntRect ScrollbarThemeBal::trackRect(Scrollbar& scrollbar, bool)
 {
     int thickness = scrollbarThickness();
-    if (scrollbar.orientation() == HorizontalScrollbar) {
+    if (scrollbar.orientation() == ScrollbarOrientation::Horizontal) {
         if (scrollbar.width() < 2 * thickness)
             return IntRect();
         return IntRect(scrollbar.x() + thickness, scrollbar.y(), scrollbar.width() - 2 * thickness, thickness);
@@ -144,14 +144,14 @@ void ScrollbarThemeBal::paintButton(GraphicsContext& context, Scrollbar& scrollb
     if (!left->isNull()) {
         IntPoint startPos(rect.location());
         if (start) {
-            if (scrollbar.orientation() == HorizontalScrollbar)
+            if (scrollbar.orientation() == ScrollbarOrientation::Horizontal)
                 context.drawImage(*left.get(), startPos);
             else {
           //RefPtr<WebCore::Image> up = Image::loadPlatformResource("ScrollbarTheme/up");
                 context.drawImage(*up.get(), startPos);
             }
         } else {
-            if (scrollbar.orientation() == HorizontalScrollbar) {
+            if (scrollbar.orientation() == ScrollbarOrientation::Horizontal) {
           //RefPtr<WebCore::Image> right = Image::loadPlatformResource("ScrollbarTheme/right");
                 context.drawImage(*right.get(), startPos);
             } else {
@@ -164,7 +164,7 @@ void ScrollbarThemeBal::paintButton(GraphicsContext& context, Scrollbar& scrollb
         context.fillRect(IntRect(rect.x() + 1, rect.y() + 1, rect.width() - 2, rect.height() - 2), Color::gray);
 
         if (start) {
-            if (scrollbar.orientation() == HorizontalScrollbar) {
+            if (scrollbar.orientation() == ScrollbarOrientation::Horizontal) {
                 context.drawLine(IntPoint(rect.maxX(), rect.y()), IntPoint(rect.x() - 1, (rect.maxY() + rect.y())/2));
                 context.drawLine(IntPoint(rect.maxX(), rect.maxY()), IntPoint(rect.x() - 1, (rect.maxY() + rect.y())/2));
             } else {
@@ -172,7 +172,7 @@ void ScrollbarThemeBal::paintButton(GraphicsContext& context, Scrollbar& scrollb
                 context.drawLine(IntPoint(rect.maxX() - 1, rect.maxY()), IntPoint((rect.x() + rect.maxX())/2, rect.y() + 1));
             }
         } else {
-            if (scrollbar.orientation() == HorizontalScrollbar) {
+            if (scrollbar.orientation() == ScrollbarOrientation::Horizontal) {
                 context.drawLine(IntPoint(rect.x(), rect.y()), IntPoint(rect.maxX() - 1, (rect.maxY() + rect.y())/2));
                 context.drawLine(IntPoint(rect.x(), rect.maxY()), IntPoint(rect.maxX() - 1, (rect.maxY() + rect.y())/2));
             } else {
@@ -187,7 +187,7 @@ void ScrollbarThemeBal::paintButton(GraphicsContext& context, Scrollbar& scrollb
 void ScrollbarThemeBal::paintThumb(GraphicsContext& context, Scrollbar& scrollbar, const IntRect& rect)
 {
     context.save();
-    if (scrollbar.orientation() == HorizontalScrollbar) {
+    if (scrollbar.orientation() == ScrollbarOrientation::Horizontal) {
       //RefPtr<WebCore::Image> thumbH = Image::loadPlatformResource("ScrollbarTheme/thumbH");
         if (!thumbH->isNull()) {
       //RefPtr<WebCore::Image> thumbHL = Image::loadPlatformResource("ScrollbarTheme/thumbHL");
@@ -246,7 +246,7 @@ bool ScrollbarThemeBal::shouldSnapBackToDragOrigin(Scrollbar& scrollbar, const P
     // Find the rect within which we shouldn't snap, by expanding the track rect
     // in both dimensions.
     IntRect rect = trackRect(scrollbar);
-    const bool horz = scrollbar.orientation() == HorizontalScrollbar;
+    const bool horz = scrollbar.orientation() == ScrollbarOrientation::Horizontal;
     const int thickness = scrollbarThickness(scrollbar.controlSize());
     rect.inflateX((horz ? kOffEndMultiplier : kOffSideMultiplier) * thickness);
     rect.inflateY((horz ? kOffSideMultiplier : kOffEndMultiplier) * thickness);
@@ -265,7 +265,7 @@ void ScrollbarThemeBal::paintTrackPiece(GraphicsContext& context, Scrollbar& scr
     
     //RefPtr<WebCore::Image> bg = Image::loadPlatformResource("ScrollbarTheme/bg");
     if (!bg->isNull()) {
-        if (scrollbar.orientation() == HorizontalScrollbar) {
+        if (scrollbar.orientation() == ScrollbarOrientation::Horizontal) {
       //RefPtr<WebCore::Image> bgh = Image::loadPlatformResource("ScrollbarTheme/bgh");
             IntRect destRect(rect.x() - 1, rect.y(), rect.width() + 2, rect.height());
             context.drawTiledImage(*bgh.get(), destRect, FloatPoint(0, 0), FloatSize(bgh->width(), bgh->height()), FloatSize(0,0));
@@ -275,7 +275,7 @@ void ScrollbarThemeBal::paintTrackPiece(GraphicsContext& context, Scrollbar& scr
         }
     } else {
         context.fillRect(rect, Color::white);
-        if (scrollbar.orientation() == HorizontalScrollbar)
+        if (scrollbar.orientation() == ScrollbarOrientation::Horizontal)
             context.drawLine(IntPoint(rect.x(), (rect.maxY() + rect.y()) / 2), IntPoint(rect.maxX(), (rect.maxY() + rect.y()) / 2));
         else
             context.drawLine(IntPoint((rect.maxX() + rect.x()) / 2, rect.y()), IntPoint((rect.maxX() + rect.x()) / 2, rect.maxY()));

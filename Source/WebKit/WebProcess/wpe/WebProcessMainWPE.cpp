@@ -31,7 +31,7 @@
 #include "WebProcess.h"
 #include <glib.h>
 
-#if ENABLE(ACCESSIBILITY)
+#if USE(ATK)
 #include <atk-bridge.h>
 #include <atk/atk.h>
 #endif
@@ -40,10 +40,14 @@
 #include <pal/crypto/gcrypt/Initialization.h>
 #endif
 
+#if USE(GSTREAMER)
+#include <gst/gst.h>
+#endif
+
 namespace WebKit {
 using namespace WebCore;
 
-#if ENABLE(ACCESSIBILITY)
+#if USE(ATK)
 static void initializeAccessibility()
 {
     auto* atkUtilClass = ATK_UTIL_CLASS(g_type_class_ref(ATK_TYPE_UTIL));
@@ -93,11 +97,18 @@ public:
         // FIXME: This should be probably called in other processes as well.
         g_set_prgname("WPEWebProcess");
 
-#if ENABLE(ACCESSIBILITY)
+#if USE(ATK)
         initializeAccessibility();
 #endif
 
         return true;
+    }
+
+    void platformFinalize() override
+    {
+#if USE(GSTREAMER)
+        gst_deinit();
+#endif
     }
 };
 

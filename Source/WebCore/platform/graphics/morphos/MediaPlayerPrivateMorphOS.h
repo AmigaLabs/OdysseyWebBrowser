@@ -113,6 +113,7 @@ public:
 
 	void selectHLSStream(const String& url) override;
 
+    DestinationColorSpace colorSpace() final { return DestinationColorSpace::SRGB(); }
 protected:
 	MediaPlayer* m_player;
 	RefPtr<Acinerella::Acinerella> m_acinerella;

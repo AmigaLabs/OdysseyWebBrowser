@@ -48,14 +48,6 @@ typedef struct _NSRect NSRect;
 
 #if PLATFORM(WIN)
 typedef struct tagRECT RECT;
-
-struct D2D_RECT_U;
-typedef D2D_RECT_U D2D1_RECT_U;
-
-struct D2D_RECT_F;
-typedef D2D_RECT_F D2D1_RECT_F;
-#elif PLATFORM(MUI)
-#include "BALBase.h"
 #endif
 
 #if USE(CAIRO)
@@ -82,6 +74,11 @@ public:
 
     WEBCORE_EXPORT explicit IntRect(const FloatRect&); // don't do this implicitly since it's lossy
     WEBCORE_EXPORT explicit IntRect(const LayoutRect&); // don't do this implicitly since it's lossy
+
+#if PLATFORM(MUI)
+    IntRect(const BalRectangle&);
+    operator BalRectangle() const;
+#endif
         
     IntPoint location() const { return m_location; }
     IntSize size() const { return m_size; }
@@ -96,7 +93,7 @@ public:
     int width() const { return m_size.width(); }
     int height() const { return m_size.height(); }
 
-    template <typename T = WTF::CrashOnOverflow>
+    template <typename T = CrashOnOverflow>
     Checked<unsigned, T> area() const { return m_size.area<T>(); }
 
     void setX(int x) { m_location.setX(x); }
@@ -105,6 +102,7 @@ public:
     void setHeight(int height) { m_size.setHeight(height); }
 
     bool isEmpty() const { return m_size.isEmpty(); }
+    bool isZero() const { return m_size.isZero(); }
 
     // NOTE: The result is rounded to integer values, and thus may be not the exact
     // center point.
@@ -200,13 +198,6 @@ public:
 #if PLATFORM(WIN)
     IntRect(const RECT&);
     operator RECT() const;
-    explicit IntRect(const D2D1_RECT_F&);
-    IntRect(const D2D1_RECT_U&);
-    operator D2D1_RECT_F() const;
-    operator D2D1_RECT_U() const;
-#elif PLATFORM(MUI)
-    IntRect(const BalRectangle&);
-    operator BalRectangle() const;
 #endif
 
 #if USE(CAIRO)

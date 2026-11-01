@@ -500,7 +500,7 @@ DEFSMETHOD(URLPrefsGroup_ApplySettingsForURL)
         if(getv(widget->browser, MA_OWBBrowser_PluginsEnabled) == PLUGINS_DEFAULT)
         {
             enabled = webView->preferences()->arePlugInsEnabled();
-            webView->page()->settings().setPluginsEnabled(enabled);
+            // shortcut: 2.36 engine has no plugins setting, plugin toggle is UI-only
         }
 
         // User agent
@@ -527,7 +527,6 @@ DEFSMETHOD(URLPrefsGroup_ApplySettingsForURL)
                 // Apply URL settings
                 webView->page()->settings().setScriptEnabled(un->settings.javascript != FALSE);
                 webView->page()->settings().setLoadsImagesAutomatically(un->settings.images != FALSE);
-                webView->page()->settings().setPluginsEnabled(un->settings.plugins != FALSE);
                 webView->page()->settings().setLocalStorageEnabled(un->settings.localstorage != FALSE);
                 webView->page()->settings().setOfflineWebApplicationCacheEnabled(un->settings.localstorage != FALSE);
                 webView->setCustomUserAgent(userAgentForIndex(un->settings.useragent));
@@ -552,7 +551,6 @@ DEFSMETHOD(URLPrefsGroup_ApplySettingsForURL)
         // Plugins
         if(getv(widget->browser, MA_OWBBrowser_PluginsEnabled) != PLUGINS_DEFAULT)
         {
-            webView->page()->settings().setPluginsEnabled(getv(widget->browser, MA_OWBBrowser_PluginsEnabled) == PLUGINS_ENABLED);
         }
 
         // UserAgent

@@ -40,6 +40,7 @@
 #include "NetworkStorageSession.h"
 #include "CookieJar.h"
 #include "SameSiteInfo.h"
+#include "SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -172,7 +173,7 @@ void CurlDownload::curlDidReceiveResponse(CurlRequest& request, CurlResponse&& r
 }
 
 
-void CurlDownload::curlDidReceiveBuffer(CurlRequest&, Ref<SharedBuffer>&& buffer)
+void CurlDownload::curlDidReceiveData(CurlRequest&, const SharedBuffer& buffer)
 {
     ASSERT(isMainThread());
 
@@ -180,7 +181,7 @@ void CurlDownload::curlDidReceiveBuffer(CurlRequest&, Ref<SharedBuffer>&& buffer
         return;
 
     if (m_listener)
-        m_listener->didReceiveDataOfLength(buffer->size());
+        m_listener->didReceiveDataOfLength(buffer.size());
 }
 
 void CurlDownload::curlDidComplete(CurlRequest& request, NetworkLoadMetrics&&)

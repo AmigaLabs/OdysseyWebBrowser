@@ -31,7 +31,6 @@
 
 #if OS(WINDOWS)
 #include <windows.h>
-#elif OS(AROS)
 #else
 #if HAVE(RESOURCE_H)
 #include <sys/resource.h>
@@ -51,7 +50,7 @@
 #include <notify.h>
 #endif
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS) || OS(AMIGAOS)
 #include <cstdint>
 #if !OS(AMIGAOS)
 extern "C" { void dprintf(const char *,... ); }
@@ -59,10 +58,6 @@ extern "C" { void dprintf(const char *,... ); }
 #undef CRASH
 extern "C" { void _oomCrash() { std::abort(); }; void oomCrash() __attribute__((weak, alias ("_oomCrash"))); }
 #define CRASH oomCrash
-#endif
-
-#if OS(AMIGAOS)
-#include <malloc.h>
 #endif
 
 namespace WTF {
@@ -126,7 +121,7 @@ void fastSetMaxSingleAllocationSize(size_t size)
 void* fastZeroedMalloc(size_t n) 
 {
     void* result = fastMalloc(n);
-    if(result)
+    if (result)
         memset(result, 0, n);
     return result;
 }
@@ -160,17 +155,12 @@ TryMallocReturnValue tryFastZeroedMalloc(size_t n)
 
 } // namespace WTF
 
-#if defined(USE_SYSTEM_MALLOC) && USE_SYSTEM_MALLOC
+#if USE(SYSTEM_MALLOC)
 
 #include <wtf/OSAllocator.h>
 
-#if OS(WINDOWS)
+#if OS(WINDOWS) || OS(AMIGAOS)
 #include <malloc.h>
-#elif OS(AROS)
-#include "mui/arosbailout.h"
-#include "mui/execallocator.h"
-#elif OS(MORPHOS)
-#include <clib/debug_protos.h>
 #endif
 
 namespace WTF {
@@ -240,32 +230,10 @@ void fastAlignedFree(void *p)
 void* fastAlignedMalloc(size_t alignment, size_t size) 
 {
     ASSERT_IS_WITHIN_LIMIT(size);
-retry:
     void* p = nullptr;
-#if OS(AROS)
-    p = allocator_getmem_aligned(size, alignment);
-#elif OS(AMIGAOS)
-    p = memalign(alignment, size);
-#else
-    posix_memalign(&p, alignment, size ? size : 2);
-#endif
-
+    posix_memalign(&p, alignment, size);
     if (UNLIKELY(!p))
-    {
-#if OS(AROS)
-        if (aros_memory_allocation_error(size ? size : 2, alignment) == 1)
-            goto retry;
-
-        if (aros_is_memory_bailout())
-            aros_bailout_jump();
-#endif
-#if OS(MORPHOS)
-        kprintf("fastAlignedMalloc: Failed to allocate %lu bytes. Happy crash sponsored by WebKit will follow.\n", n ? n : 2);
-        if(morphos_crash(size ? size : 2))
-            goto retry;
-#endif
-    }
-
+        CRASH();
     return p;
 }
 
@@ -273,23 +241,13 @@ void* tryFastAlignedMalloc(size_t alignment, size_t size)
 {
     FAIL_IF_EXCEEDS_LIMIT(size);
     void* p = nullptr;
-#if OS(AROS)
-    p = allocator_getmem_aligned(size, alignment);
-#elif OS(AMIGAOS)
-    p = memalign(alignment, size);
-#else
     posix_memalign(&p, alignment, size);
-#endif
     return p;
 }
 
 void fastAlignedFree(void* p) 
 {
-#if OS(AROS)
-    allocator_freemem(p);
-#else
     free(p);
-#endif
 }
 
 #endif // OS(WINDOWS)
@@ -301,27 +259,13 @@ TryMallocReturnValue tryFastMalloc(size_t n)
     return malloc(n ? n : 2);
 }
 
-void* fastMalloc(size_t n)
+void* fastMalloc(size_t n) 
 {
     ASSERT_IS_WITHIN_LIMIT(n);
     ASSERT(!forbidMallocUseScopeCount || disableMallocRestrictionScopeCount);
-retry:
     void* result = malloc(n ? n : 2);
     if (!result)
-    {
-#if OS(AROS)
-        if (aros_memory_allocation_error(n ? n : 2, 4) == 1)
-            goto retry;
-
-        if (aros_is_memory_bailout())
-            aros_bailout_jump();
-#endif
-#if OS(MORPHOS)
-        kprintf("fastMalloc: Failed to allocate %lu bytes. Happy crash sponsored by WebKit will follow.\n", n ? n : 2);
-        if(morphos_crash(n ? n : 2)) 
-            goto retry;
-#endif
-    }
+        CRASH();
 
     return result;
 }
@@ -337,23 +281,9 @@ void* fastCalloc(size_t n_elements, size_t element_size)
 {
     ASSERT_IS_WITHIN_LIMIT(n_elements * element_size);
     ASSERT(!forbidMallocUseScopeCount || disableMallocRestrictionScopeCount);
-retry:
     void* result = calloc(n_elements ? n_elements : 1, element_size ? element_size : 2);
     if (!result)
-    {
-#if OS(AROS)
-        if (aros_memory_allocation_error((n_elements ? n_elements : 1)*(element_size ? element_size : 2), 4) == 1)
-            goto retry;
-
-        if (aros_is_memory_bailout())
-            aros_bailout_jump();
-#endif
-#if OS(MORPHOS)
-        kprintf("fastCalloc: Failed to allocate %lu x %lu bytes. Happy crash sponsored by WebKit will follow.\n", n_elements ? n_elements : 1, element_size ? element_size : 2);
-        if(morphos_crash((n_elements ? n_elements : 1)*(element_size ? element_size : 2))) 
-            goto retry;
-#endif
-    }
+        CRASH();
 
     return result;
 }
@@ -367,23 +297,9 @@ void* fastRealloc(void* p, size_t n)
 {
     ASSERT_IS_WITHIN_LIMIT(n);
     ASSERT(!forbidMallocUseScopeCount || disableMallocRestrictionScopeCount);
-retry:
     void* result = realloc(p, n ? n : 2);
     if (!result)
-    {
-#if OS(AROS)
-        if (aros_memory_allocation_error(n ? n : 2, 4) == 1)
-            goto retry;
-
-        if (aros_is_memory_bailout())
-            aros_bailout_jump();
-#endif
-#if OS(MORPHOS)
-        kprintf("fastRealloc: Failed to allocate %lu bytes. Happy crash sponsored by WebKit will follow.\n", n ? n : 2);
-        if(morphos_crash(n ? n : 2))
-            goto retry;
-#endif
-    }
+        CRASH();
     return result;
 }
 
@@ -435,7 +351,7 @@ void fastMallocDumpMallocStats() { }
 
 } // namespace WTF
 
-#else // defined(USE_SYSTEM_MALLOC) && USE_SYSTEM_MALLOC
+#else // USE(SYSTEM_MALLOC)
 
 #include <bmalloc/bmalloc.h>
 
@@ -806,4 +722,4 @@ void fastDisableScavenger()
 
 } // namespace WTF
 
-#endif // defined(USE_SYSTEM_MALLOC) && USE_SYSTEM_MALLOC
+#endif // USE(SYSTEM_MALLOC)

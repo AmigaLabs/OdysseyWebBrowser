@@ -174,7 +174,7 @@ void WebProcess::initialize(int sigbit)
 #endif
 
 	RuntimeEnabledFeatures::sharedFeatures().setAccessibilityObjectModelEnabled(false);
-	RuntimeEnabledFeatures::sharedFeatures().setKeygenElementEnabled(true);
+	// setKeygenElementEnabled removed in 2.36 (keygen is no longer runtime-toggled)
 	
     //RuntimeEnabledFeatures::sharedFeatures().setOffscreenCanvasEnabled(true);
     //RuntimeEnabledFeatures::sharedFeatures().setOffscreenCanvasInWorkersEnabled(true);
@@ -640,7 +640,7 @@ void WebProcess::dumpWebCoreStatistics()
     ss << "FastMallocFreeListBytes " << fastMallocStatistics.freeListBytes; ss.nextLine();;
 	
     // Gather font statistics.
-    auto& fontCache = FontCache::singleton();
+    auto& fontCache = FontCache::forCurrentThread();
     ss << "CachedFontDataCount " << fontCache.fontCount(); ss.nextLine();;
     ss << "CachedFontDataInactiveCount " << fontCache.inactiveFontCount(); ss.nextLine();;
 	

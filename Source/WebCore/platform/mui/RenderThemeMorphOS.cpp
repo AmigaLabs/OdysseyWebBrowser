@@ -149,7 +149,7 @@ const String& RenderThemeBal::defaultGUIFont()
 
 static Ref<Gradient> createLinearGradient(SRGBA<uint8_t> top, SRGBA<uint8_t> bottom, const IntPoint& a, const IntPoint& b)
 {
-    Ref<Gradient> gradient = Gradient::create(Gradient::LinearData { a, b });
+    Ref<Gradient> gradient = Gradient::create(Gradient::LinearData { a, b }, ColorInterpolationMethod::SRGB { });
     gradient.get().addColorStop({ 0.0, Color(top) });
     gradient.get().addColorStop({ 1.0, Color(bottom) });
     return gradient;
@@ -287,7 +287,6 @@ void RenderThemeBal::adjustTextFieldStyle(RenderStyle& style, const Element*) co
 
 bool RenderThemeBal::paintTextFieldOrTextAreaOrSearchField(const RenderObject& object, const PaintInfo& info, const IntRect& rect)
 {
-    ASSERT(info.context);
     GraphicsContext& context = info.context();
 
     context.save();
@@ -345,7 +344,6 @@ bool RenderThemeBal::paintSearchField(const RenderObject& object, const PaintInf
 
 bool RenderThemeBal::paintSearchFieldCancelButton(const RenderBox& object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    ASSERT(object->parent());
     if (!object.parent() || !object.parent()->isBox())
         return false;
 
@@ -441,7 +439,6 @@ void RenderThemeBal::setRadioSize(RenderStyle& style) const
 // If this function returns false, WebCore assumes the button is fully decorated
 bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& info, const IntRect& rect)
 {
-    ASSERT(info.context);
     info.context().save();
 
     info.context().setStrokeStyle(SolidStroke);
@@ -548,7 +545,6 @@ void RenderThemeBal::adjustRadioStyle(RenderStyle& style, const Element*) const
 
 static void paintMenuListBackground(GraphicsContext& context, const Path& menuListPath, const Color& backgroundColor)
 {
-    ASSERT(context);
     context.save();
     context.setFillColor(backgroundColor);
     context.fillPath(menuListPath);
@@ -1135,7 +1131,7 @@ static Image* platformResource(const char* name)
         gMediaControlImageMap = new MediaControlImageMap();
     if (Image* image = gMediaControlImageMap->get(name))
         return image;
-    if (Image* image = Image::loadPlatformResource(name).ptr()) {
+    if (Image* image = &Image::loadPlatformResource(name).leakRef()) {
         gMediaControlImageMap->set(name, image);
         return image;
     }
@@ -1260,7 +1256,7 @@ bool RenderThemeBal::paintMediaVolumeSliderThumb(const RenderObject& object, con
 #endif
 }
 
-Color RenderThemeBal::platformFocusRingColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformFocusRingColor(OptionSet<StyleColorOptions>) const
 {
     return focusRingPen;
 }
@@ -1268,59 +1264,59 @@ Color RenderThemeBal::platformFocusRingColor(OptionSet<StyleColor::Options>) con
 #if ENABLE(TOUCH_EVENTS)
 Color RenderThemeBal::platformTapHighlightColor() const
 {
-    return Color(0, 168, 223, 50);
+    return Color(SRGBA<uint8_t> { 0, 168, 223, 50 });
 }
 #endif
 
-Color RenderThemeBal::platformActiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF618ECE)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFFCFCFCF)));
     return c;
 }
 
-Color RenderThemeBal::platformActiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF000000)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF3F3F3F)));
     return c;
 }
 
-Color RenderThemeBal::platformActiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveListBoxSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF618ECE)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveListBoxSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFFCFCFCF)));
     return c;
 }
 
-Color RenderThemeBal::platformActiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveListBoxSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF000000)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveListBoxSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF3F3F3F)));
     return c;
 }
 
-Color RenderThemeBal::platformTextSearchHighlightColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformTextSearchHighlightColor(OptionSet<StyleColorOptions>) const
 {
     return Color::yellow;
 }
@@ -1342,19 +1338,19 @@ bool RenderThemeBal::supportsFocusRing(const RenderStyle& style) const
 }
 
 #if ENABLE(PROGRESS_ELEMENT)
-void RenderThemeBal::adjustProgressBarStyle(StyleResolver*, RenderStyle* style, Element*) const
+void RenderThemeBal::adjustProgressBarStyle(RenderStyle& style, const Element*) const
 {
-    style->setBoxShadow(nullptr);
+    style.setBoxShadow(nullptr);
 }
 
-double RenderThemeBal::animationRepeatIntervalForProgressBar(RenderProgress* renderProgress) const
+Seconds RenderThemeBal::animationRepeatIntervalForProgressBar(const RenderProgress& renderProgress) const
 {
-    return renderProgress->isDeterminate() ? 0.0 : 0.1;
+    return renderProgress.isDeterminate() ? Seconds(0.0) : Seconds(0.1);
 }
 
-double RenderThemeBal::animationDurationForProgressBar(RenderProgress* renderProgress) const
+Seconds RenderThemeBal::animationDurationForProgressBar(const RenderProgress& renderProgress) const
 {
-    return renderProgress->isDeterminate() ? 0.0 : 2.0;
+    return renderProgress.isDeterminate() ? Seconds(0.0) : Seconds(2.0);
 }
 
 bool RenderThemeBal::paintProgressBar(const RenderObject& object, const PaintInfo& info, const IntRect& rect)

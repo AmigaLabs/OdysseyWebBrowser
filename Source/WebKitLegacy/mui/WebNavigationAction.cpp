@@ -72,7 +72,7 @@ const char* WebNavigationAction::url()
 
 WebNavigationType WebNavigationAction::type() 
 { 
-    return static_cast<WebNavigationType>(m_action->type()); 
+    return static_cast<WebNavigationType>(static_cast<uint8_t>(m_action->type())); 
 }
 
 static const MouseEvent* findMouseEvent(const Event* event)

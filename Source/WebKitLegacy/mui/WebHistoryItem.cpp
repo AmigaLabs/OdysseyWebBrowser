@@ -120,7 +120,7 @@ bool WebHistoryItem::isTargetItem()
 std::vector<WebHistoryItem*> WebHistoryItem::children()
 {
     std::vector<WebHistoryItem*> child;
-    const HistoryItemVector& coreChildren = d->m_historyItem->children();
+    const Vector<Ref<HistoryItem>>& coreChildren = d->m_historyItem->children();
     if (coreChildren.isEmpty())
         return child;
     size_t childCount = coreChildren.size();

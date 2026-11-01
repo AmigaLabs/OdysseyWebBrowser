@@ -44,8 +44,12 @@ OBJC_CLASS NSString;
 OBJC_CLASS NSArray;
 #endif
 
-#if PLATFORM(GTK) || OS(MORPHOS) || OS(AMIGAOS)
+#if PLATFORM(GTK) || OS(MORPHOS)
 #include "SelectionData.h"
+#endif
+
+#if PLATFORM(MUI)
+#include "DataObjectMorphOS.h"
 #endif
 
 #if PLATFORM(WIN)
@@ -56,21 +60,18 @@ OBJC_CLASS NSArray;
 typedef struct HWND__* HWND;
 #endif
 
-#if PLATFORM(MUI)
-#include "DragData.h"
-#endif
-
 // FIXME: This class uses the DOM and makes calls to Editor.
 // It should be divested of its knowledge of the frame and editor.
 
 namespace WebCore {
 
+class SharedBuffer;
 class DocumentFragment;
 class DragData;
 class Element;
 class Frame;
 class PasteboardStrategy;
-class SharedBuffer;
+class FragmentedSharedBuffer;
 
 struct SimpleRange;
 
@@ -105,7 +106,7 @@ struct PasteboardWebContent {
     String text;
     String markup;
 #endif
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
     String text;
     String markup;
 #endif
@@ -143,6 +144,17 @@ struct PasteboardImage {
     FloatSize imageSize;
 };
 
+struct PasteboardBuffer {
+    WEBCORE_EXPORT PasteboardBuffer();
+    WEBCORE_EXPORT ~PasteboardBuffer();
+
+#if PLATFORM(COCOA)
+    String contentOrigin;
+#endif
+    String type;
+    RefPtr<SharedBuffer> data;
+};
+
 // For reading from the pasteboard.
 
 class PasteboardWebContentReader {
@@ -155,7 +167,7 @@ public:
     virtual bool readFilePath(const String&, PresentationSize preferredPresentationSize = { }, const String& contentType = { }) = 0;
     virtual bool readFilePaths(const Vector<String>&) = 0;
     virtual bool readHTML(const String&) = 0;
-    virtual bool readImage(Ref<SharedBuffer>&&, const String& type, PresentationSize preferredPresentationSize = { }) = 0;
+    virtual bool readImage(Ref<FragmentedSharedBuffer>&&, const String& type, PresentationSize preferredPresentationSize = { }) = 0;
     virtual bool readURL(const URL&, const String& title) = 0;
     virtual bool readPlainText(const String&) = 0;
 #endif
@@ -188,7 +200,7 @@ public:
     Pasteboard(std::unique_ptr<PasteboardContext>&&);
     virtual ~Pasteboard();
 
-#if PLATFORM(GTK) || OS(MORPHOS) || OS(AMIGAOS)
+#if PLATFORM(GTK) || OS(MORPHOS)
     explicit Pasteboard(std::unique_ptr<PasteboardContext>&&, const String& name);
     explicit Pasteboard(std::unique_ptr<PasteboardContext>&&, SelectionData&);
 #if ENABLE(DRAG_SUPPORT)
@@ -236,6 +248,7 @@ public:
     virtual WEBCORE_EXPORT void write(const PasteboardURL&);
     virtual WEBCORE_EXPORT void writeTrustworthyWebURLsPboardType(const PasteboardURL&);
     virtual WEBCORE_EXPORT void write(const PasteboardImage&);
+    virtual WEBCORE_EXPORT void write(const PasteboardBuffer&);
     virtual WEBCORE_EXPORT void write(const PasteboardWebContent&);
 
     virtual WEBCORE_EXPORT void writeCustomData(const Vector<PasteboardCustomData>&);
@@ -255,7 +268,7 @@ public:
     virtual void setDragImage(DragImage, const IntPoint& hotSpot);
 #endif
 
-#if PLATFORM(WIN) || PLATFORM(MUI)
+#if PLATFORM(WIN)
     RefPtr<DocumentFragment> documentFragment(Frame&, const SimpleRange&, bool allowPlainText, bool& chosePlainText); // FIXME: Layering violation.
     void writeImage(Element&, const URL&, const String& title); // FIXME: Layering violation.
     void writeSelection(const SimpleRange&, bool canSmartCopyOrDelete, Frame&, ShouldSerializeSelectedTextForDataTransfer = DefaultSelectedTextType); // FIXME: Layering violation.
@@ -266,7 +279,7 @@ public:
     static std::unique_ptr<Pasteboard> createForGlobalSelection(std::unique_ptr<PasteboardContext>&&);
 #endif
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
     const SelectionData& selectionData() const { return *m_selectionData; }
 #endif
 
@@ -275,6 +288,9 @@ public:
     static std::unique_ptr<Pasteboard> create(int);
     RefPtr<DataObjectMorphOS> dataObject() const;
     static std::unique_ptr<Pasteboard> createForGlobalSelection();
+    RefPtr<DocumentFragment> documentFragment(Frame&, const SimpleRange&, bool allowPlainText, bool& chosePlainText);
+    void writeImage(Element&, const URL&, const String& title);
+    void writeSelection(const SimpleRange&, bool canSmartCopyOrDelete, Frame&, ShouldSerializeSelectedTextForDataTransfer = DefaultSelectedTextType);
 #endif
 
 #if PLATFORM(IOS_FAMILY)
@@ -320,7 +336,7 @@ public:
     std::optional<PasteboardItemInfo> pasteboardItemInfo(size_t index) const;
 
     String readString(size_t index, const String& type);
-    RefPtr<WebCore::SharedBuffer> readBuffer(size_t index, const String& type);
+    RefPtr<WebCore::SharedBuffer> readBuffer(std::optional<size_t> index, const String& type);
     URL readURL(size_t index, String& title);
 
     const PasteboardContext* context() const { return m_context.get(); }
@@ -362,16 +378,11 @@ private:
     String m_name;
 #endif
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
     void writeToClipboard();
     void readFromClipboard();
     std::optional<SelectionData> m_selectionData;
     String m_name;
-#endif
-
-#if PLATFORM(MUI)
-    RefPtr<DataObjectMorphOS> m_dataObject;
-    int m_morphosClipboard;
 #endif
 
 #if PLATFORM(COCOA)
@@ -382,6 +393,11 @@ private:
 
 #if PLATFORM(MAC)
     Vector<String> m_promisedFilePaths;
+#endif
+
+#if PLATFORM(MUI)
+    RefPtr<DataObjectMorphOS> m_dataObject;
+    int m_morphosClipboard;
 #endif
 
 #if PLATFORM(WIN)
@@ -403,7 +419,7 @@ extern const char* const WebURLNamePboardType;
 extern const char* const WebURLsWithTitlesPboardType;
 #endif
 
-#if !(PLATFORM(GTK) || PLATFORM(MUI))
+#if !PLATFORM(GTK)
 
 inline Pasteboard::~Pasteboard()
 {

@@ -499,7 +499,7 @@ int AcinerellaNetworkBufferHLS::read(uint8_t *outBuffer, int size, int64_t readP
 			DIO(dprintf("%s(%p): chunk swapped to %p needswait %d\n", __PRETTY_FUNCTION__, this, m_chunkRequestInRead.get(), needsToWait));
 		}
 
-		WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+		WTF::callOnMainThread([this, protect = Ref{*this}]() {
 			chunkSwallowed();
 		});
 

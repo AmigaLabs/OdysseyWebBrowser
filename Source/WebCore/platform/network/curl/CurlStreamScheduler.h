@@ -32,16 +32,19 @@
 namespace WebCore {
 
 class CurlStreamScheduler {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(CurlStreamScheduler);
 public:
-    CurlStreamScheduler() { };
-    virtual ~CurlStreamScheduler() { };
+    // Disabled on Odyssey: no-op stubs keep the WebSocket callers compiling and never start the worker thread.
+    CurlStreamScheduler() = default;
+    virtual ~CurlStreamScheduler() = default;
 
-    virtual CurlStreamID createStream(const URL&, CurlStream::Client&) = 0;
-    virtual void destroyStream(CurlStreamID) = 0;
-    virtual void send(CurlStreamID, UniqueArray<uint8_t>&&, size_t) = 0;
+    CurlStreamID createStream(const URL&, CurlStream::Client&) { return invalidCurlStreamID; }
+    void destroyStream(CurlStreamID) { }
+    void send(CurlStreamID, UniqueArray<uint8_t>&&, size_t) { }
 
-    virtual void callClientOnMainThread(CurlStreamID, WTF::Function<void(CurlStream::Client&)>&&) = 0;
-    virtual long maxConnects() const { return 16; }
+    void callOnWorkerThread(Function<void()>&&) { }
+    void callClientOnMainThread(CurlStreamID, Function<void(CurlStream::Client&)>&&) { }
 };
 
 } // namespace WebCore

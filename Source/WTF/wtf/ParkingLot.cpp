@@ -36,7 +36,9 @@
 #include <wtf/WeakRandom.h>
 #include <wtf/WordLock.h>
 
+#if OS(AMIGAOS)
 #include <proto/exec.h>
+#endif
 
 namespace WTF {
 
@@ -422,14 +424,13 @@ void ensureHashtableSize(unsigned numThreads)
     unlockHashtable(bucketsToUnlock);
 }
 
-#if OS(MORPHOS) || OS(AMIGAOS) // Check this
+#if OS(MORPHOS) || OS(AMIGAOS)
 // A bit ugly but avoid a deadlock at app exit. If the thread is cancelled it already holds
 // the parkingLock. In this case the TLS destructors would result in a deadlock. Avoid this
 // by adding a thread-cancellation cleanup handler that unlocks the lock. - Piru
 ThreadData* myThreadData();
-void parkinglockunlocker(void *arg)
+static void parkinglockunlocker(void *arg)
 {
-    //printf("parkinglockunlocker called for thread %p\n", FindTask(NULL));
     ThreadData* me = myThreadData();
     me->parkingLock.unlock();
 }
@@ -447,7 +448,7 @@ ThreadData::ThreadData()
     }
 
     ensureHashtableSize(currentNumThreads);
-#if OS(MORPHOS) || OS(AMIGAOS) // Check this
+#if OS(MORPHOS) || OS(AMIGAOS)
     pthread_cleanup_push(parkinglockunlocker, NULL);
 #endif
 }

@@ -43,7 +43,7 @@
 namespace WebCore {
 
 Icon::Icon()
-    :  m_icon(0)
+    :  m_icon(nullptr)
 {
 }
 
@@ -56,7 +56,7 @@ Icon::~Icon()
 RefPtr<Icon> Icon::createIconForFiles(const Vector<String>& filenames)
 {
     if (filenames.isEmpty())
-        return 0;
+        return nullptr;
 
     // TODO: handle currentdir if only filename is given
 
@@ -75,7 +75,7 @@ RefPtr<Icon> Icon::createIconForFiles(const Vector<String>& filenames)
         return icon;
     }
 
-    return 0;
+    return nullptr;
 }
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2019 Apple Inc. All rights reserved.
+ * Copyright (C) 2007-2022 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,13 +30,19 @@
 
 #include "ContentType.h"
 #include "DeprecatedGlobalSettings.h"
-#include "Document.h"
+#include "FourCC.h"
 #include "GraphicsContext.h"
 #include "IntRect.h"
+#include "LegacyCDMSession.h"
 #include "Logging.h"
 #include "MIMETypeRegistry.h"
 #include "MediaPlayerPrivate.h"
+#include "PlatformMediaResourceLoader.h"
+#include "PlatformScreen.h"
+#include "PlatformTextTrack.h"
 #include "PlatformTimeRanges.h"
+#include "SecurityOrigin.h"
+#include <JavaScriptCore/ArrayBuffer.h>
 #include <wtf/Lock.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/CString.h>
@@ -58,8 +64,11 @@
 #endif
 #endif // USE(GSTREAMER)
 
-#if PLATFORM(MUI)
-#include "MediaPlayerPrivateMorphOS.h"
+#if OS(MORPHOS)
+#include "morphos/MediaPlayerPrivateMorphOS.h"
+#define PlatformMediaEngineClassName MediaPlayerPrivateMorphOS
+#elif PLATFORM(MUI)
+#include "mui/MediaPlayerPrivateMorphOS.h"
 #define PlatformMediaEngineClassName MediaPlayerPrivateMorphOS
 #endif
 
@@ -157,6 +166,7 @@ public:
     void setSize(const IntSize&) final { }
 
     void paint(GraphicsContext&, const FloatRect&) final { }
+    DestinationColorSpace colorSpace() final { return DestinationColorSpace::SRGB(); }
 
     bool hasSingleSecurityOrigin() const final { return true; }
 };
@@ -175,6 +185,18 @@ static const Vector<WebCore::ContentType>& nullContentTypeVector()
     return vector;
 }
 
+static const std::optional<Vector<String>>& nullOptionalStringVector()
+{
+    static NeverDestroyed<std::optional<Vector<String>>> vector;
+    return vector;
+}
+
+static const std::optional<Vector<FourCC>>& nullOptionalFourCCVector()
+{
+    static NeverDestroyed<std::optional<Vector<FourCC>>> vector;
+    return vector;
+}
+
 class NullMediaPlayerClient : public MediaPlayerClient {
 private:
 #if !RELEASE_LOG_DISABLED
@@ -190,8 +212,19 @@ private:
 #endif
 
     const Vector<WebCore::ContentType>& mediaContentTypesRequiringHardwareSupport() const final { return nullContentTypeVector(); }
-};
 
+    RefPtr<PlatformMediaResourceLoader> mediaPlayerCreateResourceLoader() final { return nullptr; }
+
+#if ENABLE(LEGACY_ENCRYPTED_MEDIA)
+    RefPtr<ArrayBuffer> mediaPlayerCachedKeyForKeyId(const String&) const final { return nullptr; }
+#endif
+
+    const std::optional<Vector<String>>& allowedMediaContainerTypes() const final { return nullOptionalStringVector(); }
+    const std::optional<Vector<String>>& allowedMediaCodecTypes() const final { return nullOptionalStringVector(); }
+    const std::optional<Vector<FourCC>>& allowedMediaVideoCodecIDs() const final { return nullOptionalFourCCVector(); }
+    const std::optional<Vector<FourCC>>& allowedMediaAudioCodecIDs() const final { return nullOptionalFourCCVector(); }
+    const std::optional<Vector<FourCC>>& allowedMediaCaptionFormatTypes() const final { return nullOptionalFourCCVector(); }
+};
 
 const Vector<ContentType>& MediaPlayerClient::mediaContentTypesRequiringHardwareSupport() const
 {
@@ -282,7 +315,7 @@ static void buildMediaEnginesVector() WTF_REQUIRES_LOCK(mediaEngineVectorLock)
     MediaPlayerPrivateHolePunch::registerMediaEngine(addMediaEngine);
 #endif
 
-#if ENABLE(VIDEO) && PLATFORM(MUI)
+#if ENABLE(VIDEO) && (OS(MORPHOS) || PLATFORM(MUI))
     MediaPlayerPrivateMorphOS::registerMediaEngine(addMediaEngine);
 #endif
 
@@ -330,7 +363,7 @@ MediaPlayerPrivateInterface* MediaPlayer::playerPrivate()
 const MediaPlayerFactory* MediaPlayer::mediaEngine(MediaPlayerEnums::MediaEngineIdentifier identifier)
 {
     auto& engines = installedMediaEngines();
-    auto currentIndex = engines.findMatching([identifier] (auto& engine) {
+    auto currentIndex = engines.findIf([identifier] (auto& engine) {
         return engine->identifier() == identifier;
     });
 
@@ -391,7 +424,7 @@ const MediaPlayerFactory* MediaPlayer::nextMediaEngine(const MediaPlayerFactory*
     if (!current) 
         return engines.first().get();
 
-    auto currentIndex = engines.findMatching([current] (auto& engine) {
+    auto currentIndex = engines.findIf([current] (auto& engine) {
         return engine.get() == current;
     });
     if (currentIndex == notFound) {
@@ -421,6 +454,7 @@ MediaPlayer::MediaPlayer(MediaPlayerClient& client)
     : m_client(&client)
     , m_reloadTimer(*this, &MediaPlayer::reloadTimerFired)
     , m_private(makeUnique<NullMediaPlayerPrivate>(this))
+    , m_preferredDynamicRangeMode(DynamicRangeMode::Standard)
 {
 }
 
@@ -429,6 +463,7 @@ MediaPlayer::MediaPlayer(MediaPlayerClient& client, MediaPlayerEnums::MediaEngin
     , m_reloadTimer(*this, &MediaPlayer::reloadTimerFired)
     , m_private(makeUnique<NullMediaPlayerPrivate>(this))
     , m_activeEngineIdentifier(mediaEngineIdentifier)
+    , m_preferredDynamicRangeMode(DynamicRangeMode::Standard)
 {
 }
 
@@ -526,6 +561,11 @@ const MediaPlayerFactory* MediaPlayer::nextBestMediaEngine(const MediaPlayerFact
 #if ENABLE(MEDIA_STREAM)
     parameters.isMediaStream = !!m_mediaStream;
 #endif
+    parameters.allowedMediaContainerTypes = allowedMediaContainerTypes();
+    parameters.allowedMediaCodecTypes = allowedMediaCodecTypes();
+    parameters.allowedMediaVideoCodecIDs = allowedMediaVideoCodecIDs();
+    parameters.allowedMediaAudioCodecIDs = allowedMediaAudioCodecIDs();
+    parameters.allowedMediaCaptionFormatTypes = allowedMediaCaptionFormatTypes();
 
     if (m_activeEngineIdentifier) {
         if (current)
@@ -587,6 +627,8 @@ void MediaPlayer::loadWithNextMediaEngine(const MediaPlayerFactory* current)
                 m_private->setPageIsVisible(m_pageIsVisible);
             if (m_visibleInViewport)
                 m_private->setVisibleInViewport(m_visibleInViewport);
+            if (m_isGatheringVideoFrameMetadata)
+                m_private->startVideoFrameMetadataGathering();
             m_private->prepareForPlayback(m_privateBrowsing, m_preload, m_preservesPitch, m_shouldPrepareToRender);
         }
     }
@@ -785,6 +827,11 @@ bool MediaPlayer::supportsScanning() const
     return m_private->supportsScanning();
 }
 
+bool MediaPlayer::supportsProgressMonitoring() const
+{
+    return m_private->supportsProgressMonitoring();
+}
+
 bool MediaPlayer::requiresImmediateCompositing() const
 {
     return m_private->requiresImmediateCompositing();
@@ -817,7 +864,7 @@ RetainPtr<PlatformLayer> MediaPlayer::createVideoFullscreenLayer()
     return m_private->createVideoFullscreenLayer();
 }
 
-void MediaPlayer::setVideoFullscreenLayer(PlatformLayer* layer, WTF::Function<void()>&& completionHandler)
+void MediaPlayer::setVideoFullscreenLayer(PlatformLayer* layer, Function<void()>&& completionHandler)
 {
     m_private->setVideoFullscreenLayer(layer, WTFMove(completionHandler));
 }
@@ -1040,6 +1087,13 @@ void MediaPlayer::setPreload(MediaPlayer::Preload preload)
     m_private->setPreload(preload);
 }
 
+#if PLATFORM(MUI)
+void MediaPlayer::setOutputPixelFormat(int format)
+{
+    m_private->setOutputPixelFormat(format);
+}
+#endif
+
 void MediaPlayer::paint(GraphicsContext& p, const FloatRect& r)
 {
     m_private->paint(p, r);
@@ -1052,18 +1106,21 @@ bool MediaPlayer::copyVideoTextureToPlatformTexture(GraphicsContextGL* context, 
     return m_private->copyVideoTextureToPlatformTexture(context, texture, target, level, internalFormat, format, type, premultiplyAlpha, flipY);
 }
 
-#else
-
-RetainPtr<CVPixelBufferRef> MediaPlayer::pixelBufferForCurrentTime()
-{
-    return m_private->pixelBufferForCurrentTime();
-}
-
 #endif
+
+RefPtr<VideoFrame> MediaPlayer::videoFrameForCurrentTime()
+{
+    return m_private->videoFrameForCurrentTime();
+}
 
 RefPtr<NativeImage> MediaPlayer::nativeImageForCurrentTime()
 {
     return m_private->nativeImageForCurrentTime();
+}
+
+DestinationColorSpace MediaPlayer::colorSpace()
+{
+    return m_private->colorSpace();
 }
 
 MediaPlayer::SupportsType MediaPlayer::supportsType(const MediaEngineSupportParameters& parameters)
@@ -1388,7 +1445,7 @@ RefPtr<ArrayBuffer> MediaPlayer::cachedKeyForKeyId(const String& keyId) const
     return client().mediaPlayerCachedKeyForKeyId(keyId);
 }
 
-void MediaPlayer::keyNeeded(Uint8Array* initData)
+void MediaPlayer::keyNeeded(const SharedBuffer& initData)
 {
     client().mediaPlayerKeyNeeded(initData);
 }
@@ -1513,8 +1570,6 @@ void MediaPlayer::tracksChanged()
     m_private->tracksChanged();
 }
 
-#if ENABLE(AVF_CAPTIONS)
-
 void MediaPlayer::notifyTrackModeChanged()
 {
     if (m_private)
@@ -1525,8 +1580,6 @@ Vector<RefPtr<PlatformTextTrack>> MediaPlayer::outOfBandTrackSources()
 {
     return client().outOfBandTrackSources();
 }
-
-#endif
 
 void MediaPlayer::resetMediaEngines()
 {
@@ -1546,7 +1599,7 @@ void MediaPlayer::simulateAudioInterruption()
 }
 #endif
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS) || PLATFORM(MUI)
 void MediaPlayer::selectHLSStream(const String& url)
 {
 	if (m_private)
@@ -1656,6 +1709,31 @@ bool MediaPlayer::shouldCheckHardwareSupport() const
     return client().mediaPlayerShouldCheckHardwareSupport();
 }
 
+const std::optional<Vector<String>>& MediaPlayer::allowedMediaContainerTypes() const
+{
+    return client().allowedMediaContainerTypes();
+}
+
+const std::optional<Vector<String>>& MediaPlayer::allowedMediaCodecTypes() const
+{
+    return client().allowedMediaCodecTypes();
+}
+
+const std::optional<Vector<FourCC>>& MediaPlayer::allowedMediaVideoCodecIDs() const
+{
+    return client().allowedMediaVideoCodecIDs();
+}
+
+const std::optional<Vector<FourCC>>& MediaPlayer::allowedMediaAudioCodecIDs() const
+{
+    return client().allowedMediaAudioCodecIDs();
+}
+
+const std::optional<Vector<FourCC>>& MediaPlayer::allowedMediaCaptionFormatTypes() const
+{
+    return client().allowedMediaCaptionFormatTypes();
+}
+
 void MediaPlayer::applicationWillResignActive()
 {
     m_private->applicationWillResignActive();
@@ -1675,7 +1753,7 @@ AVPlayer* MediaPlayer::objCAVFoundationAVPlayer() const
 
 #endif
 
-bool MediaPlayer::performTaskAtMediaTime(WTF::Function<void()>&& task, const MediaTime& time)
+bool MediaPlayer::performTaskAtMediaTime(Function<void()>&& task, const MediaTime& time)
 {
     return m_private->performTaskAtMediaTime(WTFMove(task), time);
 }
@@ -1710,6 +1788,30 @@ MediaPlayerIdentifier MediaPlayer::identifier() const
 {
     return m_private->identifier();
 }
+
+std::optional<VideoFrameMetadata> MediaPlayer::videoFrameMetadata()
+{
+    return m_private->videoFrameMetadata();
+}
+
+void MediaPlayer::startVideoFrameMetadataGathering()
+{
+    m_isGatheringVideoFrameMetadata = true;
+    m_private->startVideoFrameMetadataGathering();
+}
+
+void MediaPlayer::stopVideoFrameMetadataGathering()
+{
+    m_isGatheringVideoFrameMetadata = false;
+    m_private->stopVideoFrameMetadataGathering();
+}
+
+#if PLATFORM(COCOA)
+void MediaPlayer::onNewVideoFrameMetadata(VideoFrameMetadata&& metadata, RetainPtr<CVPixelBufferRef>&& buffer)
+{
+    client().mediaPlayerOnNewVideoFrameMetadata(WTFMove(metadata), WTFMove(buffer));
+}
+#endif
 
 String MediaPlayer::elementId() const
 {
@@ -1832,13 +1934,6 @@ String convertEnumerationToString(MediaPlayer::BufferingPolicy enumerationValue)
     ASSERT(static_cast<size_t>(enumerationValue) < WTF_ARRAY_LENGTH(values));
     return values[static_cast<size_t>(enumerationValue)];
 }
-
-#if PLATFORM(MUI)
-void MediaPlayer::setOutputPixelFormat(int pixfmt)
-{
-    m_private->setOutputPixelFormat(pixfmt);
-}
-#endif
 
 }
 

@@ -41,7 +41,7 @@
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/CString.h>
 
-#define IO_BUFFERSIZE 40960
+#define IO_BUFFERSIZE 4096
 
 namespace WebCore {
 
@@ -115,46 +115,22 @@ void CurlCacheManager::loadIndex()
     if (m_disabled)
         return;
 
-    String indexFilePath(m_cacheDir);
-    indexFilePath.append("index.dat");
-
-    FileSystem::PlatformFileHandle indexFile = FileSystem::openFile(indexFilePath, FileSystem::FileOpenMode::Read);
-    if (!FileSystem::isHandleValid(indexFile)) {
-        LOG(Network, "Cache Warning: Could not open %s for read\n", indexFilePath.latin1().data());
+    String indexFilePath = FileSystem::pathByAppendingComponent(m_cacheDir, "index.dat"_s);
+    auto buffer = FileSystem::readEntireFile(indexFilePath);
+    if (!buffer) {
+        LOG(Network, "Cache Error: Could not read %s\n", indexFilePath.latin1().data());
         return;
     }
-
-    auto filesize = FileSystem::fileSize(indexFilePath);
-    if (!filesize) {
-        LOG(Network, "Cache Error: Could not get file size of %s\n", indexFilePath.latin1().data());
-        FileSystem::closeFile(indexFile);
-        return;
-    }
-
-    // Load the file content into buffer
-    Vector<char> buffer;
-    buffer.resize(*filesize);
-    unsigned int bufferPosition = 0;
-    unsigned int bufferReadSize = IO_BUFFERSIZE;
-    while (*filesize > bufferPosition) {
-        if (*filesize - bufferPosition < bufferReadSize)
-            bufferReadSize = *filesize - bufferPosition;
-
-        FileSystem::readFromFile(indexFile, buffer.data() + bufferPosition, bufferReadSize);
-        bufferPosition += bufferReadSize;
-    }
-    FileSystem::closeFile(indexFile);
 
     // Create strings from buffer
-    String headerContent = String(buffer.data(), buffer.size());
+    auto headerContent = String::adopt(WTFMove(*buffer));
     Vector<String> indexURLs = headerContent.split('\n');
-    buffer.clear();
 
     // Add entries to index
     Vector<String>::const_iterator it = indexURLs.begin();
     Vector<String>::const_iterator end = indexURLs.end();
-    //if (indexURLs.size() > 1)
-    //    --end; // Last line is empty
+    if (indexURLs.size() > 1)
+        --end; // Last line is empty
     while (it != end) {
         String entry = it->stripWhiteSpace();
         Vector<String> entryComponents = entry.split('\t');
@@ -171,11 +147,7 @@ void CurlCacheManager::loadIndex()
 
         if (!!cacheEntry)
         {
-#if PLATFORM(MUI)
-            if (cacheEntry->entrySize() && cacheEntry->entrySize() < m_storageSizeLimit) {
-#else
             if (cacheEntry->isValid() && cacheEntry->entrySize() < m_storageSizeLimit) {
-#endif
                 m_currentStorageSize += cacheEntry->entrySize();
                 makeRoomForNewEntry();
                 m_LRUEntryList.prependOrMoveToFirst(entryComponents.at(0));
@@ -275,11 +247,6 @@ void CurlCacheManager::didReceiveResponse(ResourceHandle& job, ResourceResponse&
             m_LRUEntryList.prependOrMoveToFirst(url);
             m_index.set(url, WTFMove(cacheEntry));
             saveResponseHeaders(url, response);
-#if PLATFORM(MUI)
-            static int counter = 0;
-            if ((++counter & 0x8F) == 0x0)
-                saveIndex();
-#endif
         }
     } else
         invalidateCacheEntry(url);
@@ -296,23 +263,14 @@ void CurlCacheManager::didFinishLoading(ResourceHandle& job)
         it->value->didFinishLoading();
 }
 
-bool CurlCacheManager::isCached(const String& url)
+bool CurlCacheManager::isCached(const String& url) const
 {
     if (m_disabled)
         return false;
 
     auto it = m_index.find(url);
     if (it != m_index.end())
-#if PLATFORM(MUI)
-    {
-        if (it->value->isCached())
-            return !it->value->isLoading();
-        else
-            invalidateCacheEntry(url);
-    }
-#else
         return it->value->isCached() && !it->value->isLoading();
-#endif
 
     return false;
 }
@@ -333,7 +291,7 @@ bool CurlCacheManager::getCachedResponse(const String& url, ResourceResponse& re
     return false;
 }
 
-void CurlCacheManager::didReceiveData(ResourceHandle& job, const uint8_t* data, size_t size)
+void CurlCacheManager::didReceiveData(ResourceHandle& job, const SharedBuffer& data)
 {
     if (m_disabled)
         return;
@@ -345,11 +303,11 @@ void CurlCacheManager::didReceiveData(ResourceHandle& job, const uint8_t* data, 
         if (it->value->getJob() != &job)
             return;
 
-        if (!it->value->saveCachedData(data, size))
+        if (!it->value->saveCachedData(data.data(), data.size()))
             invalidateCacheEntry(url);
 
         else {
-            m_currentStorageSize += size;
+            m_currentStorageSize += data.size();
             m_LRUEntryList.prependOrMoveToFirst(url);
             makeRoomForNewEntry();
         }
@@ -386,13 +344,6 @@ void CurlCacheManager::invalidateCacheEntry(const String& url)
 }
 
 void CurlCacheManager::didFail(ResourceHandle &job)
-{
-    const String& url = job.firstRequest().url().string();
-
-    invalidateCacheEntry(url);
-}
-
-void CurlCacheManager::didCancel(ResourceHandle &job)
 {
     const String& url = job.firstRequest().url().string();
 

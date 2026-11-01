@@ -40,7 +40,6 @@
 #endif
 #include <wtf/MathExtras.h>
 #include <wtf/text/WTFString.h>
-#include <mutex>
 
 namespace WebCore {
 

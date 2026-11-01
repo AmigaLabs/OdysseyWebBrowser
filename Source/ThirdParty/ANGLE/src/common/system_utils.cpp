@@ -10,6 +10,10 @@
 
 #include <stdlib.h>
 
+#if defined(ANGLE_PLATFORM_ANDROID)
+#    include <sys/system_properties.h>
+#endif
+
 namespace angle
 {
 std::string GetExecutableName()
@@ -43,41 +47,57 @@ std::string GetEnvironmentVarOrAndroidProperty(const char *variableName, const c
     return GetEnvironmentVarOrUnCachedAndroidProperty(variableName, propertyName);
 }
 
-// Call out to 'getprop' on a shell to get an Android property.  If the value was set, set an
-// environment variable with that value.  Return the value of the environment variable.
+// On Android call out to 'getprop' on a shell to get an Android property.  On desktop, return
+// the value of the environment variable.
 std::string GetEnvironmentVarOrUnCachedAndroidProperty(const char *variableName,
                                                        const char *propertyName)
 {
-#if defined(ANGLE_PLATFORM_ANDROID) && __ANDROID_API__ >= 21
-    std::string sanitizedPropertyName = propertyName;
-    sanitizedPropertyName.erase(
-        std::remove(sanitizedPropertyName.begin(), sanitizedPropertyName.end(), '\''),
-        sanitizedPropertyName.end());
+#if defined(ANGLE_PLATFORM_ANDROID) && __ANDROID_API__ >= 26
+    std::string propertyValue;
 
-    std::string command("getprop '");
-    command += sanitizedPropertyName;
-    command += "'";
-
-    // Run the command and open a I/O stream to read the value
-    constexpr int kStreamSize = 64;
-    char stream[kStreamSize]  = {};
-    FILE *pipe                = popen(command.c_str(), "r");
-    if (pipe != nullptr)
+    const prop_info *propertyInfo = __system_property_find(propertyName);
+    if (propertyInfo != nullptr)
     {
-        fgets(stream, kStreamSize, pipe);
-        pclose(pipe);
+        __system_property_read_callback(
+            propertyInfo,
+            [](void *cookie, const char *, const char *value, unsigned) {
+                auto propertyValue = reinterpret_cast<std::string *>(cookie);
+                *propertyValue     = value;
+            },
+            &propertyValue);
     }
 
-    // Right strip white space
-    std::string value(stream);
-    value.erase(value.find_last_not_of(" \n\r\t") + 1);
-
-    // Set the environment variable with the value.
-    SetEnvironmentVar(variableName, value.c_str());
-    return value;
-#endif  // ANGLE_PLATFORM_ANDROID
+    return propertyValue;
+#else
     // Return the environment variable's value.
     return GetEnvironmentVar(variableName);
+#endif  // ANGLE_PLATFORM_ANDROID
+}
+
+// Look up a property and add it to the application's environment.
+// Adding to the env is a performance optimization, as getting properties is expensive.
+// This should only be used in non-Release paths, i.e. when using FrameCapture or DebugUtils.
+// It can cause race conditions in stress testing. See http://anglebug.com/6822
+std::string GetAndSetEnvironmentVarOrUnCachedAndroidProperty(const char *variableName,
+                                                             const char *propertyName)
+{
+    std::string value = GetEnvironmentVarOrUnCachedAndroidProperty(variableName, propertyName);
+
+#if defined(ANGLE_PLATFORM_ANDROID)
+    if (!value.empty())
+    {
+        // Set the environment variable with the value to improve future lookups (avoids
+        SetEnvironmentVar(variableName, value.c_str());
+    }
+#endif
+
+    return value;
+}
+
+bool GetBoolEnvironmentVar(const char *variableName)
+{
+    std::string envVarString = GetEnvironmentVar(variableName);
+    return (!envVarString.empty() && envVarString == "1");
 }
 
 bool PrependPathToEnvironmentVar(const char *variableName, const char *path)
@@ -97,5 +117,93 @@ bool PrependPathToEnvironmentVar(const char *variableName, const char *path)
         newValue = buf.c_str();
     }
     return SetEnvironmentVar(variableName, newValue);
+}
+
+bool IsFullPath(std::string dirName)
+{
+    if (dirName.find(GetRootDirectory()) == 0)
+    {
+        return true;
+    }
+    return false;
+}
+
+std::string ConcatenatePath(std::string first, std::string second)
+{
+    if (first.empty())
+    {
+        return second;
+    }
+    if (second.empty())
+    {
+        return first;
+    }
+    if (IsFullPath(second))
+    {
+        return second;
+    }
+    bool firstRedundantPathSeparator = first.find_last_of(GetPathSeparator()) == first.length() - 1;
+    bool secondRedundantPathSeparator = second.find(GetPathSeparator()) == 0;
+    if (firstRedundantPathSeparator && secondRedundantPathSeparator)
+    {
+        return first + second.substr(1);
+    }
+    else if (firstRedundantPathSeparator || secondRedundantPathSeparator)
+    {
+        return first + second;
+    }
+    return first + GetPathSeparator() + second;
+}
+
+PageFaultHandler::PageFaultHandler(PageFaultCallback callback) : mCallback(callback) {}
+PageFaultHandler::~PageFaultHandler() {}
+
+Library *OpenSharedLibrary(const char *libraryName, SearchType searchType)
+{
+    void *libraryHandle = OpenSystemLibraryAndGetError(libraryName, searchType, nullptr);
+    return new Library(libraryHandle);
+}
+
+Library *OpenSharedLibraryWithExtension(const char *libraryName, SearchType searchType)
+{
+    void *libraryHandle =
+        OpenSystemLibraryWithExtensionAndGetError(libraryName, searchType, nullptr);
+    return new Library(libraryHandle);
+}
+
+Library *OpenSharedLibraryAndGetError(const char *libraryName,
+                                      SearchType searchType,
+                                      std::string *errorOut)
+{
+    void *libraryHandle = OpenSystemLibraryAndGetError(libraryName, searchType, errorOut);
+    return new Library(libraryHandle);
+}
+
+Library *OpenSharedLibraryWithExtensionAndGetError(const char *libraryName,
+                                                   SearchType searchType,
+                                                   std::string *errorOut)
+{
+    void *libraryHandle =
+        OpenSystemLibraryWithExtensionAndGetError(libraryName, searchType, errorOut);
+    return new Library(libraryHandle);
+}
+
+void *OpenSystemLibrary(const char *libraryName, SearchType searchType)
+{
+    return OpenSystemLibraryAndGetError(libraryName, searchType, nullptr);
+}
+
+void *OpenSystemLibraryWithExtension(const char *libraryName, SearchType searchType)
+{
+    return OpenSystemLibraryWithExtensionAndGetError(libraryName, searchType, nullptr);
+}
+
+void *OpenSystemLibraryAndGetError(const char *libraryName,
+                                   SearchType searchType,
+                                   std::string *errorOut)
+{
+    std::string libraryWithExtension = std::string(libraryName) + "." + GetSharedLibraryExtension();
+    return OpenSystemLibraryWithExtensionAndGetError(libraryWithExtension.c_str(), searchType,
+                                                     errorOut);
 }
 }  // namespace angle

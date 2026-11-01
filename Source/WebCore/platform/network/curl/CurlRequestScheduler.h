@@ -33,19 +33,11 @@
 #include <wtf/Noncopyable.h>
 #include <wtf/Threading.h>
 
-#if PLATFORM(MUI)
-#include "CurlStreamScheduler.h"
-#endif
-
 namespace WebCore {
 
 class CurlRequestSchedulerClient;
 
-#if PLATFORM(MUI)
-class CurlRequestScheduler : public CurlStreamScheduler {
-#else
 class CurlRequestScheduler {
-#endif
     WTF_MAKE_FAST_ALLOCATED;
     WTF_MAKE_NONCOPYABLE(CurlRequestScheduler);
     friend NeverDestroyed<CurlRequestScheduler>;
@@ -56,18 +48,10 @@ public:
     bool add(CurlRequestSchedulerClient*);
     void cancel(CurlRequestSchedulerClient*);
 
-    void callOnWorkerThread(WTF::Function<void()>&&);
+    void callOnWorkerThread(Function<void()>&&);
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 	void stopCurlThread();
-
-    CurlStreamID createStream(const URL&, CurlStream::Client&) final;
-    void destroyStream(CurlStreamID) final;
-    void send(CurlStreamID, UniqueArray<uint8_t>&&, size_t) final;
-    void callClientOnMainThread(CurlStreamID, WTF::Function<void(CurlStream::Client&)>&&) final;
-    long maxConnects() const { return m_maxConnects; };
-    long maxTotalConnections() const { return m_maxTotalConnections; }
-    void setMaxTotalConnections(long);
 #endif
 
 private:
@@ -88,7 +72,7 @@ private:
     Lock m_mutex;
     RefPtr<Thread> m_thread;
     bool m_runThread { false };
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 	bool m_stopped { false };
 #endif
     Vector<Function<void()>> m_taskQueue;
@@ -101,13 +85,6 @@ private:
     long m_maxConnects;
     long m_maxTotalConnections;
     long m_maxHostConnections;
-
-#if PLATFORM(MUI)
-    CurlStreamID m_currentStreamID = 1;
-
-    HashMap<CurlStreamID, CurlStream::Client*> m_clientList;
-    HashMap<CurlStreamID, std::unique_ptr<CurlStream>> m_streamList;
-#endif
 };
 
 } // namespace WebCore

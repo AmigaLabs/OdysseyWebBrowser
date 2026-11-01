@@ -1,3 +1,34 @@
+2022-04-01  gogo  <trebelnik2@gmail.com>
+
+        Croatian translation for WebKitGTK
+        https://bugs.webkit.org/show_bug.cgi?id=238611
+
+        Rubber-stamped by Carlos Garcia Campos.
+
+        * hr.po: Added.
+
+2022-02-15  Yosef Or Boczko  <yoseforb@gmail.com>
+
+        l10n: Updated Hebrew translation of WebKitGTK
+        https://bugs.webkit.org/show_bug.cgi?id=236603
+
+        Rubber-stamped by Carlos Garcia Campos.
+
+        * he.po:
+
+2021-11-24  David Kilzer  <ddkilzer@apple.com>
+
+        Compiler should be able to check localized format strings for consistency
+        <https://webkit.org/b/232686>
+        <rdar://problem/84994345>
+
+        Reviewed by Darin Adler.
+
+        * CMakeLists.txt:
+        (add_custom_command: xgettext):
+        - Add WEB_UI_FORMAT_STRING to list of macros containing
+          localizable strings.
+
 2021-09-13  Piotr Drąg  <piotrdrag@gmail.com>
 
         [GTK][l10n] Updated Polish translation of WebKitGTK for 2.34

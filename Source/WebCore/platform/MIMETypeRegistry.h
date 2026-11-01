@@ -106,7 +106,9 @@ public:
     static bool isPostScriptMIMEType(const String& mimeType);
     WEBCORE_EXPORT static bool isPDFOrPostScriptMIMEType(const String& mimeType);
 
-    WEBCORE_EXPORT static bool isSystemPreviewMIMEType(const String& mimeType);
+    WEBCORE_EXPORT static bool isUSDMIMEType(const String& mimeType);
+
+    WEBCORE_EXPORT static bool isSupportedModelMIMEType(const String& mimeType);
 
     // Check to see if a MIME type is suitable for being shown inside a page.
     // Returns true if any of isSupportedImageMIMEType(), isSupportedNonImageMIMEType(),
@@ -133,7 +135,7 @@ public:
     WEBCORE_EXPORT static const HashSet<String, ASCIICaseInsensitiveHash>& supportedMediaMIMETypes();
     WEBCORE_EXPORT static FixedVector<const char*> pdfMIMETypes();
     WEBCORE_EXPORT static FixedVector<const char*> unsupportedTextMIMETypes();
-    WEBCORE_EXPORT static FixedVector<const char*> systemPreviewMIMETypes();
+    WEBCORE_EXPORT static FixedVector<const char*> usdMIMETypes();
 
     WEBCORE_EXPORT static String appendFileExtensionIfNecessary(const String& filename, const String& mimeType);
 
@@ -142,10 +144,6 @@ public:
     WEBCORE_EXPORT static Vector<String> allowedMIMETypes(const Vector<String>& mimeTypes, const Vector<String>& extensions);
     WEBCORE_EXPORT static Vector<String> allowedFileExtensions(const Vector<String>& mimeTypes, const Vector<String>& extensions);
     
-#if PLATFORM(MUI)
-    static void reinitializeSupportedMediaMIMETypes();
-#endif
-
 private:
     // Check to see if the MIME type is not suitable for being loaded as a text
     // document in a frame. Only valid for MIME types begining with "text/".

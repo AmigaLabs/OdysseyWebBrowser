@@ -52,6 +52,7 @@ list(APPEND WebCore_SOURCES
     platform/morphos/DragDataMorphOS.cpp
     platform/morphos/DragImageMorphOS.cpp
     platform/morphos/SelectionData.cpp
+    platform/morphos/UserAgentMorphOS.cpp
     platform/generic/KeyedDecoderGeneric.cpp
     platform/generic/KeyedEncoderGeneric.cpp
     platform/graphics/morphos/GraphicsLayerMorphOS.cpp
@@ -59,14 +60,14 @@ list(APPEND WebCore_SOURCES
     platform/graphics/morphos/DisplayRefreshMonitorMorphOS.cpp
     platform/network/morphos/CurlSSLHandleMorphOS.cpp
     platform/network/morphos/NetworkStateNotifierMorphOS.cpp
-    platform/posix/SharedBufferPOSIX.cpp
+    #platform/posix/SharedBufferPOSIX.cpp
     platform/text/LocaleICU.cpp
     platform/text/hyphen/HyphenationLibHyphen.cpp
     rendering/RenderThemeMorphOS.cpp
     rendering/RenderThemeAdwaita.cpp
     page/morphos/DragControllerMorphOS.cpp
     platform/adwaita/ThemeAdwaita.cpp
-    platform/adwaita/ScrollbarThemeAdwaita1.cpp
+    platform/adwaita/ScrollbarThemeAdwaita.cpp
 )
 
 list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS

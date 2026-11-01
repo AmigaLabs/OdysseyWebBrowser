@@ -95,6 +95,13 @@ enum class ThreadType : uint8_t {
     Audio,
 };
 
+class ThreadSuspendLocker {
+    WTF_MAKE_NONCOPYABLE(ThreadSuspendLocker);
+public:
+    WTF_EXPORT_PRIVATE ThreadSuspendLocker();
+    WTF_EXPORT_PRIVATE ~ThreadSuspendLocker();
+};
+
 class Thread : public ThreadSafeRefCounted<Thread> {
     static std::atomic<uint32_t> s_uid;
 public:
@@ -171,9 +178,9 @@ public:
     using PlatformSuspendError = DWORD;
 #endif
 
-    WTF_EXPORT_PRIVATE Expected<void, PlatformSuspendError> suspend();
-    WTF_EXPORT_PRIVATE void resume();
-    WTF_EXPORT_PRIVATE size_t getRegisters(PlatformRegisters&);
+    WTF_EXPORT_PRIVATE Expected<void, PlatformSuspendError> suspend(const ThreadSuspendLocker&);
+    WTF_EXPORT_PRIVATE void resume(const ThreadSuspendLocker&);
+    WTF_EXPORT_PRIVATE size_t getRegisters(const ThreadSuspendLocker&, PlatformRegisters&);
 
 #if USE(PTHREADS)
 #if OS(LINUX)
@@ -231,7 +238,7 @@ public:
     }
 #endif
 
-    void* savedStackPointerAtVMEntry()
+    void* savedStackPointerAtVMEntry() const
     {
         return m_savedStackPointerAtVMEntry;
     }
@@ -241,7 +248,7 @@ public:
         m_savedStackPointerAtVMEntry = stackPointerAtVMEntry;
     }
 
-    void* savedLastStackTop()
+    void* savedLastStackTop() const
     {
         return m_savedLastStackTop;
     }
@@ -261,7 +268,7 @@ public:
     struct NewThreadContext;
     static void entryPoint(NewThreadContext*);
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
     // Final clean up for this class as a while.
     // Must method must be called after last sub-thread has terminated.
     static void deleteTLSKey();
@@ -281,7 +288,7 @@ protected:
     void establishPlatformSpecificHandle(PlatformThreadHandle, ThreadIdentifier);
 #endif
 
-#if USE(PTHREADS) && !OS(DARWIN) && !OS(MORPHOS) && !OS(AMIGAOS)
+#if USE(PTHREADS) && !OS(DARWIN) && !OS(MORPHOS)
     static void signalHandlerSuspendResume(int, siginfo_t*, void* ucontext);
 #endif
 
@@ -342,7 +349,7 @@ protected:
     static Thread* currentMayBeNull();
 #endif
 
-#if OS(__MORPHOS__) || OS(AMIGAOS)
+#ifdef __MORPHOS__
     static Thread* getUserDataThreadPointer();
 #endif
 
@@ -372,7 +379,6 @@ protected:
 #if OS(LINUX)
     ThreadIdentifier m_id { 0 };
 #endif
-    PlatformRegisters m_savedPlatformRegisters { };
     PlatformRegisters* m_platformRegisters { nullptr };
     unsigned m_suspendCount { 0 };
 #endif
@@ -431,7 +437,7 @@ inline Thread& Thread::current()
     if (UNLIKELY(Thread::s_key == InvalidThreadSpecificKey))
         WTF::initialize();
 #endif
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
     Thread* thread = getUserDataThreadPointer();
     if (!thread)
         thread = currentMayBeNull();
@@ -446,6 +452,7 @@ inline Thread& Thread::current()
 
 } // namespace WTF
 
+using WTF::ThreadSuspendLocker;
 using WTF::Thread;
 using WTF::ThreadType;
 using WTF::GCThreadType;

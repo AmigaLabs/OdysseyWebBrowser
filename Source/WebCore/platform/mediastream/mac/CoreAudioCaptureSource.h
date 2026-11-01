@@ -74,7 +74,6 @@ private:
     void stopProducingData() final;
 
     void delaySamples(Seconds) final;
-    void setInterruptedForTesting(bool) final;
 
     std::optional<Vector<int>> discreteSampleRates() const final { return { { 8000, 16000, 32000, 44100, 48000, 96000 } }; }
 
@@ -102,15 +101,31 @@ private:
     BaseAudioSharedUnit* m_overrideUnit { nullptr };
 };
 
+class CoreAudioSpeakerSamplesProducer {
+public:
+    virtual ~CoreAudioSpeakerSamplesProducer() = default;
+    // Main thread
+    virtual const CAAudioStreamDescription& format() = 0;
+    virtual void captureUnitIsStarting() = 0;
+    virtual void captureUnitHasStopped() = 0;
+    // Background thread.
+    virtual OSStatus produceSpeakerSamples(size_t sampleCount, AudioBufferList&, uint64_t sampleTime, double hostTime, AudioUnitRenderActionFlags&) = 0;
+};
+
 class CoreAudioCaptureSourceFactory : public AudioCaptureFactory {
 public:
-    static CoreAudioCaptureSourceFactory& singleton();
+    WEBCORE_EXPORT static CoreAudioCaptureSourceFactory& singleton();
 
     void beginInterruption();
     void endInterruption();
     void scheduleReconfiguration();
 
     void devicesChanged(const Vector<CaptureDevice>&);
+
+    WEBCORE_EXPORT void registerSpeakerSamplesProducer(CoreAudioSpeakerSamplesProducer&);
+    WEBCORE_EXPORT void unregisterSpeakerSamplesProducer(CoreAudioSpeakerSamplesProducer&);
+    WEBCORE_EXPORT bool isAudioCaptureUnitRunning();
+    WEBCORE_EXPORT void whenAudioCaptureUnitIsNotRunning(Function<void()>&&);
 
 private:
     CaptureSourceOrError createAudioCaptureSource(const CaptureDevice&, String&&, const MediaConstraints*) override;

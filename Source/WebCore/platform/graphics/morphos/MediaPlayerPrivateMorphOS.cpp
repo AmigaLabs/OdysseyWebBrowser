@@ -9,6 +9,7 @@
 #include "AcinerellaContainer.h"
 #include "AudioTrackPrivateMorphOS.h"
 #include "VideoTrackPrivateMorphOS.h"
+#include "PlatformMediaResourceLoader.h"
 
 #include "HTMLMediaElement.h"
 #include "Frame.h"
@@ -16,12 +17,6 @@
 #include "CommonVM.h"
 #include <proto/exec.h>
 #include <exec/exec.h>
-
-#if OS(AROS)
-#include <aros/debug.h>
-#undef D
-#define dprintf bug
-#endif
 
 #define D(x)
 #define DM(x)
@@ -173,7 +168,7 @@ public:
 		}
 #endif
 
-		bool withHLS = true;
+		bool withHLS = MediaPlayerMorphOSSettings::settings().m_supportHLSForHost ? MediaPlayerMorphOSSettings::settings().m_supportHLSForHost(page, host) : true;
 
 		DM(dprintf("%s: url '%s' content '%s' ctype '%s' isource %d istream %d profiles %d hlsOK %d host '%s' page %p\n", __func__,
 			parameters.url.string().utf8().data(), parameters.type.raw().utf8().data(), parameters.type.containerType().utf8().data(),
@@ -321,16 +316,6 @@ void MediaPlayerPrivateMorphOS::load(const String& url)
 	m_player->networkStateChanged();
 	m_readyState = MediaPlayer::ReadyState::HaveNothing;
 	m_player->readyStateChanged();
-
-#if 1
-MediaPlayerMorphOSSettings::settings().m_networkingContextForRequests =
-m_player->client().mediaPlayerPage()->mainFrame().loader().networkingContext();
-
-MediaPlayerMorphOSSettings::settings().m_load = [](WebCore::MediaPlayer *player, const String &url, WebCore::MediaPlayerMorphOSInfo& info,
-		MediaPlayerMorphOSStreamSettings &settings, Function<void()> &&yieldFunc) {
-	};
-
-#endif
 
 	m_acinerella = Acinerella::Acinerella::create(this, url);
 }
@@ -662,7 +647,7 @@ void MediaPlayerPrivateMorphOS::accNextFrameReady()
 		if (MediaPlayerMorphOSSettings::settings().m_overlayRequest)
 		{
 			MediaPlayerMorphOSSettings::settings().m_overlayRequest(m_player,
-				[weak = makeWeakPtr(this)](void *ptr, int sx, int sy, int ml, int mt, int mr, int mb, int w, int h) {
+				[weak = WeakPtr{*this}](void *ptr, int sx, int sy, int ml, int mt, int mr, int mb, int w, int h) {
 				if (weak) {
 					if (weak->m_acinerella)
 						weak->m_acinerella->setOverlayWindowCoords((struct ::Window *)ptr, sx, sy, ml, mt, mr, mb, w, h);
@@ -800,13 +785,13 @@ void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 		{
 			if (info.m_width)
 			{
-				m_videoTrack = VideoTrackPrivateMorphOS::create(makeWeakPtr(this), 0);
+				m_videoTrack = VideoTrackPrivateMorphOS::create(WeakPtr{*this}, 0);
 				m_player->addVideoTrack(*m_videoTrack.get());
 			}
 			
 			if (info.m_channels)
 			{
-				m_audioTrack = AudioTrackPrivateMorphOS::create(makeWeakPtr(this), 0);
+				m_audioTrack = AudioTrackPrivateMorphOS::create(WeakPtr{*this}, 0);
 				m_player->addAudioTrack(*m_audioTrack.get());
 			}
 		}
@@ -822,20 +807,10 @@ void MediaPlayerPrivateMorphOS::accInitialized(MediaPlayerMorphOSInfo info)
 
 void MediaPlayerPrivateMorphOS::accUpdated(MediaPlayerMorphOSInfo info)
 {
-#if 1
-	if (info.m_width)
-	{
-		m_width = info.m_width;
-		m_height = info.m_height;
-	}
-
-	accSetVideoSize(m_width, m_height);
-#else
 	if (MediaPlayerMorphOSSettings::settings().m_update)
 	{
 		MediaPlayerMorphOSSettings::settings().m_update(m_player, info);
 	}
-#endif
 }
 
 void MediaPlayerPrivateMorphOS::accSetNetworkState(WebCore::MediaPlayerEnums::NetworkState state)

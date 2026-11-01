@@ -47,110 +47,7 @@
 #include <wtf/SHA1.h>
 #include <wtf/text/StringToIntegerConversion.h>
 
-#if PLATFORM(MUI)
-    #if !OS(AMIGAOS)
-        #include <aros/debug.h>
-        #include <proto/dos.h>
-    #else
-        #include <proto/exec.h>
-        #include <dos/obsolete.h>
-        #define DOS_DOSEXTENS_H
-        #include <proto/dos.h>
-        #undef DOS_DOSEXTENS_H        
-    #endif
-    #include <wtf/FileSystem.h>
-#endif
-
 namespace WebCore {
-
-#if PLATFORM(MUI)
-class DirCache{
-public:
-    DirCache() : inited(false)
-    {
-    }
-
-    void initOnce(const String& dir)
-    {
-        BPTR lock;
-        const LONG bufferSize = 4096;
-        struct ExAllData *ead;
-        struct ExAllControl *eac;
-        BOOL loop;
-
-        if(inited)
-            return;
-
-        lock = Lock(dir.latin1().data(), SHARED_LOCK);
-        if (!lock)
-            return;
-
-        ead = (struct ExAllData *)AllocVec(bufferSize, MEMF_CLEAR | MEMF_PUBLIC);
-        eac = (struct ExAllControl *)AllocDosObject(DOS_EXALLCONTROL, NULL);
-        eac->eac_LastKey = 0;
-
-        do
-        {
-            loop = ExAll(lock, ead, bufferSize, ED_COMMENT, eac);
-
-            if (!loop && IoErr() != ERROR_NO_MORE_ENTRIES)
-                break;
-
-            if (eac->eac_Entries != 0)
-            {
-                struct ExAllData * tmp = ead;
-
-                do
-                {
-                    if (tmp->ed_Type == ST_FILE)
-                        m_sizes.set(tmp->ed_Name, tmp->ed_Size);
-
-                    tmp = tmp->ed_Next;
-                }
-                while (tmp != NULL);
-            }
-
-        }while(loop);
-
-        FreeDosObject(DOS_EXALLCONTROL, eac);
-        UnLock(lock);
-        FreeVec(ead);
-
-        inited = true;
-    }
-
-    bool getFileSize(const String& path, long long& result)
-    {
-        String filename = FileSystem::pathFileName(path);
-        auto it = m_sizes.find(filename);
-        if (it != m_sizes.end())
-        {
-            result = it->value;
-            // only one time read, next time through filesystem
-            m_sizes.remove(filename);
-            return true;
-        }
-
-        auto res = FileSystem::fileSize(path);
-        if (!res)
-            return false;
-        
-        result = *res;
-        return true;
-    }
-
-private:
-    HashMap<String, int> m_sizes;
-    bool inited;
-};
-
-DirCache dc;
-
-bool CurlCacheEntry::getFileSize(const String& path, long long& result) const
-{
-    return dc.getFileSize(path, result);
-}
-#endif
 
 CurlCacheEntry::CurlCacheEntry(const String& url, ResourceHandle* job, const String& cacheDir)
     : m_headerFilename(cacheDir)
@@ -169,10 +66,6 @@ CurlCacheEntry::CurlCacheEntry(const String& url, ResourceHandle* job, const Str
 
     m_contentFilename.append(m_basename);
     m_contentFilename.append(".content");
-
-#if PLATFORM(MUI)
-    dc.initOnce(cacheDir);
-#endif
 }
 
 CurlCacheEntry::CurlCacheEntry(const String& url, uint64_t entrySize, double expireDate, const String& cacheDir)
@@ -254,12 +147,14 @@ bool CurlCacheEntry::readCachedData(ResourceHandle* job)
 {
     ASSERT(job->client());
 
-    Vector<uint8_t> buffer;
-    if (!loadFileToBuffer(m_contentFilename, buffer))
+    auto buffer = FileSystem::readEntireFile(m_contentFilename);
+    if (!buffer) {
+        LOG(Network, "Cache Error: Could not open %s to read cached content\n", m_contentFilename.latin1().data());
         return false;
+    }
 
-    if (auto bufferSize = buffer.size())
-        job->getInternal()->client()->didReceiveBuffer(job, SharedBuffer::create(WTFMove(buffer)), bufferSize);
+    if (auto bufferSize = buffer->size())
+        job->getInternal()->client()->didReceiveBuffer(job, SharedBuffer::create(WTFMove(*buffer)), bufferSize);
 
     return true;
 }
@@ -292,11 +187,13 @@ bool CurlCacheEntry::saveResponseHeaders(const ResourceResponse& response)
 
 bool CurlCacheEntry::loadResponseHeaders()
 {
-    Vector<uint8_t> buffer;
-    if (!loadFileToBuffer(m_headerFilename, buffer))
+    auto buffer = FileSystem::readEntireFile(m_headerFilename);
+    if (!buffer) {
+        LOG(Network, "Cache Error: Could not open %s to read cached headers\n", m_headerFilename.latin1().data());
         return false;
+    }
 
-    String headerContent = String(buffer.data(), buffer.size());
+    String headerContent = String::adopt(WTFMove(*buffer));
     Vector<String> headerFields = headerContent.split('\n');
 
     Vector<String>::const_iterator it = headerFields.begin();
@@ -355,10 +252,10 @@ void CurlCacheEntry::didFinishLoading()
 
 void CurlCacheEntry::generateBaseFilename(const CString& url)
 {
-    WTF::SHA1 sha1;
+    SHA1 sha1;
     sha1.addBytes(url.dataAsUInt8Ptr(), url.length());
 
-    WTF::SHA1::Digest sum;
+    SHA1::Digest sum;
     sha1.computeHash(sum);
     uint8_t* rawdata = sum.data();
 
@@ -366,44 +263,6 @@ void CurlCacheEntry::generateBaseFilename(const CString& url)
     for (size_t i = 0; i < 16; i++)
         baseNameBuilder.append(hex(rawdata[i], Lowercase));
     m_basename = baseNameBuilder.toString();
-}
-
-bool CurlCacheEntry::loadFileToBuffer(const String& filepath, Vector<uint8_t>& buffer)
-{
-    // Open the file
-    FileSystem::PlatformFileHandle inputFile = FileSystem::openFile(filepath, FileSystem::FileOpenMode::Read);
-    if (!FileSystem::isHandleValid(inputFile)) {
-        LOG(Network, "Cache Error: Could not open %s for read\n", filepath.latin1().data());
-        return false;
-    }
-
-    auto filesize = FileSystem::fileSize(inputFile);
-    if (!filesize) {
-        LOG(Network, "Cache Error: Could not get file size of %s\n", filepath.latin1().data());
-        FileSystem::closeFile(inputFile);
-        return false;
-    }
-
-    // Load the file content into buffer
-    buffer.resize(*filesize);
-    unsigned int bufferPosition = 0;
-    unsigned int bufferReadSize = 40960;
-    unsigned int bytesRead = 0;
-    while (*filesize > bufferPosition) {
-        if (*filesize - bufferPosition < bufferReadSize)
-            bufferReadSize = *filesize - bufferPosition;
-
-        bytesRead = FileSystem::readFromFile(inputFile, buffer.data() + bufferPosition, bufferReadSize);
-        if (bytesRead != bufferReadSize) {
-            LOG(Network, "Cache Error: Could not read from %s\n", filepath.latin1().data());
-            FileSystem::closeFile(inputFile);
-            return false;
-        }
-
-        bufferPosition += bufferReadSize;
-    }
-    FileSystem::closeFile(inputFile);
-    return true;
 }
 
 void CurlCacheEntry::invalidate()
@@ -475,22 +334,6 @@ void CurlCacheEntry::setIsLoading(bool isLoading)
 uint64_t CurlCacheEntry::entrySize()
 {
     if (!m_entrySize) {
-#if PLATFORM(MUI)
-        long long headerFileSize;
-        long long contentFileSize;
-
-        if (!getFileSize(m_headerFilename, headerFileSize)) {
-            LOG(Network, "Cache Error: Could not get file size of %s\n", m_headerFilename.latin1().data());
-            return m_entrySize;
-        }
-
-        if (!getFileSize(m_contentFilename, contentFileSize)) {
-            LOG(Network, "Cache Error: Could not get file size of %s\n", m_contentFilename.latin1().data());
-            return m_entrySize;
-        }
-
-        m_entrySize = headerFileSize + contentFileSize;
-#else
         auto headerFileSize = FileSystem::fileSize(m_headerFilename);
         if (!headerFileSize) {
             LOG(Network, "Cache Error: Could not get file size of %s\n", m_headerFilename.latin1().data());
@@ -503,8 +346,6 @@ uint64_t CurlCacheEntry::entrySize()
         }
 
         m_entrySize = *headerFileSize + *contentFileSize;
-#endif
-
     }
 
     return m_entrySize;

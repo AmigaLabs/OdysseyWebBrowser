@@ -62,21 +62,17 @@ public:
         PrintContext::end();
     }
 
-    virtual float getPageShrink(int pageNumber) const
+    float getPageShrink(int pageNumber) const
     {
         IntRect pageRect = m_pageRects[pageNumber];
         return m_printedPageWidth / pageRect.width();
     }
 
-    // Spools the printed page, a subrect of m_frame. Skip the scale step.
-    // NativeTheme doesn't play well with scaling. Scaling is done browser side
-    // instead. Returns the scale to be applied.
-    // On Linux, we don't have the problem with NativeTheme, hence we let WebKit
-    // do the scaling and ignore the return value.
-    virtual float spoolPage(GraphicsContext& ctx, int pageNumber, float scale = 1.0)
+    // Spools the printed page, a subrect of frame(). Scale is applied by the caller.
+    // NativeTheme doesn't play well with scaling, so scaling is done browser side.
+    void spoolPage(GraphicsContext& ctx, int pageNumber, float scale = 1.0)
     {
         IntRect pageRect = m_pageRects[pageNumber];
-    //kprintf("spoolPage %d pageRect [%d %d %d %d] m_printedPageWidth %f scale %f\n", pageNumber, pageRect.x(), pageRect.y(), pageRect.width(), pageRect.height(), m_printedPageWidth, scale);
 
         ctx.save();
 
@@ -85,17 +81,16 @@ public:
         ctx.translate(static_cast<float>(-pageRect.x()),
                       static_cast<float>(-pageRect.y()));
         ctx.clip(pageRect);
-        m_frame->view()->paintContents(ctx, pageRect);
+        frame()->view()->paintContents(ctx, pageRect);
         ctx.restore();
-        return scale;
     }
 
     void spoolAllPagesWithBoundaries(GraphicsContext& graphicsContext, const FloatSize& pageSizeInPixels)
     {
-        if (!m_frame->document() || !m_frame->view() || !m_frame->document()->renderView())
+        if (!frame()->document() || !frame()->view() || !frame()->document()->renderView())
             return;
 
-        m_frame->document()->updateLayout();
+        frame()->document()->updateLayout();
 
         float pageHeight;
         computePageRects(FloatRect(FloatPoint(0, 0), pageSizeInPixels), 0, 0, 1, pageHeight);

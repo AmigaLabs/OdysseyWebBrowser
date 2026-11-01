@@ -47,7 +47,7 @@ namespace WebCore {
 // True if characters which satisfy the predicate are present, incrementing
 // "pos" to the next character which does not satisfy the predicate.
 // Note: might return pos == str.length().
-static inline bool skipWhile(const String& str, unsigned& pos, const WTF::Function<bool(const UChar)>& predicate)
+static inline bool skipWhile(const String& str, unsigned& pos, const Function<bool(const UChar)>& predicate)
 {
     const unsigned start = pos;
     const unsigned len = str.length();
@@ -204,7 +204,7 @@ bool isValidHTTPToken(const String& value)
 #if USE(GLIB)
 // True if the character at the given position satisifies a predicate, incrementing "pos" by one.
 // Note: Might return pos == str.length()
-static inline bool skipCharacter(const String& value, unsigned& pos, WTF::Function<bool(const UChar)>&& predicate)
+static inline bool skipCharacter(const String& value, unsigned& pos, Function<bool(const UChar)>&& predicate)
 {
     if (pos < value.length() && predicate(value[pos])) {
         ++pos;
@@ -575,7 +575,7 @@ XFrameOptionsDisposition parseXFrameOptionsHeader(const String& header)
     if (header.isEmpty())
         return result;
 
-    for (auto& currentHeader : header.split(',')) {
+    for (auto currentHeader : header.splitAllowingEmptyEntries(',')) {
         currentHeader = currentHeader.stripWhiteSpace();
         XFrameOptionsDisposition currentValue = XFrameOptionsDisposition::None;
         if (equalLettersIgnoringASCIICase(currentHeader, "deny"))

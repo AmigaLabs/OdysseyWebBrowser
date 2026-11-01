@@ -98,7 +98,8 @@ RefPtr<SharedBuffer> WebDataSource::data()
     if (!m_loader)
         return 0;
 
-    return m_loader->mainResourceData();
+    auto data = m_loader->mainResourceData();
+    return data ? RefPtr<SharedBuffer>(data->makeContiguous()) : nullptr;
 }
 
 // WebDocumentRepresentation* WebDataSource::representation()
@@ -180,9 +181,9 @@ WebResource* WebDataSource::subresourceForURL(String url)
     if (!cachedResource)
         return 0;
 
-    SharedBuffer* buffer = cachedResource->resourceBuffer();
+    auto* buffer = cachedResource->resourceBuffer();
 
-    return WebResource::createInstance(buffer, cachedResource->response());
+    return WebResource::createInstance(buffer ? RefPtr<SharedBuffer>(buffer->makeContiguous()) : nullptr, cachedResource->response());
 }
 
 void WebDataSource::addSubresource(WebResource* /*subresource*/)

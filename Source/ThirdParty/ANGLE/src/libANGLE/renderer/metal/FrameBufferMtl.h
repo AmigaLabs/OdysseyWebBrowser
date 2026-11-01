@@ -80,7 +80,7 @@ class FramebufferMtl : public FramebufferImpl
                        GLbitfield mask,
                        GLenum filter) override;
 
-    bool checkStatus(const gl::Context *context) const override;
+    gl::FramebufferStatus checkStatus(const gl::Context *context) const override;
 
     angle::Result syncState(const gl::Context *context,
                             GLenum binding,
@@ -122,8 +122,10 @@ class FramebufferMtl : public FramebufferImpl
 
   private:
     void reset();
-    bool checkPackedDepthStencilAttachment() const;
-    angle::Result invalidateImpl(ContextMtl *contextMtl, size_t count, const GLenum *attachments);
+    gl::FramebufferStatus checkPackedDepthStencilAttachment() const;
+    angle::Result invalidateImpl(const gl::Context *context,
+                                 size_t count,
+                                 const GLenum *attachments);
     angle::Result blitWithDraw(const gl::Context *context,
                                FramebufferMtl *srcFrameBuffer,
                                bool blitColorBuffer,
@@ -154,7 +156,8 @@ class FramebufferMtl : public FramebufferImpl
 
     // Initialize load store options for a render pass's first start (i.e. not render pass resuming
     // from interruptions such as those caused by a conversion compute pass)
-    void setLoadStoreActionOnRenderPassFirstStart(mtl::RenderPassAttachmentDesc *attachmentOut, const bool forceDepthStencilMultisampleLoad);
+    void setLoadStoreActionOnRenderPassFirstStart(mtl::RenderPassAttachmentDesc *attachmentOut,
+                                                  const bool forceDepthStencilMultisampleLoad);
 
     // Fill RenderPassDesc with relevant attachment's info from GL front end.
     angle::Result prepareRenderPass(const gl::Context *context, mtl::RenderPassDesc *descOut);
@@ -163,10 +166,6 @@ class FramebufferMtl : public FramebufferImpl
     // method will start the render pass and return its render encoder.
     mtl::RenderCommandEncoder *ensureRenderPassStarted(const gl::Context *context,
                                                        const mtl::RenderPassDesc &desc);
-
-    void overrideClearColor(const mtl::TextureRef &texture,
-                            MTLClearColor clearColor,
-                            MTLClearColor *colorOut);
 
     angle::Result updateColorRenderTarget(const gl::Context *context, size_t colorIndexGL);
     angle::Result updateDepthRenderTarget(const gl::Context *context);
@@ -206,7 +205,7 @@ class FramebufferMtl : public FramebufferImpl
                                      uint32_t dstBufferRowPitch,
                                      const mtl::BufferRef *dstBuffer) const;
 
-    RenderTargetMtl * getColorReadRenderTargetNoCache(const gl::Context *context) const;
+    RenderTargetMtl *getColorReadRenderTargetNoCache(const gl::Context *context) const;
 
     // NOTE: we cannot use RenderTargetCache here because it doesn't support separate
     // depth & stencil attachments as of now. Separate depth & stencil could be useful to
@@ -224,7 +223,7 @@ class FramebufferMtl : public FramebufferImpl
     bool mRenderPassCleanStart = false;
 
     WindowSurfaceMtl *mBackbuffer = nullptr;
-    const bool mFlipY               = false;
+    const bool mFlipY             = false;
 
     mtl::BufferRef mReadPixelBuffer;
 };

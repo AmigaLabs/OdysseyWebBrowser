@@ -57,7 +57,7 @@ void MediaSampleMorphOS::setTimestamps(const MediaTime& pts, const MediaTime& dt
 	m_dts = dts;
 }
 
-PlatformSample MediaSampleMorphOS::platformSample()
+PlatformSample MediaSampleMorphOS::platformSample() const
 {
 	PlatformSample sample = { PlatformSample::MorphOSSampleType, { .mosSample = m_sample.get() } };
 	return sample;

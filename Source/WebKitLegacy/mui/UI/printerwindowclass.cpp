@@ -764,7 +764,7 @@ DEFMMETHOD(Process_Process)
                             {
                                 if (data->frame->contentRenderer())
                                 {
-                                    GraphicsContext ctx(cr);
+                                    GraphicsContextCairo ctx(cr);
 
                                     for(int i = pj->first - 1; i < pj->last; i++)
                                     {

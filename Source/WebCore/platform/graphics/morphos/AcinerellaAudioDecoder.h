@@ -39,12 +39,6 @@ public:
 	void paint(GraphicsContext&, const FloatRect&) override { }
 
 	void dumpStatus() override;
-#if OS(AROS)
-	static void soundFunc(void *ptr);
-#endif
-#if OS(AMIGAOS)
-	static void soundFunc(struct Hook *hook, struct AHIAudioCtrl *actrl, struct AHISoundMessage *smsg);
-#endif
 
 protected:
 	void startPlaying() override;
@@ -59,16 +53,13 @@ protected:
 	void onCoolDown() override;
 	void ahiCleanup();
 
-#if OS(MORPHOS)
 	static void soundFunc();
-#endif
 	void fillBuffer(int index);
 	void ahiThreadEntryPoint();
 	void stopPlayingQuick() override { m_playing = false; };
 
 protected:
 	Library        *m_ahiBase = nullptr;
-
 	MsgPort        *m_ahiPort = nullptr;
 	AHIRequest     *m_ahiIO = nullptr;
 	AHIAudioCtrl   *m_ahiControl = nullptr;
@@ -77,7 +68,7 @@ protected:
 	uint32_t        m_ahiSampleLength; // *2 for bytes
 	uint32_t        m_ahiSampleBeingPlayed;
 	uint32_t        m_ahiFrameOffset; //
-	Task           *m_pumpTask = nullptr;
+	BinarySemaphore m_ahiSampleConsumed;
 	RefPtr<Thread>  m_ahiThread;
 	bool            m_ahiThreadShuttingDown = false;
 

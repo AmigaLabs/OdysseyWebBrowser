@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003-2020 Apple Inc. All rights reserved.
+ * Copyright (C) 2003-2021 Apple Inc. All rights reserved.
  * Copyright (C) 2010 Igalia S.L
  *
  * Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,9 @@
 #include <wtf/unicode/CharacterNames.h>
 
 #if USE(CF)
+#if PLATFORM(WIN)
+#include "WebCoreBundleWin.h"
+#endif
 #include <wtf/RetainPtr.h>
 #endif
 
@@ -43,31 +46,45 @@
 
 namespace WebCore {
 
-// Because |format| is used as the second parameter to va_start, it cannot be a reference
-// type according to section 18.7/3 of the C++ N1905 standard.
-String formatLocalizedString(String format, ...)
+#if USE(CF) && !PLATFORM(WIN)
+String formatLocalizedString(CFStringRef format, ...)
 {
-#if USE(CF)
     va_list arguments;
     va_start(arguments, format);
 
-    ALLOW_NONLITERAL_FORMAT_BEGIN
-    auto result = adoptCF(CFStringCreateWithFormatAndArguments(0, 0, format.createCFString().get(), arguments));
-    ALLOW_NONLITERAL_FORMAT_END
+    auto localizedFormat = copyLocalizedString(format);
+ALLOW_NONLITERAL_FORMAT_BEGIN
+    // The 'format' parameter is already checked for correct placeholders and parameters.
+    auto result = adoptCF(CFStringCreateWithFormatAndArguments(0, 0, localizedFormat.get(), arguments));
+ALLOW_NONLITERAL_FORMAT_END
 
+    va_end(arguments);
+    return result.get();
+}
+#else
+// Because |format| is used as the second parameter to va_start, it cannot be a reference
+// type according to section 18.7/3 of the C++ N1905 standard.
+String formatLocalizedString(const char* format, ...)
+{
+#if USE(CF) && PLATFORM(WIN)
+    auto cfFormat = adoptCF(CFStringCreateWithCStringNoCopy(nullptr, format, kCFStringEncodingUTF8, kCFAllocatorNull));
+    va_list arguments;
+    va_start(arguments, format);
+    auto localizedFormat = copyLocalizedString(cfFormat.get());
+    auto result = adoptCF(CFStringCreateWithFormatAndArguments(0, 0, localizedFormat.get(), arguments));
     va_end(arguments);
     return result.get();
 #elif USE(GLIB)
     va_list arguments;
     va_start(arguments, format);
-    GUniquePtr<gchar> result(g_strdup_vprintf(format.utf8().data(), arguments));
+    GUniquePtr<gchar> result(g_strdup_vprintf(format, arguments));
     va_end(arguments);
     return String::fromUTF8(result.get());
 #elif OS(MORPHOS) || OS(AMIGAOS)
 	char buffer[8 * 1024];
     va_list arguments;
     va_start(arguments, format);
-    vsnprintf(buffer, sizeof(buffer), format.utf8().data(), arguments);
+    vsnprintf(buffer, sizeof(buffer), format, arguments);
     va_end(arguments);
     return String::fromUTF8(buffer);
 #else
@@ -75,17 +92,65 @@ String formatLocalizedString(String format, ...)
     return format;
 #endif
 }
-
-#if !USE(CF)
-
-String localizedString(const char* key)
-{
-    return String::fromUTF8(key, strlen(key));
-}
-
 #endif
 
-#if ENABLE(CONTEXT_MENUS) && !PLATFORM(MUI)
+#if USE(CF)
+#if !PLATFORM(WIN)
+static CFBundleRef webCoreBundle()
+{
+    static NeverDestroyed<RetainPtr<CFBundleRef>> bundle = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.WebCore"));
+    ASSERT(bundle.get());
+    return bundle.get().get();
+}
+#endif
+
+RetainPtr<CFStringRef> copyLocalizedString(CFStringRef key)
+{
+#if !PLATFORM(IOS_FAMILY)
+    // Can be called on a dispatch queue when initializing strings on iOS.
+    // See LoadWebLocalizedStrings and <rdar://problem/7902473>.
+    ASSERT(isMainThread());
+#endif
+
+    static CFStringRef notFound = CFSTR("localized string not found");
+
+#if PLATFORM(WIN)
+    CFBundleRef bundle = webKitBundle();
+#else
+    CFBundleRef bundle = webCoreBundle();
+#endif
+    auto result = adoptCF(CFBundleCopyLocalizedString(bundle, key, notFound, nullptr));
+
+#if ASSERT_ENABLED
+    if (result.get() == notFound) {
+        char keyCString[256];
+        CFStringGetCString(key, keyCString, sizeof(keyCString), kCFStringEncodingUTF8);
+        ASSERT_WITH_MESSAGE(result.get() != notFound, "Could not find localizable string '%s' in bundle", keyCString);
+    }
+#endif
+
+    return result;
+}
+#endif
+
+#if USE(CF) && !PLATFORM(WIN)
+String localizedString(CFStringRef key)
+{
+    return copyLocalizedString(key).get();
+}
+#else
+String localizedString(const char* key)
+{
+#if USE(CF)
+    auto keyString = adoptCF(CFStringCreateWithCStringNoCopy(nullptr, key, kCFStringEncodingUTF8, kCFAllocatorNull));
+    return copyLocalizedString(keyString.get()).get();
+#else
+    return String::fromUTF8(key, strlen(key));
+#endif
+}
+#endif
+
+#if ENABLE(CONTEXT_MENUS)
 
 static String truncatedStringForMenuItem(const String& original)
 {
@@ -98,8 +163,6 @@ static String truncatedStringForMenuItem(const String& original)
 }
 
 #endif
-
-#if !PLATFORM(MUI)
 
 String inputElementAltText()
 {
@@ -146,9 +209,8 @@ String defaultDetailsSummaryText()
 {
     return WEB_UI_STRING("Details", "text to display in <details> tag when it has no <summary> child");
 }
-#endif
 
-#if ENABLE(CONTEXT_MENUS) && !PLATFORM(MUI)
+#if ENABLE(CONTEXT_MENUS)
 
 String contextMenuItemTagOpenLinkInNewWindow()
 {
@@ -243,9 +305,9 @@ String contextMenuItemTagLookUpInDictionary(const String& selectedString)
 {
 #if USE(CF)
     auto selectedCFString = truncatedStringForMenuItem(selectedString).createCFString();
-    return formatLocalizedString(WEB_UI_CFSTRING("Look Up “%@”", "Look Up context menu item with selected word"), selectedCFString.get());
+    return WEB_UI_FORMAT_CFSTRING("Look Up “%@”", "Look Up context menu item with selected word", selectedCFString.get());
 #elif USE(GLIB)
-    return formatLocalizedString(WEB_UI_STRING("Look Up “%s”", "Look Up context menu item with selected word"), truncatedStringForMenuItem(selectedString).utf8().data());
+    return WEB_UI_FORMAT_STRING("Look Up “%s”", "Look Up context menu item with selected word", truncatedStringForMenuItem(selectedString).utf8().data());
 #else
     return WEB_UI_STRING("Look Up “<selection>”", "Look Up context menu item with selected word").replace("<selection>", truncatedStringForMenuItem(selectedString));
 #endif
@@ -256,7 +318,7 @@ String contextMenuItemTagLookUpInDictionary(const String& selectedString)
 String contextMenuItemTagTranslate(const String& selectedString)
 {
     auto selectedCFString = truncatedStringForMenuItem(selectedString).createCFString();
-    return formatLocalizedString(WEB_UI_CFSTRING("Translate “%@”", "Translate context menu item with selected word"), selectedCFString.get());
+    return WEB_UI_FORMAT_CFSTRING("Translate “%@”", "Translate context menu item with selected word", selectedCFString.get());
 }
 
 #endif
@@ -441,7 +503,7 @@ String contextMenuItemTagSearchWeb()
 
 #endif // ENABLE(CONTEXT_MENUS)
 
-#if !PLATFORM(IOS_FAMILY) && !PLATFORM(MUI)
+#if !PLATFORM(IOS_FAMILY)
 
 String searchMenuNoRecentSearchesText()
 {
@@ -834,7 +896,7 @@ String pluginTooSmallText()
 
 String multipleFileUploadText(unsigned numberOfFiles)
 {
-    return formatLocalizedString(WEB_UI_STRING("%d files", "Label to describe the number of files selected in a file upload control that allows multiple files"), numberOfFiles);
+    return WEB_UI_FORMAT_STRING("%d files", "Label to describe the number of files selected in a file upload control that allows multiple files", numberOfFiles);
 }
 
 String unknownFileSizeText()
@@ -856,11 +918,11 @@ String imageTitle(const String& filename, const IntSize& size)
     auto height = adoptCF(CFNumberCreate(0, kCFNumberIntType, &heightInt));
     auto heightString = adoptCF(CFNumberFormatterCreateStringWithNumber(0, formatter.get(), height.get()));
 
-    return formatLocalizedString(WEB_UI_CFSTRING("%@ %@×%@ pixels", "window title for a standalone image (uses multiplication symbol, not x)"), filename.createCFString().get(), widthString.get(), heightString.get());
+    return WEB_UI_FORMAT_CFSTRING("%@ %@×%@ pixels", "window title for a standalone image (uses multiplication symbol, not x)", filename.createCFString().get(), widthString.get(), heightString.get());
 #elif USE(GLIB)
-    return formatLocalizedString(WEB_UI_STRING("%s %d×%d pixels", "window title for a standalone image (uses multiplication symbol, not x)"), filename.utf8().data(), size.width(), size.height());
+    return WEB_UI_FORMAT_STRING("%s %d×%d pixels", "window title for a standalone image (uses multiplication symbol, not x)", filename.utf8().data(), size.width(), size.height());
 #else
-    return formatLocalizedString(WEB_UI_STRING("<filename> %d×%d pixels", "window title for a standalone image (uses multiplication symbol, not x)"), size.width(), size.height()).replace("<filename>", filename);
+    return WEB_UI_FORMAT_STRING("<filename> %d×%d pixels", "window title for a standalone image (uses multiplication symbol, not x)", size.width(), size.height()).replace("<filename>", filename);
 #endif
 }
 
@@ -982,12 +1044,12 @@ String localizedMediaTimeDescription(float time)
     seconds %= 60;
 
     if (days)
-        return formatLocalizedString(WEB_UI_STRING("%1$d days %2$d hours %3$d minutes %4$d seconds", "accessibility help text for media controller time value >= 1 day"), days, hours, minutes, seconds);
+        return WEB_UI_FORMAT_STRING("%1$d days %2$d hours %3$d minutes %4$d seconds", "accessibility help text for media controller time value >= 1 day", days, hours, minutes, seconds);
     if (hours)
-        return formatLocalizedString(WEB_UI_STRING("%1$d hours %2$d minutes %3$d seconds", "accessibility help text for media controller time value >= 60 minutes"), hours, minutes, seconds);
+        return WEB_UI_FORMAT_STRING("%1$d hours %2$d minutes %3$d seconds", "accessibility help text for media controller time value >= 60 minutes", hours, minutes, seconds);
     if (minutes)
-        return formatLocalizedString(WEB_UI_STRING("%1$d minutes %2$d seconds", "accessibility help text for media controller time value >= 60 seconds"), minutes, seconds);
-    return formatLocalizedString(WEB_UI_STRING("%1$d seconds", "accessibility help text for media controller time value < 60 seconds"), seconds);
+        return WEB_UI_FORMAT_STRING("%1$d minutes %2$d seconds", "accessibility help text for media controller time value >= 60 seconds", minutes, seconds);
+    return WEB_UI_FORMAT_STRING("%1$d seconds", "accessibility help text for media controller time value < 60 seconds", seconds);
 }
 
 String validationMessageValueMissingText()
@@ -1048,13 +1110,13 @@ String validationMessagePatternMismatchText()
 #if !PLATFORM(GTK)
 String validationMessageTooShortText(int, int minLength)
 {
-    return formatLocalizedString(WEB_UI_STRING("Use at least %d characters", "Validation message for form control elements with a value shorter than minimum allowed length"), minLength);
+    return WEB_UI_FORMAT_STRING("Use at least %d characters", "Validation message for form control elements with a value shorter than minimum allowed length", minLength);
 }
 
 #if !PLATFORM(COCOA)
 String validationMessageTooLongText(int, int maxLength)
 {
-    return formatLocalizedString(WEB_UI_STRING("Use no more than %d characters", "Validation message for form control elements with a value shorter than maximum allowed length"), maxLength);
+    return WEB_UI_FORMAT_STRING("Use no more than %d characters", "Validation message for form control elements with a value shorter than maximum allowed length", maxLength);
 }
 #endif
 #endif
@@ -1062,9 +1124,9 @@ String validationMessageTooLongText(int, int maxLength)
 String validationMessageRangeUnderflowText(const String& minimum)
 {
 #if USE(CF)
-    return formatLocalizedString(WEB_UI_CFSTRING("Value must be greater than or equal to %@", "Validation message for input form controls with value lower than allowed minimum"), minimum.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING("Value must be greater than or equal to %@", "Validation message for input form controls with value lower than allowed minimum", minimum.createCFString().get());
 #elif USE(GLIB)
-    return formatLocalizedString(WEB_UI_STRING("Value must be greater than or equal to %s", "Validation message for input form controls with value lower than allowed minimum"), minimum.utf8().data());
+    return WEB_UI_FORMAT_STRING("Value must be greater than or equal to %s", "Validation message for input form controls with value lower than allowed minimum", minimum.utf8().data());
 #else
     UNUSED_PARAM(minimum);
     return WEB_UI_STRING("range underflow", "Validation message for input form controls with value lower than allowed minimum");
@@ -1074,9 +1136,9 @@ String validationMessageRangeUnderflowText(const String& minimum)
 String validationMessageRangeOverflowText(const String& maximum)
 {
 #if USE(CF)
-    return formatLocalizedString(WEB_UI_CFSTRING("Value must be less than or equal to %@", "Validation message for input form controls with value higher than allowed maximum"), maximum.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING("Value must be less than or equal to %@", "Validation message for input form controls with value higher than allowed maximum", maximum.createCFString().get());
 #elif USE(GLIB)
-    return formatLocalizedString(WEB_UI_STRING("Value must be less than or equal to %s", "Validation message for input form controls with value higher than allowed maximum"), maximum.utf8().data());
+    return WEB_UI_FORMAT_STRING("Value must be less than or equal to %s", "Validation message for input form controls with value higher than allowed maximum", maximum.utf8().data());
 #else
     UNUSED_PARAM(maximum);
     return WEB_UI_STRING("range overflow", "Validation message for input form controls with value higher than allowed maximum");
@@ -1119,7 +1181,7 @@ String textTrackAutomaticMenuItemText()
 
 String addTrackLabelAsSuffix(const String& text, const String& label)
 {
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ (%@)", "%@ (%@) (audio/text track)", "Audio/Text track display name format that includes the label and language of the track, in the form of 'Language (Label)'."), text.createCFString().get(), label.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ (%@)", "%@ (%@) (audio/text track)", "Audio/Text track display name format that includes the label and language of the track, in the form of 'Language (Label)'.", text.createCFString().get(), label.createCFString().get());
 }
 
 String textTrackKindClosedCaptionsDisplayName()
@@ -1131,7 +1193,7 @@ String addTextTrackKindClosedCaptionsSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindClosedCaptionsDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ CC", "%@ CC (text track)", "Closed captions text track display name format that includes the language and/or locale (e.g. 'English CC')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ CC", "%@ CC (text track)", "Closed captions text track display name format that includes the language and/or locale (e.g. 'English CC').", text.createCFString().get());
 }
 
 String textTrackKindCaptionsDisplayName()
@@ -1143,7 +1205,7 @@ String addTextTrackKindCaptionsSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindCaptionsDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Captions", "%@ Captions (text track)", "Captions text track display name format that includes the language and/or locale (e.g. 'English Captions')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Captions", "%@ Captions (text track)", "Captions text track display name format that includes the language and/or locale (e.g. 'English Captions').", text.createCFString().get());
 }
 
 String textTrackKindDescriptionsDisplayName()
@@ -1155,7 +1217,7 @@ String addTextTrackKindDescriptionsSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindDescriptionsDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Descriptions", "%@ Descriptions (text track)", "Descriptions text track display name format that includes the language and/or locale (e.g. 'English Descriptions')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Descriptions", "%@ Descriptions (text track)", "Descriptions text track display name format that includes the language and/or locale (e.g. 'English Descriptions').", text.createCFString().get());
 }
 
 String textTrackKindChaptersDisplayName()
@@ -1167,7 +1229,7 @@ String addTextTrackKindChaptersSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindChaptersDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Chapters", "%@ Chapters (text track)", "Chapters text track display name format that includes the language and/or locale (e.g. 'English Chapters')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Chapters", "%@ Chapters (text track)", "Chapters text track display name format that includes the language and/or locale (e.g. 'English Chapters').", text.createCFString().get());
 }
 
 String textTrackKindMetadataDisplayName()
@@ -1179,7 +1241,7 @@ String addTextTrackKindMetadataSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindMetadataDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Metadata", "%@ Metadata (text track)", "Metadata text track display name format that includes the language and/or locale (e.g. 'English Metadata')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Metadata", "%@ Metadata (text track)", "Metadata text track display name format that includes the language and/or locale (e.g. 'English Metadata').", text.createCFString().get());
 }
 
 String textTrackKindSDHDisplayName()
@@ -1191,7 +1253,7 @@ String addTextTrackKindSDHSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindSDHDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ SDH", "%@ SDH (text track)", "SDH (i.e. deaf and/or hard of hearing) text track display name format that includes the language and/or locale (e.g. 'English SDH')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ SDH", "%@ SDH (text track)", "SDH (i.e. deaf and/or hard of hearing) text track display name format that includes the language and/or locale (e.g. 'English SDH').", text.createCFString().get());
 }
 
 String textTrackKindEasyReaderDisplayName()
@@ -1203,7 +1265,7 @@ String addTextTrackKindEasyReaderSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindEasyReaderDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Easy Reader", "%@ Easy (text track)", "Easy Reader (i.e. 3rd-grade level) text track display name format that includes the language and/or locale (e.g. 'English Easy Reader')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Easy Reader", "%@ Easy Reader (text track)", "Easy Reader (i.e. 3rd-grade level) text track display name format that includes the language and/or locale (e.g. 'English Easy Reader').", text.createCFString().get());
 }
 
 String textTrackKindForcedDisplayName()
@@ -1215,7 +1277,7 @@ String addTextTrackKindForcedSuffix(const String& text)
 {
     if (text.isEmpty())
         return textTrackKindForcedDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Forced", "%@ Forced (text track)", "Forced text track display name format that includes the language and/or locale (e.g. 'English Forced')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Forced", "%@ Forced (text track)", "Forced text track display name format that includes the language and/or locale (e.g. 'English Forced').", text.createCFString().get());
 }
 
 String audioTrackKindDescriptionsDisplayName()
@@ -1227,7 +1289,7 @@ String addAudioTrackKindDescriptionsSuffix(const String& text)
 {
     if (text.isEmpty())
         return audioTrackKindDescriptionsDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Descriptions", "%@ Descriptions (audio track)", "Descriptions audio track display name format that includes the language and/or locale (e.g. 'English Descriptions')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Descriptions", "%@ Descriptions (audio track)", "Descriptions audio track display name format that includes the language and/or locale (e.g. 'English Descriptions').", text.createCFString().get());
 }
 
 String audioTrackKindCommentaryDisplayName()
@@ -1239,7 +1301,7 @@ String addAudioTrackKindCommentarySuffix(const String& text)
 {
     if (text.isEmpty())
         return audioTrackKindCommentaryDisplayName();
-    return formatLocalizedString(WEB_UI_CFSTRING_KEY("%@ Commentary", "%@ Commentary (audio track)", "Commentary audio track display name format that includes the language and/or locale (e.g. 'English Commentary')."), text.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING_KEY("%@ Commentary", "%@ Commentary (audio track)", "Commentary audio track display name format that includes the language and/or locale (e.g. 'English Commentary').", text.createCFString().get());
 }
 
 #endif // USE(CF)
@@ -1258,7 +1320,7 @@ String snapshottedPlugInLabelSubtitle()
 
 String useBlockedPlugInContextMenuTitle()
 {
-    return formatLocalizedString(WEB_UI_STRING("Show in blocked plug-in", "Title of the context menu item to show when PDFPlugin was used instead of a blocked plugin"));
+    return WEB_UI_STRING("Show in blocked plug-in", "Title of the context menu item to show when PDFPlugin was used instead of a blocked plugin");
 }
 
 #if ENABLE(WEB_CRYPTO)
@@ -1266,9 +1328,9 @@ String useBlockedPlugInContextMenuTitle()
 String webCryptoMasterKeyKeychainLabel(const String& localizedApplicationName)
 {
 #if USE(CF)
-    return formatLocalizedString(WEB_UI_CFSTRING("%@ WebCrypto Master Key", "Name of application's single WebCrypto master key in Keychain"), localizedApplicationName.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING("%@ WebCrypto Master Key", "Name of application's single WebCrypto master key in Keychain", localizedApplicationName.createCFString().get());
 #elif USE(GLIB)
-    return formatLocalizedString(WEB_UI_STRING("%s WebCrypto Master Key", "Name of application's single WebCrypto master key in Keychain"), localizedApplicationName.utf8().data());
+    return WEB_UI_FORMAT_STRING("%s WebCrypto Master Key", "Name of application's single WebCrypto master key in Keychain", localizedApplicationName.utf8().data());
 #else
     return WEB_UI_STRING("<application> WebCrypto Master Key", "Name of application's single WebCrypto master key in Keychain").replace("<application>", localizedApplicationName);
 #endif
@@ -1342,12 +1404,12 @@ String unacceptableTLSCertificate()
 // information is provided to help users to make decisions.
 String makeCredentialTouchIDPromptTitle(const String& bundleName, const String& domain)
 {
-    return formatLocalizedString(WEB_UI_CFSTRING("“%@” would like to use Touch ID for “%@”.", "Allow the specified bundle to use Touch ID to sign in to the specified website on this device"), bundleName.createCFString().get(), domain.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING("“%@” would like to use Touch ID for “%@”.", "Allow the specified bundle to use Touch ID to sign in to the specified website on this device", bundleName.createCFString().get(), domain.createCFString().get());
 }
 
 String getAssertionTouchIDPromptTitle(const String& bundleName, const String& domain)
 {
-    return formatLocalizedString(WEB_UI_CFSTRING("“%@” would like to sign in to “%@”.", "Allow the specified bundle to sign in to the specified website"), bundleName.createCFString().get(), domain.createCFString().get());
+    return WEB_UI_FORMAT_CFSTRING("“%@” would like to sign in to “%@”.", "Allow the specified bundle to sign in to the specified website", bundleName.createCFString().get(), domain.createCFString().get());
 }
 
 String genericTouchIDPromptTitle()

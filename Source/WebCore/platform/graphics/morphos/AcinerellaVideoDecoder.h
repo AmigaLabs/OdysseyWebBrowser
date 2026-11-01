@@ -9,9 +9,6 @@ struct VLayerHandle;
 struct Window;
 struct Library;
 
-#define CGX_OVERLAY 0
-#define CAIRO_BLIT  1
-
 namespace WebCore {
 namespace Acinerella {
 

@@ -55,6 +55,8 @@ static double WebAVPlayerControllerLiveStreamMinimumTargetDuration = 1.0; // Min
 static double WebAVPlayerControllerLiveStreamSeekableTimeRangeMinimumDuration = 30.0;
 
 @implementation WebAVPlayerController {
+    WeakPtr<WebCore::PlaybackSessionModel> _delegate;
+    WeakPtr<WebCore::PlaybackSessionInterfaceAVKit> _playbackSessionInterface;
     double _defaultPlaybackRate;
     double _rate;
     BOOL _liveStreamEventModePossible;
@@ -64,8 +66,10 @@ static double WebAVPlayerControllerLiveStreamSeekableTimeRangeMinimumDuration = 
 
 - (instancetype)init
 {
-    if (!getAVPlayerControllerClass())
+    if (!getAVPlayerControllerClass()) {
+        [self release];
         return nil;
+    }
 
     if (!(self = [super init]))
         return self;
@@ -158,6 +162,26 @@ static double WebAVPlayerControllerLiveStreamSeekableTimeRangeMinimumDuration = 
         self.delegate->pause();
 }
 
+- (WebCore::PlaybackSessionModel*)delegate
+{
+    return _delegate.get();
+}
+
+- (void)setDelegate:(WebCore::PlaybackSessionModel*)delegate
+{
+    _delegate = WeakPtr { delegate };
+}
+
+- (WebCore::PlaybackSessionInterfaceAVKit*)playbackSessionInterface
+{
+    return _playbackSessionInterface.get();
+}
+
+- (void)setPlaybackSessionInterface:(WebCore::PlaybackSessionInterfaceAVKit*)playbackSessionInterface
+{
+    _playbackSessionInterface = WeakPtr { playbackSessionInterface };
+}
+
 - (double)defaultPlaybackRate
 {
     return _defaultPlaybackRate;
@@ -173,7 +197,9 @@ static double WebAVPlayerControllerLiveStreamSeekableTimeRangeMinimumDuration = 
     if (defaultPlaybackRate == _defaultPlaybackRate)
         return;
 
+    [self willChangeValueForKey:@"defaultPlaybackRate"];
     _defaultPlaybackRate = defaultPlaybackRate;
+    [self didChangeValueForKey:@"defaultPlaybackRate"];
 
     if (!fromJavaScript && self.delegate && self.delegate->defaultPlaybackRate() != _defaultPlaybackRate)
         self.delegate->setDefaultPlaybackRate(_defaultPlaybackRate);
@@ -197,7 +223,9 @@ static double WebAVPlayerControllerLiveStreamSeekableTimeRangeMinimumDuration = 
     if (rate == _rate)
         return;
 
+    [self willChangeValueForKey:@"rate"];
     _rate = rate;
+    [self didChangeValueForKey:@"rate"];
 
     // AVKit doesn't have a separate variable for "paused", instead representing it by a `rate` of
     // `0`. Unfortunately, `HTMLMediaElement::play` doesn't call `HTMLMediaElement::setPlaybackRate`
@@ -462,12 +490,12 @@ static double WebAVPlayerControllerLiveStreamSeekableTimeRangeMinimumDuration = 
 
 - (BOOL)canSeekFrameBackward
 {
-    return YES;
+    return NO;
 }
 
 - (BOOL)canSeekFrameForward
 {
-    return YES;
+    return NO;
 }
 
 - (BOOL)hasMediaSelectionOptions

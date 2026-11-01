@@ -30,13 +30,13 @@
 #include "SharedBuffer.h"
 #include <wtf/ByteOrder.h>
 
+#if OS(AROS) || OS(AMIGAOS)
+#include <netinet/in.h>
+#endif
+
 #if USE(WOFF2)
 #include <woff2/decode.h>
 static const uint32_t kWoff2Signature = 0x774f4632; // "wOF2"
-#endif
-
-#if OS(AROS) || OS(AMIGAOS)
-#include <netinet/in.h>
 #endif
 
 namespace WebCore {

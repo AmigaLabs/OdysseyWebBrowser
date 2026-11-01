@@ -161,7 +161,7 @@ public:
 
 			D(dprintf("%s: seek to %llu\n", "nbRead", readPosition));
 
-			WTF::callOnMainThread([this, seekTo = readPosition, protect = makeRef(*this)]() {
+			WTF::callOnMainThread([this, seekTo = readPosition, protect = Ref { *this }]() {
 				start(seekTo);
 				m_seekProcessed = true;
 			});
@@ -223,7 +223,7 @@ public:
 				{
 					stallRestartCount++;
 					YTDBG(("[YTDBG][NB] stalled request restart #%u at abs=%llu\n", stallRestartCount, m_bufferPositionAbs));
-					WTF::callOnMainThread([this, from = m_bufferPositionAbs, protect = makeRef(*this)]() {
+					WTF::callOnMainThread([this, from = m_bufferPositionAbs, protect = Ref { *this }]() {
 						start(from);
 					});
 					m_eventSemaphore.waitFor(10_s);
@@ -241,7 +241,7 @@ public:
 					YTDBG(("[YTDBG][NB] abort read due to timeout rounds=%u\n", waitRounds));
 					m_didFailLoading = true;
 					m_finishedLoading = true;
-					WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+					WTF::callOnMainThread([this, protect = Ref { *this }]() {
 						if (m_curlRequest)
 						{
 							m_curlRequest->cancel();
@@ -251,7 +251,7 @@ public:
 					return AcinerellaNetworkBuffer::eRead_EOF;
 				}
 
-				WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+				WTF::callOnMainThread([this, protect = Ref { *this }]() {
 					continueBuffering();
 				});
 				m_eventSemaphore.waitFor(10_s);
@@ -264,7 +264,7 @@ public:
 
 		if (resume)
 		{
-			WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+			WTF::callOnMainThread([this, protect = Ref { *this }]() {
 				continueBuffering();
 			});
 		}
@@ -430,17 +430,17 @@ public:
 		}
 	}
 	
-	void curlDidReceiveBuffer(CurlRequest& request, Ref<SharedBuffer>&&buffer) override
+	void curlDidReceiveData(CurlRequest& request, const SharedBuffer& buffer) override
 	{
-		D(dprintf("%s(%p): %d bytes, currently buffered size: %d\n", __PRETTY_FUNCTION__, this, buffer->size(), m_bufferSize));
+		D(dprintf("%s(%p): %d bytes, currently buffered size: %d\n", __PRETTY_FUNCTION__, this, buffer.size(), m_bufferSize));
 		if (m_curlRequest.get() == &request)
 		{
-			if (buffer->size())
+			if (buffer.size())
 			{
 				{
 					auto lock = holdLock(m_bufferLock);
-					m_bufferSize += buffer->size();
-					m_buffer.push(RefPtr<SharedBuffer>(WTFMove(buffer)));
+					m_bufferSize += buffer.size();
+					m_buffer.push(SharedBuffer::create(buffer.data(), buffer.size()));
 
 					if (m_bufferSize > m_readAhead && !m_isPaused)
 					{
@@ -801,17 +801,21 @@ public:
 		}
 	}
 	
-	void curlDidReceiveBuffer(CurlRequest& request, Ref<SharedBuffer>&&buffer) override
+	void curlDidReceiveData(CurlRequest& request, const SharedBuffer& buffer) override
 	{
 		if (m_curlRequest.get() == &request)
 		{
-			if (buffer->size())
+			if (buffer.size())
 			{
-				D(dprintf("%s(%p): append %d\n", __PRETTY_FUNCTION__, this, buffer->size()));
+				D(dprintf("%s(%p): append %d\n", __PRETTY_FUNCTION__, this, buffer.size()));
 				if (!m_buffer)
-					m_buffer = RefPtr<SharedBuffer>(WTFMove(buffer));
+					m_buffer = SharedBuffer::create(buffer.data(), buffer.size());
 				else
-					m_buffer->append(WTFMove(buffer));
+				{
+					SharedBufferBuilder builder(RefPtr<SharedBuffer>(m_buffer));
+					builder.append(buffer);
+					m_buffer = builder.takeAsContiguous();
+				}
 			}
 		}
 	}

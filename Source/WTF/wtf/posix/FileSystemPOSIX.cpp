@@ -32,34 +32,25 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#if !OS(AROS)
 #include <fnmatch.h>
-#endif
 #include <libgen.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#if !PLATFORM(MUI) || OS(AMIGAOS)
+#if !OS(MORPHOS)
 #include <sys/statvfs.h>
 #endif
 #include <sys/types.h>
 #include <unistd.h>
 #include <wtf/EnumTraits.h>
+#include <wtf/SafeStrerror.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
 #include <wtf/text/StringHash.h>
 #include <wtf/HashMap.h>
 
-#if PLATFORM(MUI)
 #if OS(MORPHOS)
 #include <libraries/charsets.h>
-#endif
-#if OS(AMIGAOS)
-#define ODYSSEY
-#ifndef MIBENUM_SYSTEM
-#define MIBENUM_SYSTEM 0xFFFFFFFF
-#endif
-#endif
 #include <proto/dos.h>
 #endif
 
@@ -137,6 +128,15 @@ bool truncateFile(PlatformFileHandle handle, long long offset)
     return !ftruncate(handle, offset);
 }
 
+bool flushFile(PlatformFileHandle handle)
+{
+#if OS(MORPHOS)
+    return true;
+#else
+    return !fsync(handle);
+#endif
+}
+
 int writeToFile(PlatformFileHandle handle, const void* data, int length)
 {
     do {
@@ -205,7 +205,7 @@ std::optional<WallTime> fileCreationTime(const String& path)
 
 std::optional<uint32_t> volumeFileBlockSize(const String& path)
 {
-#if !PLATFORM(MUI) || OS(AMIGAOS)
+#if !OS(MORPHOS)
     struct statvfs fileStat;
     if (!statvfs(fileSystemRepresentation(path).data(), &fileStat))
         return fileStat.f_frsize;
@@ -218,13 +218,8 @@ String stringFromFileSystemRepresentation(const char* path)
 {
     if (!path)
         return String();
-#if PLATFORM(MUI)
-#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
+#if OS(MORPHOS)
 	return String(path, strlen(path), MIBENUM_SYSTEM);
-#endif
-#if OS(AROS)
-	return String(path, strlen(path));
-#endif
 #else
     return String::fromUTF8(path);
 #endif
@@ -232,7 +227,7 @@ String stringFromFileSystemRepresentation(const char* path)
 
 CString fileSystemRepresentation(const String& path)
 {
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 	// some fixes for unix style path fuckups here...
 	// file:///progdir:foo will give us /progdir:foo, so let's account for that
 	if (path.contains(':') && path.startsWith('/'))
@@ -254,7 +249,7 @@ String openTemporaryFile(const String& tmpPath, const String& prefix, PlatformFi
     ASSERT_UNUSED(suffix, suffix.isEmpty());
 
     char buffer[PATH_MAX];
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 	stccpy(buffer, fileSystemRepresentation(tmpPath).data(), sizeof(buffer));
 	auto prefixadd = fileSystemRepresentation(prefix);
 	if (0 == AddPart(buffer, prefixadd.data(), sizeof(buffer)))
@@ -276,13 +271,8 @@ String openTemporaryFile(const String& tmpPath, const String& prefix, PlatformFi
     if (handle < 0)
         goto end;
 
-#if PLATFORM(MUI)
-#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
+#if OS(MORPHOS)
 	return String(buffer, strlen(buffer), MIBENUM_SYSTEM);
-#endif
-#if OS(AROS)
-	return String(buffer, strlen(buffer));
-#endif
 #else
     return String::fromUTF8(buffer);
 #endif
@@ -303,30 +293,20 @@ String temporaryFilePathForPrefix(const String& prefix)
 
 void setTemporaryFilePathForPrefix(const char * tmpPath, const String& prefix)
 {
-#if PLATFORM(MUI)
-#if OS(MORPHOS) || OS(AMIGAOS) // TODO: Check this
+#if OS(MORPHOS)
 	tmpPathPrefixes.set(prefix, String(tmpPath, strlen(tmpPath), MIBENUM_SYSTEM));
-#endif
-#if OS(AROS)
-	tmpPathPrefixes.set(prefix, String(tmpPath, strlen(tmpPath)));
-#endif
 #endif
 }
 
 String openTemporaryFile(const String& prefix, PlatformFileHandle& handle, const String& suffix)
 {
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 	const char* tmpDir = "PROGDIR:Tmp";
 	if (tmpPathPrefixes.contains(prefix))
 	{
 		return openTemporaryFile(tmpPathPrefixes.get(prefix), prefix, handle, suffix);
 	}
-#if OS(MORPHOS) || OS(AMIGAOS)
 	return openTemporaryFile(String(tmpDir, strlen(tmpDir), MIBENUM_SYSTEM), prefix, handle, suffix);
-#endif
-#if OS(AROS)
-	return openTemporaryFile(String(tmpDir, strlen(tmpDir)), prefix, handle, suffix);
-#endif
 #else
     const char* tmpDir = getenv("TMPDIR");
 
@@ -359,7 +339,7 @@ bool deleteFile(const String& path)
     // unlink(...) returns 0 on successful deletion of the path and non-zero in any other case (including invalid permissions or non-existent file)
     bool unlinked = !unlink(fileSystemRepresentation(path).data());
     if (!unlinked && errno != ENOENT)
-        LOG_ERROR("File failed to delete. Error message: %s", strerror(errno));
+        LOG_ERROR("File failed to delete. Error message: %s", safeStrerror(errno).data());
 
     return unlinked;
 }
@@ -394,7 +374,7 @@ bool makeAllDirectories(const String& path)
 
 String pathByAppendingComponent(const String& path, const String& component)
 {
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
     if (path.endsWith('/') || path.endsWith(':'))
 #else
       if (path.endsWith('/'))

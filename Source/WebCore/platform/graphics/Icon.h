@@ -33,16 +33,14 @@
 OBJC_CLASS NSImage;
 #elif PLATFORM(WIN)
 typedef struct HICON__* HICON;
-#elif PLATFORM(MUI)
-#include "BALBase.h"
-namespace WebCore {
-class Image;
-}
 #endif
 
 namespace WebCore {
 
 class GraphicsContext;
+#if PLATFORM(MUI)
+class Image;
+#endif
 class FloatRect;
 class NativeImage;
 
@@ -66,6 +64,8 @@ public:
 #if PLATFORM(MAC)
     static RefPtr<Icon> createIconForUTI(const String&);
     static RefPtr<Icon> createIconForFileExtension(const String&);
+
+    RetainPtr<NSImage> nsImage() const { return m_nsImage; }
 #endif
 
 private:

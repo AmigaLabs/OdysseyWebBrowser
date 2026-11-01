@@ -172,7 +172,7 @@ void BaseAudioContext::lazyInitialize()
 
 void BaseAudioContext::clear()
 {
-    auto protectedThis = makeRef(*this);
+    Ref protectedThis { *this };
 
     // Audio thread is dead. Nobody will schedule node deletion action. Let's do it ourselves.
     do {
@@ -252,7 +252,7 @@ void BaseAudioContext::stop()
     if (m_isStopScheduled)
         return;
 
-    auto protectedThis = makeRef(*this);
+    Ref protectedThis { *this };
 
     m_isStopScheduled = true;
 
@@ -265,7 +265,7 @@ void BaseAudioContext::stop()
 
 Document* BaseAudioContext::document() const
 {
-    return downcast<Document>(m_scriptExecutionContext);
+    return downcast<Document>(scriptExecutionContext());
 }
 
 bool BaseAudioContext::wouldTaintOrigin(const URL& url) const
@@ -467,7 +467,7 @@ ExceptionOr<Ref<ChannelMergerNode>> BaseAudioContext::createChannelMerger(size_t
 ExceptionOr<Ref<OscillatorNode>> BaseAudioContext::createOscillator()
 {
     ALWAYS_LOG(LOGIDENTIFIER);
-#if OS(MORPHOS)|| OS(AMIGAOS) // TODO: Check this
+#if OS(MORPHOS) || OS(AMIGAOS)
        // There is some memory trashing going on in the PeriodicWave.cpp/generateBasicWaveform
        // But so far - impossible to pinpoint where exactly
        return Exception { InvalidStateError };
@@ -557,6 +557,8 @@ void BaseAudioContext::handlePreRenderTasks(const AudioIOPosition& outputPositio
 
         updateAutomaticPullNodes();
         m_outputPosition = outputPosition;
+
+        m_listener->updateDirtyState();
     }
 }
 
@@ -663,7 +665,7 @@ void BaseAudioContext::updateTailProcessingNodes()
     // We try to avoid heap allocations on the audio thread but there is no way to do a main thread dispatch
     // without one.
     DisableMallocRestrictionsForCurrentThreadScope disableMallocRestrictions;
-    callOnMainThread([this, protectedThis = makeRef(*this)]() mutable {
+    callOnMainThread([this, protectedThis = Ref { *this }]() mutable {
         Locker locker { graphLock() };
         disableOutputsForFinishedTailProcessingNodes();
         m_disableOutputsForTailProcessingScheduled = false;
@@ -729,7 +731,7 @@ void BaseAudioContext::scheduleNodeDeletion()
         // Heap allocations are forbidden on the audio thread for performance reasons so we need to
         // explicitly allow the following allocation(s).
         DisableMallocRestrictionsForCurrentThreadScope disableMallocRestrictions;
-        callOnMainThread([protectedThis = makeRef(*this)]() mutable {
+        callOnMainThread([protectedThis = Ref { *this }]() mutable {
             protectedThis->deleteMarkedNodes();
         });
     }
@@ -740,7 +742,7 @@ void BaseAudioContext::deleteMarkedNodes()
     ASSERT(isMainThread());
 
     // Protect this object from being deleted before we release the lock.
-    auto protectedThis = makeRef(*this);
+    Ref protectedThis { *this };
 
     Locker locker { graphLock() };
 
@@ -874,13 +876,14 @@ void BaseAudioContext::postTask(Function<void()>&& task)
 
 const SecurityOrigin* BaseAudioContext::origin() const
 {
-    return m_scriptExecutionContext ? m_scriptExecutionContext->securityOrigin() : nullptr;
+    auto* context = scriptExecutionContext();
+    return context ? context->securityOrigin() : nullptr;
 }
 
 void BaseAudioContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message)
 {
-    if (m_scriptExecutionContext)
-        m_scriptExecutionContext->addConsoleMessage(source, level, message);
+    if (auto* context = scriptExecutionContext())
+        context->addConsoleMessage(source, level, message);
 }
 
 PeriodicWave& BaseAudioContext::periodicWave(OscillatorType type)

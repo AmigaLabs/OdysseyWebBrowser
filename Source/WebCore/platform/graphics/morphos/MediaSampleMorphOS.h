@@ -24,7 +24,6 @@ public:
     MediaTime decodeTime() const override { return m_dts; }
     MediaTime duration() const override { return m_duration; }
     AtomString trackID() const override { return AtomString(m_trackId); }
-    void setTrackID(const String& trackId) override { m_trackId = trackId; }
     size_t sizeInBytes() const override { return m_size; }
     FloatSize presentationSize() const override { return m_presentationSize; }
     void offsetTimestampsBy(const MediaTime&) override;
@@ -35,7 +34,8 @@ public:
     std::optional<MediaSample::ByteRange> byteRange() const override;
 
     SampleFlags flags() const override { return m_flags; }
-    PlatformSample platformSample() override;
+    PlatformSample platformSample() const override;
+    PlatformSample::Type platformSampleType() const override { return PlatformSample::MorphOSSampleType; }
     void dump(PrintStream&) const override { };
 
 	RefPtr<Acinerella::AcinerellaPackage> package() { return m_sample; }

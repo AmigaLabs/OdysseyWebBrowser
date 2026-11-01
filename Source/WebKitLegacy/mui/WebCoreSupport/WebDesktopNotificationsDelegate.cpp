@@ -36,7 +36,7 @@
 #include <clib/debug_protos.h>
 #define D(x)
 
-#if ENABLE(NOTIFICATIONS) || ENABLE(LEAGCY_NOTIFICATIONS)
+#if ENABLE(NOTIFICATIONS)
 
 using namespace WebCore;
 
@@ -45,22 +45,22 @@ WebDesktopNotificationsDelegate::WebDesktopNotificationsDelegate(WebView* webVie
 {
 }
 
-bool WebDesktopNotificationsDelegate::show(Notification* object)
+bool WebDesktopNotificationsDelegate::show(Notification& object)
 {
-    if (object->scriptExecutionContext()->isWorkerGlobalScope())
+    if (object.scriptExecutionContext()->isWorkerGlobalScope())
     return false;
 
-    kprintf("show [%s]\n%s\n", object->title().latin1().data(), object->body().latin1().data());
+    kprintf("show [%s]\n%s\n", object.title().latin1().data(), object.body().latin1().data());
 
     return true;
 }
 
-void WebDesktopNotificationsDelegate::cancel(Notification* object)
+void WebDesktopNotificationsDelegate::cancel(Notification&)
 {
   D(kprintf("cancel\n"));
 }
 
-void WebDesktopNotificationsDelegate::notificationObjectDestroyed(Notification*)
+void WebDesktopNotificationsDelegate::notificationObjectDestroyed(Notification&)
 {
   D(kprintf("objectdestroyed\n"));
 }

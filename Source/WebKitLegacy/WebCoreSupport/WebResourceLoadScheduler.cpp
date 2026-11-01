@@ -24,7 +24,6 @@
 
 #include "WebResourceLoadScheduler.h"
 
-#include <JavaScriptCore/JSExportMacros.h>
 #include "PingHandle.h"
 #include <WebCore/CachedResource.h>
 #include <WebCore/Document.h>
@@ -108,7 +107,7 @@ void WebResourceLoadScheduler::loadResource(Frame& frame, CachedResource& resour
     });
 }
 
-void WebResourceLoadScheduler::loadResourceSynchronously(FrameLoader& frameLoader, unsigned long, const ResourceRequest& request, ClientCredentialPolicy, const FetchOptions& options, const HTTPHeaderMap&, ResourceError& error, ResourceResponse& response, Vector<uint8_t>& data)
+void WebResourceLoadScheduler::loadResourceSynchronously(FrameLoader& frameLoader, ResourceLoaderIdentifier, const ResourceRequest& request, ClientCredentialPolicy, const FetchOptions& options, const HTTPHeaderMap&, ResourceError& error, ResourceResponse& response, Vector<uint8_t>& data)
 {
     auto* document = frameLoader.frame().document();
     auto* sourceOrigin = document ? &document->securityOrigin() : nullptr;
@@ -403,7 +402,7 @@ void WebResourceLoadScheduler::addOnlineStateChangeListener(WTF::Function<void(b
     NetworkStateNotifier::singleton().addListener(WTFMove(listener));
 }
 
-void WebResourceLoadScheduler::preconnectTo(FrameLoader&, const URL&, StoredCredentialsPolicy, PreconnectCompletionHandler&&)
+void WebResourceLoadScheduler::preconnectTo(FrameLoader&, const URL&, StoredCredentialsPolicy, ShouldPreconnectAsFirstParty, PreconnectCompletionHandler&&)
 {
 }
 

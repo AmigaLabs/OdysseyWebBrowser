@@ -36,14 +36,13 @@
 #include <wtf/MessageQueue.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/Vector.h>
 
 namespace WebCore {
 
 class CurlRequestClient;
 class NetworkLoadMetrics;
 class ResourceError;
-class SharedBuffer;
+class FragmentedSharedBuffer;
 class SynchronousLoaderMessageQueue;
 
 class CurlRequest : public ThreadSafeRefCounted<CurlRequest>, public CurlRequestSchedulerClient, public CurlMultipartHandleClient {
@@ -73,7 +72,7 @@ public:
     virtual ~CurlRequest();
 
     void invalidateClient();
-    WEBCORE_EXPORT void setAuthenticationScheme(ProtectionSpaceAuthenticationScheme);
+    WEBCORE_EXPORT void setAuthenticationScheme(ProtectionSpace::AuthenticationScheme);
     WEBCORE_EXPORT void setUserPass(const String&, const String&);
     bool isServerTrustEvaluationDisabled() { return m_shouldDisableServerTrustEvaluation; }
     void disableServerTrustEvaluation() { m_shouldDisableServerTrustEvaluation = true; }
@@ -134,9 +133,9 @@ private:
     CURL* setupTransfer() override;
     size_t willSendData(char*, size_t, size_t);
     size_t didReceiveHeader(String&&);
-    size_t didReceiveData(Ref<SharedBuffer>&&);
+    size_t didReceiveData(const SharedBuffer&);
     void didReceiveHeaderFromMultipart(const Vector<String>&) override;
-    void didReceiveDataFromMultipart(Ref<SharedBuffer>&&) override;
+    void didReceiveDataFromMultipart(const SharedBuffer&) override;
     void didCompleteTransfer(CURLcode) override;
     void didCancelTransfer() override;
     void finalizeTransfer();
@@ -151,11 +150,9 @@ private:
     void setupSendData(bool forPutMethod);
 
     // Processing for DidReceiveResponse
-    bool needToInvokeDidReceiveResponse() const;
-    bool needToInvokeDidCancelTransfer() const;
-    bool isWaitingForDidReceiveResponseCompletion() const;
-    void prepareResponseForFile(const URL&);
-    void sendResponseForFileIfNeeded();
+    bool needToInvokeDidReceiveResponse() const { return m_didReceiveResponse && !m_didNotifyResponse; }
+    bool needToInvokeDidCancelTransfer() const { return m_didNotifyResponse && !m_didReturnFromNotify && m_actionAfterInvoke == Action::FinishTransfer; }
+    void invokeDidReceiveResponseForFile(const URL&);
     void invokeDidReceiveResponse(const CurlResponse&, Action);
     void setRequestPaused(bool);
     void setCallbackPaused(bool);
@@ -167,7 +164,7 @@ private:
     NetworkLoadMetrics networkLoadMetrics();
 
     // Download
-    void writeDataToDownloadFileIfEnabled(const SharedBuffer&);
+    void writeDataToDownloadFileIfEnabled(const FragmentedSharedBuffer&);
     void closeDownloadFile();
     void cleanupDownloadFile();
 
@@ -199,9 +196,7 @@ private:
     std::unique_ptr<CurlMultipartHandle> m_multipartHandle;
 
     CurlResponse m_response;
-    mutable Lock m_notifyStateMutex;
     bool m_didReceiveResponse { false };
-    bool m_fileResponseSent { false };
     bool m_didNotifyResponse { false };
     bool m_didReturnFromNotify { false };
     Action m_actionAfterInvoke { Action::None };
@@ -225,9 +220,9 @@ private:
     bool m_deletesDownloadFileOnCancelOrError { false };
     String m_downloadFilePath;
     FileSystem::PlatformFileHandle m_downloadFileHandle { FileSystem::invalidPlatformFileHandle };
-#if PLATFORM(MUI)
     long long m_downloadResumeOffset { 0 };
     static String m_downloadPath;
+#if PLATFORM(MUI)
     bool m_disableEncoding { false };
 #endif
 

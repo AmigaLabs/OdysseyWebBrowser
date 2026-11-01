@@ -1,11 +1,16 @@
 include(platform/Cairo.cmake)
 include(platform/Curl.cmake)
+include(platform/FreeType.cmake)
 include(platform/ImageDecoders.cmake)
 include(platform/TextureMapper.cmake)
-include(platform/FreeType.cmake)
+
+# Structure follows Source/WebCore/PlatformMorphOS.cmake (webkitty morphos_2.36.8).
+# Where the MUI port has its own implementation (platform/mui, graphics/mui, network/mui)
+# the MUI file is used instead of the MorphOS one. Features match the 2.34 Odyssey build.
 
 list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
-    "${WEBCORE_DIR}/platform/cairo"
+    "${WEBCORE_DIR}/platform"
+    "${WEBCORE_DIR}/platform/generic"
     "${WEBCORE_DIR}/platform/graphics/cairo"
     "${WEBCORE_DIR}/platform/graphics/mui"
     "${WEBCORE_DIR}/platform/graphics/freetype"
@@ -25,7 +30,6 @@ list(APPEND WebCore_INCLUDE_DIRECTORIES
 )
 
 list(APPEND WebCore_SOURCES
-
     loader/AdBlock.cpp
 
     platform/bal/ObserverServiceBookmarklet.cpp
@@ -38,7 +42,7 @@ list(APPEND WebCore_SOURCES
 
     platform/graphics/ImageSource.cpp
     platform/graphics/WOFFFileFormat.cpp
-    
+
     platform/graphics/mui/DisplayRefreshMonitorMorphOS.cpp
 
     platform/linux/FileIOLinux.cpp
@@ -73,6 +77,8 @@ list(APPEND WebCore_SOURCES
     platform/mui/SSLKeyGeneratorMorphOS.cpp
     platform/mui/WidgetMorphOS.cpp
 
+    platform/morphos/SelectionData.cpp
+
     platform/image-decoders/cairo/ImageBackingStoreCairo.cpp
 
     platform/network/mui/CurlSSLHandleMUI.cpp
@@ -87,25 +93,24 @@ list(APPEND WebCore_SOURCES
     platform/text/TextEncodingDetectorICU.cpp
 )
 
-
 if (ENABLE_VIDEO AND ENABLE_VIDEO_TRACK)
-list(APPEND WebCore_SOURCES
-    platform/graphics/mui/acinerella.c
-    platform/graphics/mui/AcinerellaAudioDecoder.cpp
-    platform/graphics/mui/AcinerellaBuffer.cpp
-    platform/graphics/mui/AcinerellaContainer.cpp
-    platform/graphics/mui/AcinerellaDecoder.cpp
-    platform/graphics/mui/AcinerellaHLS.cpp
-    platform/graphics/mui/AcinerellaMuxer.cpp
-    platform/graphics/mui/AcinerellaPointer.cpp
-    platform/graphics/mui/AcinerellaVideoDecoder.cpp
-    platform/graphics/mui/AudioTrackPrivateMorphOS.cpp
-    platform/graphics/mui/MediaDescriptionMorphOS.cpp
-    platform/graphics/mui/MediaPlayerPrivateMorphOS.cpp
-    platform/graphics/mui/MediaSampleMorphOS.cpp
-    platform/graphics/mui/MediaSourceBufferPrivateMorphOS.cpp
-    platform/graphics/mui/MediaSourcePrivateMorphOS.cpp
-    platform/graphics/mui/VideoTrackPrivateMorphOS.cpp
+    list(APPEND WebCore_SOURCES
+        platform/graphics/mui/acinerella.c
+        platform/graphics/mui/AcinerellaAudioDecoder.cpp
+        platform/graphics/mui/AcinerellaBuffer.cpp
+        platform/graphics/mui/AcinerellaContainer.cpp
+        platform/graphics/mui/AcinerellaDecoder.cpp
+        platform/graphics/mui/AcinerellaHLS.cpp
+        platform/graphics/mui/AcinerellaMuxer.cpp
+        platform/graphics/mui/AcinerellaPointer.cpp
+        platform/graphics/mui/AcinerellaVideoDecoder.cpp
+        platform/graphics/mui/AudioTrackPrivateMorphOS.cpp
+        platform/graphics/mui/MediaDescriptionMorphOS.cpp
+        platform/graphics/mui/MediaPlayerPrivateMorphOS.cpp
+        platform/graphics/mui/MediaSampleMorphOS.cpp
+        platform/graphics/mui/MediaSourceBufferPrivateMorphOS.cpp
+        platform/graphics/mui/MediaSourcePrivateMorphOS.cpp
+        platform/graphics/mui/VideoTrackPrivateMorphOS.cpp
     )
 endif ()
 
@@ -145,4 +150,3 @@ list(APPEND WebCore_INCLUDE_DIRECTORIES
     ${SQLITE_INCLUDE_DIR}
     ${ZLIB_INCLUDE_DIRS}
 )
-

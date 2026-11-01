@@ -88,6 +88,11 @@ SQLiteDatabase::~SQLiteDatabase()
     close();
 }
 
+const char* SQLiteDatabase::inMemoryPath()
+{
+    return ":memory:";
+}
+
 bool SQLiteDatabase::open(const String& filename, OpenMode openMode)
 {
     initializeSQLiteIfNecessary();
@@ -148,14 +153,16 @@ bool SQLiteDatabase::open(const String& filename, OpenMode openMode)
             LOG_ERROR("SQLite database could not set temp_store to memory");
     }
 
-    if (openMode != OpenMode::ReadOnly)
-        useWALJournalMode();
+    if (filename != inMemoryPath()) {
+        if (openMode != OpenMode::ReadOnly)
+            useWALJournalMode();
 
-    auto shmFileName = makeString(filename, "-shm"_s);
-    if (FileSystem::fileExists(shmFileName)) {
-        if (!FileSystem::isSafeToUseMemoryMapForPath(shmFileName)) {
-            RELEASE_LOG_FAULT(SQLDatabase, "Opened an SQLite database with a Class A -shm file. This may trigger a crash when the user locks the device. (%s)", shmFileName.latin1().data());
-            FileSystem::makeSafeToUseMemoryMapForPath(shmFileName);
+        auto shmFileName = makeString(filename, "-shm"_s);
+        if (FileSystem::fileExists(shmFileName)) {
+            if (!FileSystem::isSafeToUseMemoryMapForPath(shmFileName)) {
+                RELEASE_LOG_FAULT(SQLDatabase, "Opened an SQLite database with a Class A -shm file. This may trigger a crash when the user locks the device. (%s)", shmFileName.latin1().data());
+                FileSystem::makeSafeToUseMemoryMapForPath(shmFileName);
+            }
         }
     }
 
@@ -223,7 +230,7 @@ void SQLiteDatabase::checkpoint(CheckpointMode mode)
 
 void SQLiteDatabase::useWALJournalMode()
 {
-#if OS(MORPHOS) // || OS(AMIGAOS) // Check this
+#if OS(MORPHOS)
 	auto syncStatement = prepareStatement("PRAGMA synchronous=off;"_s);
 	if (syncStatement)
 		syncStatement->step();
@@ -233,6 +240,7 @@ void SQLiteDatabase::useWALJournalMode()
 #else
     m_useWAL = true;
     {
+        SQLiteTransactionInProgressAutoCounter transactionCounter;
         auto walStatement = prepareStatement("PRAGMA journal_mode=WAL;"_s);
         if (walStatement && walStatement->step() == SQLITE_ROW) {
 #ifndef NDEBUG
@@ -270,7 +278,7 @@ void SQLiteDatabase::close(ShouldSetErrorState shouldSetErrorState)
             closeResult = sqlite3_close_v2(db);
 
         if (closeResult != SQLITE_OK)
-            RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::close: Failed to close database (%d) - %{public}s", closeResult, lastErrorMsg());
+            RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::close: Failed to close database (%d) - %" PUBLIC_LOG_STRING, closeResult, lastErrorMsg());
     }
 
     if (shouldSetErrorState == ShouldSetErrorState::Yes) {
@@ -631,10 +639,11 @@ bool SQLiteDatabase::isAutoCommitOn() const
 
 bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
 {
-    int autoVacuumMode = 0;
-    if (auto statement = prepareStatement("PRAGMA auto_vacuum"_s))
-        autoVacuumMode = statement->columnInt(0);
-    int error = lastError();
+    auto statement = prepareStatement("PRAGMA auto_vacuum"_s);
+    if (!statement)
+        return false;
+
+    int autoVacuumMode = statement->columnInt(0);
 
     // Check if we got an error while trying to get the value of the auto_vacuum flag.
     // If we got a SQLITE_BUSY error, then there's probably another transaction in
@@ -642,7 +651,7 @@ bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
     // auto_vacuum flag and try to set it to INCREMENTAL the next time we open this
     // database. If the error is not SQLITE_BUSY, then we probably ran into a more
     // serious problem and should return false (to log an error message).
-    if (error != SQLITE_ROW)
+    if (lastError() != SQLITE_ROW)
         return false;
 
     switch (autoVacuumMode) {
@@ -655,26 +664,25 @@ bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
         if (!executeCommand("PRAGMA auto_vacuum = 2"_s))
             return false;
         runVacuumCommand();
-        error = lastError();
-        return (error == SQLITE_OK);
+        return lastError() == SQLITE_OK;
     }
 }
 
 static void destroyCollationFunction(void* arg)
 {
-    auto f = static_cast<WTF::Function<int(int, const void*, int, const void*)>*>(arg);
+    auto f = static_cast<Function<int(int, const void*, int, const void*)>*>(arg);
     delete f;
 }
 
 static int callCollationFunction(void* arg, int aLength, const void* a, int bLength, const void* b)
 {
-    auto f = static_cast<WTF::Function<int(int, const void*, int, const void*)>*>(arg);
+    auto f = static_cast<Function<int(int, const void*, int, const void*)>*>(arg);
     return (*f)(aLength, a, bLength, b);
 }
 
-void SQLiteDatabase::setCollationFunction(const String& collationName, WTF::Function<int(int, const void*, int, const void*)>&& collationFunction)
+void SQLiteDatabase::setCollationFunction(const String& collationName, Function<int(int, const void*, int, const void*)>&& collationFunction)
 {
-    auto functionObject = new WTF::Function<int(int, const void*, int, const void*)>(WTFMove(collationFunction));
+    auto functionObject = new Function<int(int, const void*, int, const void*)>(WTFMove(collationFunction));
     sqlite3_create_collation_v2(m_db, collationName.utf8().data(), SQLITE_UTF8, functionObject, callCollationFunction, destroyCollationFunction);
 }
 
@@ -726,7 +734,7 @@ Expected<SQLiteStatement, int> SQLiteDatabase::prepareStatementSlow(const String
     CString query = queryString.stripWhiteSpace().utf8();
     auto sqlStatement = constructAndPrepareStatement(*this, query.data(), query.length());
     if (!sqlStatement) {
-        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareStatement: Failed to prepare statement %{public}s", query.data());
+        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareStatement: Failed to prepare statement %" PUBLIC_LOG_STRING, query.data());
         return makeUnexpected(sqlStatement.error());
     }
     return SQLiteStatement { *this, sqlStatement.value() };
@@ -736,7 +744,7 @@ Expected<SQLiteStatement, int> SQLiteDatabase::prepareStatement(ASCIILiteral que
 {
     auto sqlStatement = constructAndPrepareStatement(*this, query.characters(), query.length());
     if (!sqlStatement) {
-        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareStatement: Failed to prepare statement %{public}s", query.characters());
+        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareStatement: Failed to prepare statement %" PUBLIC_LOG_STRING, query.characters());
         return makeUnexpected(sqlStatement.error());
     }
     return SQLiteStatement { *this, sqlStatement.value() };
@@ -747,7 +755,7 @@ Expected<UniqueRef<SQLiteStatement>, int> SQLiteDatabase::prepareHeapStatementSl
     CString query = queryString.stripWhiteSpace().utf8();
     auto sqlStatement = constructAndPrepareStatement(*this, query.data(), query.length());
     if (!sqlStatement) {
-        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareHeapStatement: Failed to prepare statement %{public}s", query.data());
+        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareHeapStatement: Failed to prepare statement %" PUBLIC_LOG_STRING, query.data());
         return makeUnexpected(sqlStatement.error());
     }
     return UniqueRef<SQLiteStatement>(*new SQLiteStatement(*this, sqlStatement.value()));
@@ -757,7 +765,7 @@ Expected<UniqueRef<SQLiteStatement>, int> SQLiteDatabase::prepareHeapStatement(A
 {
     auto sqlStatement = constructAndPrepareStatement(*this, query.characters(), query.length());
     if (!sqlStatement) {
-        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareHeapStatement: Failed to prepare statement %{public}s", query.characters());
+        RELEASE_LOG_ERROR(SQLDatabase, "SQLiteDatabase::prepareHeapStatement: Failed to prepare statement %" PUBLIC_LOG_STRING, query.characters());
         return makeUnexpected(sqlStatement.error());
     }
     return UniqueRef<SQLiteStatement>(*new SQLiteStatement(*this, sqlStatement.value()));

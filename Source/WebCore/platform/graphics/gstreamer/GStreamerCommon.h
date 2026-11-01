@@ -26,7 +26,6 @@
 #include <gst/gst.h>
 #include <gst/video/video-format.h>
 #include <gst/video/video-info.h>
-#include <optional>
 #include <wtf/MediaTime.h>
 #include <wtf/ThreadSafeRefCounted.h>
 
@@ -82,6 +81,14 @@ bool isThunderRanked();
 inline GstClockTime toGstClockTime(const MediaTime &mediaTime)
 {
     return static_cast<GstClockTime>(toGstUnsigned64Time(mediaTime));
+}
+
+inline MediaTime fromGstClockTime(GstClockTime time)
+{
+    if (!GST_CLOCK_TIME_IS_VALID(time))
+        return MediaTime::invalidTime();
+
+    return MediaTime(GST_TIME_AS_USECONDS(time), G_USEC_PER_SEC);
 }
 
 class GstMappedBuffer {
@@ -287,8 +294,8 @@ private:
 };
 
 
-void connectSimpleBusMessageCallback(GstElement* pipeline);
-void disconnectSimpleBusMessageCallback(GstElement* pipeline);
+void connectSimpleBusMessageCallback(GstElement*, Function<void(GstMessage*)>&& = [](GstMessage*) { });
+void disconnectSimpleBusMessageCallback(GstElement*);
 
 enum class GstVideoDecoderPlatform { ImxVPU, Video4Linux, OpenMAX };
 
@@ -307,6 +314,8 @@ GstBuffer* gstBufferNewWrappedFast(void* data, size_t length);
 // These functions should be used for elements not provided by WebKit itself and not provided by GStreamer -core.
 GstElement* makeGStreamerElement(const char* factoryName, const char* name);
 GstElement* makeGStreamerBin(const char* description, bool ghostUnlinkedPads);
+
+String gstStructureToJSONString(const GstStructure*);
 
 }
 
@@ -374,11 +383,11 @@ public:
             return *this;
         }
 
-        bool operator==(const iterator& other)
+        bool operator==(const iterator& other) const
         {
             return m_iter == other.m_iter && m_done == other.m_done;
         }
-        bool operator!=(const iterator& other) { return !(*this == other); }
+        bool operator!=(const iterator& other) const { return !(*this == other); }
 
     private:
         GstIterator* m_iter;

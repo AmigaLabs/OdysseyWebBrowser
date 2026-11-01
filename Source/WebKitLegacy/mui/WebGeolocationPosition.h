@@ -32,6 +32,7 @@
 #include "WebKit.h"
 
 #include <WebCore/GeolocationPosition.h>
+#include <WebCore/GeolocationPositionData.h>
 
 class WebGeolocationPosition {
 public:

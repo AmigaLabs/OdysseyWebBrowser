@@ -28,6 +28,7 @@
 
 #if ENABLE(JIT)
 
+#include "DeferGCInlines.h"
 #include "HeapInlines.h"
 #include "JITSafepoint.h"
 #include "JITWorklistThread.h"
@@ -56,25 +57,6 @@ JITWorklist::~JITWorklist()
 {
     UNREACHABLE_FOR_PLATFORM();
 }
-
-#if 0
-// broken 2.34.6
-#if PLATFORM(MUI)
-void JITWorklist::shutdown()
-{
-    {
-        LockHolder locker(*m_lock);
-        if (m_thread->tryStop(locker))
-            return;
-
-        m_thread->m_stop = true;
-        m_thread->notify(locker);
-    }
-
-    m_thread->join();
-}
-#endif
-#endif
 
 static JITWorklist* theGlobalJITWorklist { nullptr };
 
@@ -154,7 +136,7 @@ auto JITWorklist::compilationState(JITCompilationKey key) -> State
 
 auto JITWorklist::completeAllReadyPlansForVM(VM& vm, JITCompilationKey requestedKey) -> State
 {
-    DeferGC deferGC(vm.heap);
+    DeferGC deferGC(vm);
 
     Vector<RefPtr<JITPlan>, 8> myReadyPlans;
     removeAllReadyPlansForVM(vm, myReadyPlans);
@@ -186,7 +168,7 @@ auto JITWorklist::completeAllReadyPlansForVM(VM& vm, JITCompilationKey requested
 
 void JITWorklist::waitUntilAllPlansForVMAreReady(VM& vm)
 {
-    DeferGC deferGC(vm.heap);
+    DeferGC deferGC(vm);
 
     // While we are waiting for the compiler to finish, the collector might have already suspended
     // the compiler and then it will be waiting for us to stop. That's a deadlock. We avoid that
@@ -229,7 +211,7 @@ void JITWorklist::waitUntilAllPlansForVMAreReady(VM& vm)
 
 void JITWorklist::completeAllPlansForVM(VM& vm)
 {
-    DeferGC deferGC(vm.heap);
+    DeferGC deferGC(vm);
     waitUntilAllPlansForVMAreReady(vm);
     completeAllReadyPlansForVM(vm);
 }
@@ -323,7 +305,7 @@ void JITWorklist::dump(const AbstractLocker& locker, PrintStream& out) const
 
 void JITWorklist::removeAllReadyPlansForVM(VM& vm, Vector<RefPtr<JITPlan>, 8>& myReadyPlans)
 {
-    DeferGC deferGC(vm.heap);
+    DeferGC deferGC(vm);
     Locker locker { *m_lock };
     for (size_t i = 0; i < m_readyPlans.size(); ++i) {
         RefPtr<JITPlan> plan = m_readyPlans[i];

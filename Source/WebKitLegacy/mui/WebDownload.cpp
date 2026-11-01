@@ -104,7 +104,7 @@ public:
     void didStart();
     virtual void willSendRequestAsync(ResourceHandle*, ResourceRequest&&, ResourceResponse&&, CompletionHandler<void(ResourceRequest&&)>&&) override;
     virtual void didReceiveResponseAsync(ResourceHandle*, ResourceResponse&&, CompletionHandler<void()>&&) override;
-    virtual void didReceiveData(ResourceHandle*, const uint8_t*, unsigned, int) override;
+    virtual void didReceiveBuffer(ResourceHandle*, const FragmentedSharedBuffer&, int) override;
     virtual void didFinishLoading(ResourceHandle*, const NetworkLoadMetrics&) override;
     virtual void didFail(ResourceHandle*, const ResourceError&) override;
     virtual void wasBlocked(ResourceHandle*) override;
@@ -220,7 +220,7 @@ void DownloadClient::didReceiveResponseAsync(ResourceHandle*, WebCore::ResourceR
         if(priv->allowResume)
         {
             priv->resourceHandle->cancel();
-            priv->resourceHandle = ResourceHandle::create2(new WebDownloadNetworkingContext(), *priv->resourceRequest, priv->downloadClient, false, false, false);
+            priv->resourceHandle = ResourceHandle::create(new WebDownloadNetworkingContext(), *priv->resourceRequest, priv->downloadClient, false, false, false, nullptr, false);
             // HACK to disable on-the-fly gzip decoding
             if (priv->requestUri.endsWith(".gz") || priv->requestUri.endsWith(".tgz"))
                 priv->resourceHandle->getInternal()->m_curlRequest->setDisableEncoding(true);
@@ -260,19 +260,21 @@ void DownloadClient::didReceiveResponseAsync(ResourceHandle*, WebCore::ResourceR
     completionHandler();
 }
 
-void DownloadClient::didReceiveData(ResourceHandle*, const uint8_t* data, unsigned length, int lengthReceived)
+void DownloadClient::didReceiveBuffer(ResourceHandle*, const FragmentedSharedBuffer& buffer, int)
 {
     if (!m_download->downloadDelegate())
         return;
 
     WebDownloadPrivate* priv = m_download->getWebDownloadPrivate();
 
+    unsigned length = buffer.size();
     m_download->downloadDelegate()->didReceiveDataOfLength(m_download, length);
 
     if(priv->outputChannel)
     {
         // FIXME: handle write errors somehow
-        priv->outputChannel->write(data, length);
+        auto contiguous = buffer.makeContiguous();
+        priv->outputChannel->write(contiguous->data(), length);
         priv->currentSize += length;
     }
 }
@@ -493,7 +495,7 @@ void WebDownload::start(bool quiet)
     if (m_priv->resourceHandle)
     {
         ResourceResponse response(m_response->resourceResponse());
-        m_priv->resourceHandle->setClientInternal(m_priv->downloadClient);
+        m_priv->resourceHandle->getInternal()->m_client = m_priv->downloadClient; // no setClientInternal in 2.36
         // HACK to disable on-the-fly gzip decoding
         if (m_priv->requestUri.endsWith(".gz") || m_priv->requestUri.endsWith(".tgz"))
             m_priv->resourceHandle->getInternal()->m_curlRequest->setDisableEncoding(true);
@@ -503,7 +505,7 @@ void WebDownload::start(bool quiet)
     else
     {
         m_priv->downloadClient->didStart();
-        m_priv->resourceHandle = ResourceHandle::create2(new WebDownloadNetworkingContext(), m_request->resourceRequest(), m_priv->downloadClient, false, false, false);
+        m_priv->resourceHandle = ResourceHandle::create(new WebDownloadNetworkingContext(), m_request->resourceRequest(), m_priv->downloadClient, false, false, false, nullptr, false);
         if(m_priv->resourceHandle)
         {
             // HACK to disable on-the-fly gzip decoding

@@ -84,8 +84,6 @@ class DisplayCGL : public DisplayGL
 
     DeviceImpl *createDevice() override;
 
-    std::string getVendorString() const override;
-
     egl::Error waitClient(const gl::Context *context) override;
     egl::Error waitNative(const gl::Context *context, EGLint engine) override;
 
@@ -100,11 +98,14 @@ class DisplayCGL : public DisplayGL
 
     void populateFeatureList(angle::FeatureList *features) override;
 
+    RendererGL *getRenderer() const override;
+
     // Support for dual-GPU MacBook Pros. Used only by ContextCGL. The use of
     // these entry points is gated by the presence of dual GPUs.
     egl::Error referenceDiscreteGPU();
     egl::Error unreferenceDiscreteGPU();
     egl::Error handleGPUSwitch() override;
+    egl::Error forceGPUSwitch(EGLint gpuIDHigh, EGLint gpuIDLow) override;
 
   private:
     egl::Error makeCurrentSurfaceless(gl::Context *context) override;
@@ -113,6 +114,7 @@ class DisplayCGL : public DisplayGL
     void generateCaps(egl::Caps *outCaps) const override;
 
     void checkDiscreteGPUStatus();
+    void setContextToGPU(uint64_t gpuID, GLint virtualScreen);
 
     std::shared_ptr<RendererGL> mRenderer;
 

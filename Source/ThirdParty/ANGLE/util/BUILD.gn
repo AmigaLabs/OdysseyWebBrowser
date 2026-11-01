@@ -15,7 +15,6 @@ _util_sources = [
   "OSWindow.cpp",
   "OSWindow.h",
   "com_utils.h",
-  "frame_capture_test_utils.h",
   "geometry_utils.cpp",
   "geometry_utils.h",
   "keyboard.h",
@@ -64,7 +63,7 @@ if (is_fuchsia) {
     "fuchsia/ScenicWindow.cpp",
     "fuchsia/ScenicWindow.h",
   ]
-} else if (use_ozone && !angle_use_x11 && !angle_use_vulkan_display) {
+} else if (use_ozone && !angle_use_x11) {
   # Use X11 impl by default otherwise switch to fake Ozone impl that does not
   # seem to do anything real.
   # TODO(msisov): probably, we need to have a proper support for different
@@ -83,6 +82,15 @@ if (is_mac) {
     "osx/OSXPixmap.mm",
     "osx/OSXWindow.h",
     "osx/OSXWindow.mm",
+  ]
+}
+
+if (is_ios) {
+  _util_sources += [
+    "ios/IOSPixmap.h",
+    "ios/IOSPixmap.mm",
+    "ios/IOSWindow.h",
+    "ios/IOSWindow.mm",
   ]
 }
 
@@ -145,6 +153,21 @@ angle_source_set("angle_util_loader") {
   ]
 }
 
+if (angle_has_frame_capture) {
+  angle_source_set("angle_frame_capture_test_utils") {
+    testonly = true
+    sources = [
+      "capture/frame_capture_test_utils.cpp",
+      "capture/frame_capture_test_utils.h",
+    ]
+    deps = [
+      "$angle_root:angle_common",
+      "$angle_root:angle_compression",
+      "$angle_root/third_party/rapidjson",
+    ]
+  }
+}
+
 config("angle_util_config") {
   # Force users to include "util/header.h" instead of just "header.h".
   include_dirs = [ ".." ]
@@ -184,11 +207,14 @@ foreach(is_shared_library,
       ]
     }
 
-    if (is_mac) {
-      frameworks = [
-        "AppKit.framework",
-        "QuartzCore.framework",
-      ]
+    if (is_apple) {
+      frameworks = [ "QuartzCore.framework" ]
+      if (is_mac) {
+        frameworks += [ "AppKit.framework" ]
+      }
+      if (is_ios) {
+        frameworks += [ "UIKit.framework" ]
+      }
     }
 
     if (is_android) {
@@ -221,7 +247,7 @@ foreach(is_shared_library,
 
       public_deps += [ ":angle_util_loader" ]
 
-      if (is_mac && !is_component_build) {
+      if ((is_mac || is_ios) && !is_component_build) {
         ldflags = [
           "-install_name",
           "@rpath/libangle_util.dylib",

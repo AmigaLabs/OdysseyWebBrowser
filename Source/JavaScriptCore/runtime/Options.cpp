@@ -28,6 +28,7 @@
 
 #include "AssemblerCommon.h"
 #include "CPU.h"
+#include "JITOperationValidation.h"
 #include "LLIntCommon.h"
 #include "MinimumReservedZoneSize.h"
 #include <algorithm>
@@ -51,7 +52,6 @@
 #endif
 
 #if ENABLE(JIT_CAGE)
-#include <WebKitAdditions/JITCageAdditions.h>
 #include <machine/cpu_capabilities.h>
 #include <wtf/cocoa/Entitlements.h>
 #endif
@@ -166,7 +166,7 @@ bool Options::isAvailable(Options::ID id, Options::Availability availability)
         return true;
 #endif
 #if !OS(MORPHOS) && !OS(AMIGAOS) // TODO: Check this
-    if (id == traceLLIntExecutionID)
+
         return !!LLINT_TRACING;
     if (id == traceLLIntSlowPathID)
         return !!LLINT_TRACING;
@@ -366,8 +366,8 @@ static void overrideDefaults()
 
 #if PLATFORM(MAC) && CPU(ARM64)
     Options::numberOfGCMarkers() = 4;
-    Options::numberOfDFGCompilerThreads() = 2;
-    Options::numberOfFTLCompilerThreads() = 2;
+    Options::numberOfDFGCompilerThreads() = 3;
+    Options::numberOfFTLCompilerThreads() = 3;
 #endif
 
 #if USE(BMALLOC_MEMORY_FOOTPRINT_API)
@@ -446,8 +446,6 @@ void Options::recomputeDependentOptions()
     Options::useConcurrentGC() = false;
 #endif
 
-    if (!isARM64())
-        Options::useDataIC() = false;
     if (!Options::useDataIC())
         Options::useDataICInOptimizingJIT() = false;
 
@@ -1153,6 +1151,8 @@ bool OptionReader::Option::operator==(const Option& other) const
 #if ENABLE(JIT_CAGE)
 bool canUseJITCage()
 {
+    if (JSC_FORCE_USE_JIT_CAGE)
+        return true;
     return JSC_JIT_CAGE_VERSION() && WTF::processHasEntitlement("com.apple.private.verified-jit");
 }
 #else

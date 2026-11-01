@@ -227,6 +227,16 @@ TEST_P(FenceSyncTest, BasicQueries)
     EXPECT_EQ(0, value);
 }
 
+// Test usage of glGetSynciv with nullptr as length
+TEST_P(FenceSyncTest, NullLength)
+{
+    GLint value = 0;
+    GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glGetSynciv(sync, GL_SYNC_STATUS, 1, nullptr, &value);
+    glDeleteSync(sync);
+    EXPECT_GL_NO_ERROR();
+}
+
 // Test that basic usage works and doesn't generate errors or crash
 TEST_P(FenceSyncTest, BasicOperations)
 {
@@ -292,8 +302,6 @@ TEST_P(FenceSyncTest, MultipleFenceDraw)
         {
             GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
             ASSERT_GL_NO_ERROR();
-            // Force the fence to be created
-            glFlush();
 
             drawGreen      = !drawGreen;
             GLuint program = 0;
@@ -335,7 +343,7 @@ TEST_P(FenceSyncTest, MultipleFenceDraw)
     }
 }
 
-// Use this to select which configurations (e.g. which renderer, which GLES major version) these
-// tests should be run against.
 ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(FenceNVTest);
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(FenceSyncTest);
 ANGLE_INSTANTIATE_TEST_ES3(FenceSyncTest);

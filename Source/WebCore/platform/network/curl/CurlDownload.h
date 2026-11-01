@@ -39,6 +39,7 @@ namespace WebCore {
 
 class CurlRequest;
 class ResourceHandle;
+class SharedBuffer;
 
 class CurlDownloadListener {
 public:
@@ -80,7 +81,7 @@ private:
     Ref<CurlRequest> createCurlRequest(ResourceRequest&);
     void curlDidSendData(CurlRequest&, unsigned long long, unsigned long long) override { }
     void curlDidReceiveResponse(CurlRequest&, CurlResponse&&) override;
-    void curlDidReceiveBuffer(CurlRequest&, Ref<SharedBuffer>&&) override;
+    void curlDidReceiveData(CurlRequest&, const SharedBuffer&) override;
     void curlDidComplete(CurlRequest&, NetworkLoadMetrics&&) override;
     void curlDidFailWithError(CurlRequest&, ResourceError&&, CertificateInfo&&) override;
 

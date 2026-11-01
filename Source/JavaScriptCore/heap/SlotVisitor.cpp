@@ -154,10 +154,9 @@ void SlotVisitor::appendJSCellOrAuxiliary(HeapCell* heapCell)
                     out.print("GC type: ", heap()->collectionScope(), "\n");
                     out.print("Object at: ", RawPointer(jsCell), "\n");
 #if USE(JSVALUE64)
-                    out.print("Structure ID: ", structureID, " (0x", format("%x", structureID), ")\n");
-                    out.print("Structure ID table size: ", heap()->structureIDTable().size(), "\n");
+                    out.print("Structure ID: ", structureID.bits(), " (", RawPointer(structureID.decode()), ")\n");
 #else
-                    out.print("Structure: ", RawPointer(structureID), "\n");
+                    out.print("Structure: ", RawPointer(structureID.decode()), "\n");
 #endif
                     out.print("Object contents:");
                     for (unsigned i = 0; i < 2; ++i)
@@ -188,13 +187,13 @@ void SlotVisitor::appendJSCellOrAuxiliary(HeapCell* heapCell)
             die("GC scan found corrupt object: structureID is zero!\n");
         
         // It's not OK for the structure to be nuked at any GC scan point.
-        if (isNuked(structureID))
+        if (structureID.isNuked())
             die("GC scan found object in bad state: structureID is nuked!\n");
-        
+
         // This detects the worst of the badness.
-        Integrity::auditStructureID(heap()->structureIDTable(), structureID);
+        Integrity::auditStructureID(structureID);
     };
-    
+
     // In debug mode, we validate before marking since this makes it clearer what the problem
     // was. It's also slower, so we don't do it normally.
     if (ASSERT_ENABLED && isJSCellKind(heapCell->cellKind()))
@@ -226,7 +225,7 @@ void SlotVisitor::appendJSCellOrAuxiliary(HeapCell* heapCell)
 
 void SlotVisitor::appendSlow(JSCell* cell, Dependency dependency)
 {
-#if !OS(MORPHOS) && !OS(AMIGAOS) // TODO: Check this
+#if !OS(MORPHOS) && !OS(AMIGAOS)
     if (UNLIKELY(m_heapAnalyzer))
         m_heapAnalyzer->analyzeEdge(m_currentCell, cell, rootMarkReason());
 #endif
@@ -361,11 +360,8 @@ ALWAYS_INLINE void SlotVisitor::visitChildren(const JSCell* cell)
     }
     
 	// MorphOS: appears to be crashing here with cell most likely NULL
-    // TODO: appears to be crashing here with cell most likely NULL
-#if OS(MORPHOS) || OS(AMIGAOS)
 	if (nullptr == cell)
 		return;
-#endif
 
     // Funny story: it's possible for the object to be black already, if we barrier the object at
     // about the same time that it's marked. That's fine. It's a gnarly and super-rare race. It's
@@ -406,7 +402,7 @@ ALWAYS_INLINE void SlotVisitor::visitChildren(const JSCell* cell)
         cell->methodTable(vm())->visitChildren(const_cast<JSCell*>(cell), *this);
         break;
     }
-#if !OS(MORPHOS) && !OS(AMIGAOS) // TODO: Check this
+#if !OS(MORPHOS) && !OS(AMIGAOS)
     if (UNLIKELY(m_heapAnalyzer)) {
         if (m_isFirstVisit)
             m_heapAnalyzer->analyzeNode(const_cast<JSCell*>(cell));
@@ -502,7 +498,7 @@ NEVER_INLINE void SlotVisitor::drain(MonotonicTime timeout)
     
     Locker locker { m_rightToRun };
     
-#if OS(MORPHOS) || OS(AMIGAOS)// TODO: Check this this always evaluates to true since timeout will always be 'infinity'
+#if OS(AMIGAOS)
     while (1) {
 #else
     while (!hasElapsed(timeout)) {

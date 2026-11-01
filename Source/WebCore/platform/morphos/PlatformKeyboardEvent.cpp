@@ -32,7 +32,7 @@
 #include "PlatformKeyboardEvent.h"
 
 #include "NotImplemented.h"
-#include "TextEncoding.h"
+//#include "TextEncoding.h"
 #include "WindowsKeyboardCodes.h"
 #include <wtf/HexNumber.h>
 #include <wtf/ASCIICType.h>

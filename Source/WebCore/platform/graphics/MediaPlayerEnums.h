@@ -114,7 +114,7 @@ public:
     };
 };
 
-String convertEnumerationToString(MediaPlayerEnums::ReadyState);
+WEBCORE_EXPORT String convertEnumerationToString(MediaPlayerEnums::ReadyState);
 String convertEnumerationToString(MediaPlayerEnums::NetworkState);
 String convertEnumerationToString(MediaPlayerEnums::Preload);
 String convertEnumerationToString(MediaPlayerEnums::SupportsType);
@@ -130,7 +130,7 @@ struct LogArgument;
 
 template <>
 struct LogArgument<WebCore::MediaPlayerEnums::ReadyState> {
-    static WTF::String toString(const WebCore::MediaPlayerEnums::ReadyState state)
+    static String toString(const WebCore::MediaPlayerEnums::ReadyState state)
     {
         return convertEnumerationToString(state);
     }
@@ -138,7 +138,7 @@ struct LogArgument<WebCore::MediaPlayerEnums::ReadyState> {
 
 template <>
 struct LogArgument<WebCore::MediaPlayerEnums::NetworkState> {
-    static WTF::String toString(const WebCore::MediaPlayerEnums::NetworkState state)
+    static String toString(const WebCore::MediaPlayerEnums::NetworkState state)
     {
         return convertEnumerationToString(state);
     }
@@ -146,7 +146,7 @@ struct LogArgument<WebCore::MediaPlayerEnums::NetworkState> {
 
 template <>
 struct LogArgument<WebCore::MediaPlayerEnums::BufferingPolicy> {
-    static WTF::String toString(const WebCore::MediaPlayerEnums::BufferingPolicy policy)
+    static String toString(const WebCore::MediaPlayerEnums::BufferingPolicy policy)
     {
         return convertEnumerationToString(policy);
     }

@@ -32,54 +32,8 @@
 
 #include "CurlRequestSchedulerClient.h"
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 #include <proto/exec.h>
-#if OS(AMIGAOS)
-#define ODYSSEY
-#endif
-#include <proto/bsdsocket.h>
-#include <unistd.h>
-#include <sys/time.h>
-#include <bsdsocket/socketbasetags.h>
-#if !OS(AMIGAOS)
-#include <aros/debug.h>
-#endif
-#undef send
-struct Library *SocketBase;
-#if OS(AMIGAOS)
-struct SocketIFace *ISocket = NULL;
-#endif
-
-#if OS(AROS)
-#include <aros/debug.h>
-#define CDBG(x) bug x
-#elif OS(MORPHOS)
-extern "C" void dprintf(const char *fmt, ...);
-#define CDBG(x) dprintf x
-#else
-#define CDBG(x) DebugPrintF x
-#endif
-
-void init_SocketBase()
-{
-    SocketBase = OpenLibrary("bsdsocket.library", 4L);
-#if OS(AMIGAOS)
-    ISocket = (SocketIFace *)GetInterface(SocketBase, "main", 1, NULL);
-#endif
-    SocketBaseTags(
-        SBTM_SETVAL(SBTC_ERRNOPTR(sizeof(errno))), (IPTR) &errno,
-        SBTM_SETVAL(SBTC_LOGTAGPTR),       (IPTR) "cURL",
-        TAG_DONE);
-}
-void close_SocketBase()
-{
-    CloseLibrary(SocketBase);
-#if OS(AMIGAOS)
-    DropInterface((struct Interface*) ISocket);
-    ISocket = NULL;
-#endif    
-    SocketBase = NULL;
-}
 #endif
 
 namespace WebCore {
@@ -89,7 +43,6 @@ CurlRequestScheduler::CurlRequestScheduler(long maxConnects, long maxTotalConnec
     , m_maxTotalConnections(maxTotalConnections)
     , m_maxHostConnections(maxHostConnections)
 {
-
 }
 
 bool CurlRequestScheduler::add(CurlRequestSchedulerClient* client)
@@ -115,7 +68,7 @@ void CurlRequestScheduler::cancel(CurlRequestSchedulerClient* client)
     cancelTransfer(client);
 }
 
-void CurlRequestScheduler::callOnWorkerThread(WTF::Function<void()>&& task)
+void CurlRequestScheduler::callOnWorkerThread(Function<void()>&& task)
 {
     {
         Locker locker { m_mutex };
@@ -137,7 +90,7 @@ void CurlRequestScheduler::startOrWakeUpThread()
         }
     }
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 	if (m_stopped)
 		return;
 #endif
@@ -151,41 +104,30 @@ void CurlRequestScheduler::startOrWakeUpThread()
     }
 
     m_thread = Thread::create("curlThread", [this] {
-#if PLATFORM(MUI)
-        init_SocketBase();
-        // CDBG(("[CURL] worker thread started SocketBase=%p\n", SocketBase));
-        /* Increase priority so that network data is transported immediatelly */
-        SetTaskPri(FindTask(NULL), 1);
+#if OS(MORPHOS)
+        // Run curlThread with lower priority vs the main app.
+        // Without this the curlThread would starve the application
+        // since it's rescheduled like mad all the time. - Piru
+        Thread::current().changePriority(-1);
+        SetTaskPri(FindTask(0), -1);
 #endif
         workerThread();
-
-        Locker locker { m_mutex };
-        m_runThread = false;
-#if PLATFORM(MUI)
-        close_SocketBase();
-#endif
     }, ThreadType::Network);
 }
 
 void CurlRequestScheduler::wakeUpThreadIfPossible()
 {
-#if !PLATFORM(MUI)
-    // curl_multi_wakeup() does not work reliably on AmigaOS/MorphOS/AROS
-    // (internal socketpair/pipe mechanism may block with clib4).
-    // Instead we rely on a short poll timeout in the worker loop.
     Locker locker { m_multiHandleMutex };
     if (!m_curlMultiHandle)
         return;
 
     m_curlMultiHandle->wakeUp();
-#endif
 }
 
 void CurlRequestScheduler::stopThreadIfNoMoreJobRunning()
 {
     ASSERT(!isMainThread());
-#if !PLATFORM(MUI) // || OS(AMIGAOS)
-    /* Keep the original curlThread running until browser quits */
+#if !OS(MORPHOS)
     Locker locker { m_mutex };
     if (m_activeJobs.size() || m_taskQueue.size())
         return;
@@ -194,77 +136,11 @@ void CurlRequestScheduler::stopThreadIfNoMoreJobRunning()
 #endif
 }
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 void CurlRequestScheduler::stopCurlThread()
 {
+	m_stopped = true;
 	stopThread();
-}
-
-void CurlRequestScheduler::setMaxTotalConnections(long val)
-{
-    {
-        Locker locker { m_mutex };
-        if (m_maxTotalConnections == val)
-            return;
-        m_maxTotalConnections = val;
-        // CurlMultiHandle is worker-owned; update it on that thread, not while it performs requests.
-        m_taskQueue.append([this, val] {
-            if (m_curlMultiHandle)
-                m_curlMultiHandle->setMaxTotalConnections(val);
-        });
-    }
-    startOrWakeUpThread();
-}
-
-CurlStreamID CurlRequestScheduler::createStream(const URL& url, CurlStream::Client& client)
-{
-    ASSERT(isMainThread());
-
-    do {
-        m_currentStreamID = (m_currentStreamID + 1 != invalidCurlStreamID) ? m_currentStreamID + 1 : 1;
-    } while (m_clientList.contains(m_currentStreamID));
-
-    auto streamID = m_currentStreamID;
-    m_clientList.add(streamID, &client);
-
-    callOnWorkerThread([this, streamID, url = url.isolatedCopy()]() mutable {
-        m_streamList.add(streamID, CurlStream::create(*this, streamID, WTFMove(url)));
-    });
-
-    return streamID;
-}
-
-void CurlRequestScheduler::destroyStream(CurlStreamID streamID)
-{
-    ASSERT(isMainThread());
-
-    if (m_clientList.contains(streamID))
-        m_clientList.remove(streamID);
-
-    callOnWorkerThread([this, streamID]() {
-        if (m_streamList.contains(streamID))
-            m_streamList.remove(streamID);
-    });
-}
-
-void CurlRequestScheduler::send(CurlStreamID streamID, UniqueArray<uint8_t>&& data, size_t length)
-{
-    ASSERT(isMainThread());
-
-    callOnWorkerThread([this, streamID, data = WTFMove(data), length]() mutable {
-        if (auto stream = m_streamList.get(streamID))
-            stream->send(WTFMove(data), length);
-    });
-}
-
-void CurlRequestScheduler::callClientOnMainThread(CurlStreamID streamID, WTF::Function<void(CurlStream::Client&)>&& task)
-{
-    ASSERT(!isMainThread());
-
-    callOnMainThread([this, streamID, task = WTFMove(task)]() {
-        if (auto client = m_clientList.get(streamID))
-            task(*client);
-    });
 }
 #endif
 
@@ -286,7 +162,7 @@ void CurlRequestScheduler::executeTasks()
 {
     ASSERT(!isMainThread());
 
-    Vector<WTF::Function<void()>> taskQueue;
+    Vector<Function<void()>> taskQueue;
 
     {
         Locker locker { m_mutex };
@@ -301,16 +177,11 @@ void CurlRequestScheduler::workerThread()
 {
     ASSERT(!isMainThread());
 
-    long maxTotalConnections;
-    {
-        Locker locker { m_mutex };
-        maxTotalConnections = m_maxTotalConnections;
-    }
     {
         Locker locker { m_multiHandleMutex };
         m_curlMultiHandle.emplace();
         m_curlMultiHandle->setMaxConnects(m_maxConnects);
-        m_curlMultiHandle->setMaxTotalConnections(maxTotalConnections);
+        m_curlMultiHandle->setMaxTotalConnections(m_maxTotalConnections);
         m_curlMultiHandle->setMaxHostConnections(m_maxHostConnections);
     }
 
@@ -323,7 +194,7 @@ void CurlRequestScheduler::workerThread()
 
         executeTasks();
 
-#if OS(MORPHOS)
+#if 1
         const int selectTimeoutMS = INT_MAX;
         CURLMcode mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
         if (mc != CURLM_OK)
@@ -335,21 +206,13 @@ void CurlRequestScheduler::workerThread()
 #else
         int activeCount = 0;
         CURLMcode mc = m_curlMultiHandle->perform(activeCount);
-        if (mc != CURLM_OK) {
-            // CDBG(("[CURL] perform failed mc=%d\n", (int)mc));
+        if (mc != CURLM_OK)
             break;
-        }
 
-        const int selectTimeoutMS = 10;
-#if PLATFORM(MUI)
-    // curl_multi_poll() is unreliable on MUI and can stall request completion.
-    // Use a deterministic tick loop instead.
-    usleep(selectTimeoutMS * 1000);
-#else
+        const int selectTimeoutMS = 100;
         mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
-    if (mc != CURLM_OK)
+        if (mc != CURLM_OK)
             break;
-#endif
 #endif
         // check the curl messages indicating completed transfers
         // and free their resources
@@ -363,11 +226,6 @@ void CurlRequestScheduler::workerThread()
             if (auto client = m_clientMaps.inlineGet(msg->easy_handle))
                 completeTransfer(client, msg->data.result);
         }
-
-//#if PLATFORM(MUI)
-//        for (auto& stream : m_streamList.values())
-//            stream->tryToTransfer(fdread, fdwrite, fdexcep);
-//#endif
 
         stopThreadIfNoMoreJobRunning();
     }
@@ -385,14 +243,11 @@ void CurlRequestScheduler::startTransfer(CurlRequestSchedulerClient* client)
     auto task = [this, client]() {
         CURL* handle = client->setupTransfer();
         if (!handle) {
-            // CDBG(("[CURL] setupTransfer returned NULL -> CURLE_FAILED_INIT\n"));
             completeTransfer(client, CURLE_FAILED_INIT);
             return;
         }
 
-        auto addResult = m_curlMultiHandle->addHandle(handle);
-        if (addResult != CURLM_OK) {
-            // CDBG(("[CURL] addHandle failed\n"));
+        if (m_curlMultiHandle->addHandle(handle) != CURLM_OK) {
             completeTransfer(client, CURLE_FAILED_INIT);
             return;
         }
@@ -430,11 +285,9 @@ void CurlRequestScheduler::finalizeTransfer(CurlRequestSchedulerClient* client, 
     m_activeJobs.remove(client);
 
     auto task = [this, client, completionHandler = WTFMove(completionHandler)]() {
-        if (client->handle()) {
-            if (m_clientMaps.contains(client->handle())) {
-                m_clientMaps.remove(client->handle());
-                m_curlMultiHandle->removeHandle(client->handle());
-            }
+        if (client->handle() && m_clientMaps.contains(client->handle())) {
+            m_clientMaps.remove(client->handle());
+            m_curlMultiHandle->removeHandle(client->handle());
         }
 
         completionHandler();

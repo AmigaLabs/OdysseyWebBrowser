@@ -552,7 +552,7 @@ void AcinerellaAudioDecoder::fillBuffer(int index)
 	{
 		if (didPopFrames)
 		{
-			dispatch([this, protectedThis(makeRef(*this))]() {
+			dispatch([this, protectedThis(Ref { *this })]() {
 				if (!m_ahiThreadShuttingDown)
 				{
 					m_position += 0.5f;
@@ -570,7 +570,7 @@ void AcinerellaAudioDecoder::fillBuffer(int index)
 
 		if (didPopFrames)
 		{
-			dispatch([this, positionToAnnounce, protectedThis(makeRef(*this))]() {
+			dispatch([this, positionToAnnounce, protectedThis(Ref { *this })]() {
 				if (!m_ahiThreadShuttingDown)
 				{
 					m_position = positionToAnnounce;
@@ -583,7 +583,7 @@ void AcinerellaAudioDecoder::fillBuffer(int index)
 	
 	if ((bytesLeft == m_ahiSampleLength * 4) && (m_decoderEOF || (m_position + 1.5f > m_duration && !m_isLive)))
 	{
-		dispatch([this, protectedThis(makeRef(*this))]() {
+		dispatch([this, protectedThis(Ref { *this })]() {
 			stopPlaying();
 			if (!m_ahiThreadShuttingDown)
 			{

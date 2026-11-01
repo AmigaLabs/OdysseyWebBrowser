@@ -555,7 +555,7 @@ static String undoNameForEditAction(EditAction editAction)
 void WebEditorClient::registerUndoStep(UndoStep& step)
 {
     String actionName = undoNameForEditAction(step.editingAction());
-    WebEditorUndoCommand* undoCommand = new WebEditorUndoCommand(adoptRef(step), true);
+    WebEditorUndoCommand* undoCommand = new WebEditorUndoCommand(step, true);
     if (!undoCommand)
         return;
     m_undoTarget->append(actionName, undoCommand);
@@ -564,7 +564,7 @@ void WebEditorClient::registerUndoStep(UndoStep& step)
 void WebEditorClient::registerRedoStep(UndoStep& step)
 {
     String actionName = undoNameForEditAction(step.editingAction());
-    WebEditorUndoCommand* undoCommand = new WebEditorUndoCommand(adoptRef(step), false);
+    WebEditorUndoCommand* undoCommand = new WebEditorUndoCommand(step, false);
     if (!undoCommand)
         return;
     m_undoTarget->append(actionName, undoCommand);

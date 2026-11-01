@@ -80,7 +80,7 @@ DragImageRef fitDragImageToMaxSize(DragImageRef image, const IntSize& layoutSize
 
 struct ScopedNodeDragEnabler {
     ScopedNodeDragEnabler(Frame& frame, Node& node)
-        : element(is<Element>(node) ? &downcast<Element>(node) : nullptr)
+        : element(dynamicDowncast<Element>(node))
     {
         if (element)
             element->setBeingDragged(true);
@@ -279,7 +279,7 @@ DragImage::~DragImage()
         deleteDragImage(m_dragImageRef);
 }
 
-#if !PLATFORM(COCOA) && !PLATFORM(GTK) && !PLATFORM(WIN) && !PLATFORM(MUI)
+#if !PLATFORM(COCOA) && !PLATFORM(GTK) && !PLATFORM(WIN) && !OS(MORPHOS) && !PLATFORM(MUI)
 
 IntSize dragImageSize(DragImageRef)
 {

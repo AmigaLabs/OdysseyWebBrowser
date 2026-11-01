@@ -124,7 +124,7 @@ void AudioDestinationMorphOS::render(int16_t *samplesStereo, size_t count)
 		if (!m_dispatchToRenderThread)
 			return;
 
-		m_dispatchToRenderThread([count = count, samplesStereo = samplesStereo, this, protectedThis = makeRef(*this)] {
+		m_dispatchToRenderThread([count = count, samplesStereo = samplesStereo, this, protectedThis = Ref{*this}] {
 			const auto length = m_renderBus->channel(0)->length();
 			int16_t *out = samplesStereo;
 			for (size_t i = 0; i < count; i+= length)

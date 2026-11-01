@@ -28,8 +28,8 @@
 
 #if PLATFORM(COCOA)
 
+#import "TextRecognitionUtilities.h"
 #import <Foundation/NSBundle.h>
-
 #import <pal/spi/cocoa/FeatureFlagsSPI.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/cocoa/RuntimeApplicationChecksCocoa.h>
@@ -65,6 +65,35 @@ bool isFeatureFlagEnabled(const char* featureName, bool defaultValue)
 #endif // HAVE(SYSTEM_FEATURE_FLAGS)
 }
 
+#if PLATFORM(MAC)
+bool defaultScrollAnimatorEnabled()
+{
+    return [[NSUserDefaults standardUserDefaults] boolForKey:@"NSScrollAnimationEnabled"];
+}
+#endif
+
+#if ENABLE(IMAGE_ANALYSIS)
+
+bool defaultTextRecognitionEnhancementsEnabled()
+{
+    return textRecognitionEnhancementsSystemFeatureEnabled();
+}
+
+bool defaultImageAnalysisQueueEnabled()
+{
+    return imageAnalysisQueueSystemFeatureEnabled();
+}
+
+bool defaultImageAnalysisMarkupEnabled()
+{
+    // FIXME: The is- prefix on this helper method is inconsistent with the adjacent system
+    // feature flag checks. This will be fixed upon upstreaming the code from WebKitAdditions,
+    // when these helper methods will be removed entirely.
+    return isImageAnalysisMarkupSystemFeatureEnabled();
+}
+
+#endif // ENABLE(IMAGE_ANALYSIS)
+
 } // namespace WebKit
 
-#endif
+#endif // PLATFORM(COCOA)

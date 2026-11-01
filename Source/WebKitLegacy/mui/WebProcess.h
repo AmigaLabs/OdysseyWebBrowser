@@ -42,9 +42,6 @@ public:
     //void removeWebPage(WebCore::PageIdentifier);
     //WebPage* focusedWebPage() const;
 
-    WebFrame* webFrame(WebCore::FrameIdentifier) const;
-    void addWebFrame(WebCore::FrameIdentifier, WebFrame*);
-    void removeWebFrame(WebCore::FrameIdentifier);
     size_t webFrameCount() const { return m_frameMap.size(); }
 
 	//WebPage* webPageForHost(const WTF::String &host);

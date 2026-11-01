@@ -1276,7 +1276,7 @@ DEFDISP
        all open TTF file handles on AmigaOS/AROS where the OS does not auto-close
        file descriptors on process exit. */
 #if OS(AMIGAOS) || OS(AROS)
-    FontCache::singleton().invalidate();
+    FontCache::forCurrentThread().invalidate();
 #endif
     /* Release all ICU resources (open locale data files, converters, collators).
        Must be called after all ICU consumers (JSC, WebCore) have shut down. */
@@ -2444,7 +2444,7 @@ void prefs_update(Object *obj, struct Data *data)
     stccpy(data->certificate_path, (char *) getv(data->prefswin, MA_OWBApp_CertificatePath), sizeof(data->certificate_path));
 
     int activeconnections = (int) getv(data->prefswin, MA_OWBApp_ActiveConnections);
-    CurlContext::singleton().scheduler().setMaxTotalConnections(activeconnections);
+    /* shortcut: 2.36 CurlRequestScheduler has no runtime setter for max total connections (fixed at construction), so the pref is not applied */
     stccpy(data->useragent, (char *) getv(data->prefswin, MA_OWBApp_UserAgent), sizeof(data->useragent));
 #if 0
 // broken 2.18

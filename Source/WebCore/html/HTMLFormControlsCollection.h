@@ -22,13 +22,8 @@
 
 #pragma once
 
-#if defined(__WEBCORELEAKS__)
-#include <WebCore/CachedHTMLCollection.h>
-#include <WebCore/HTMLFormElement.h>
-#else
 #include "CachedHTMLCollection.h"
 #include "HTMLFormElement.h"
-#endif
 #include "RadioNodeList.h"
 
 namespace WebCore {
@@ -46,7 +41,7 @@ public:
     virtual ~HTMLFormControlsCollection();
 
     HTMLElement* item(unsigned offset) const override;
-    std::optional<Variant<RefPtr<RadioNodeList>, RefPtr<Element>>> namedItemOrItems(const String&) const;
+    std::optional<std::variant<RefPtr<RadioNodeList>, RefPtr<Element>>> namedItemOrItems(const String&) const;
 
     HTMLFormElement& ownerNode() const;
 

@@ -65,8 +65,8 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     endif ()
 
     if (${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
-        if (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS "7.3.0")
-            message(FATAL_ERROR "GCC 7.3 or newer is required to build WebKit. Use a newer GCC version or Clang.")
+        if (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS "8.3.0")
+            message(FATAL_ERROR "GCC 8.3 or newer is required to build WebKit. Use a newer GCC version or Clang.")
         endif ()
     endif ()
 
@@ -88,9 +88,9 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     else ()
         string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} LOWERCASE_CMAKE_SYSTEM_PROCESSOR)
     endif ()
-    if (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(^aarch64|^arm64)")
+    if (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(^aarch64|^arm64|^cortex-?[am][2-7][2-8])")
         set(WTF_CPU_ARM64 1)
-    elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
+    elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "(^arm|^cortex)")
         set(WTF_CPU_ARM 1)
     elseif (LOWERCASE_CMAKE_SYSTEM_PROCESSOR MATCHES "^mips64")
         set(WTF_CPU_MIPS64 1)
@@ -157,11 +157,10 @@ if (NOT HAS_RUN_WEBKIT_COMMON)
     set(WebCoreTestSupport_LIBRARY_TYPE STATIC)
 
     if (${PORT} STREQUAL "MUI")
-    set(CMAKE_POSITION_INDEPENDENT_CODE False)
+        set(CMAKE_POSITION_INDEPENDENT_CODE False)
     else ()
-    set(CMAKE_POSITION_INDEPENDENT_CODE True)
+        set(CMAKE_POSITION_INDEPENDENT_CODE True)
     endif ()
-
 
     # -----------------------------------------------------------------------------
     # Install JavaScript shell

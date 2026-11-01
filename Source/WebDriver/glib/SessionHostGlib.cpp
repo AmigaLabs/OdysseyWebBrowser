@@ -264,6 +264,8 @@ bool SessionHost::buildSessionCapabilities(GVariantBuilder* builder) const
         GVariantBuilder dictBuilder;
         g_variant_builder_init(&dictBuilder, G_VARIANT_TYPE("a{sv}"));
         g_variant_builder_add(&dictBuilder, "{sv}", "type", g_variant_new_string(m_capabilities.proxy->type.utf8().data()));
+        if (m_capabilities.proxy->autoconfigURL)
+            g_variant_builder_add(&dictBuilder, "{sv}", "autoconfigURL", g_variant_new_string(m_capabilities.proxy->autoconfigURL->string().utf8().data()));
         if (m_capabilities.proxy->ftpURL)
             g_variant_builder_add(&dictBuilder, "{sv}", "ftpURL", g_variant_new_string(m_capabilities.proxy->ftpURL->string().utf8().data()));
         if (m_capabilities.proxy->httpURL)
@@ -306,7 +308,7 @@ void SessionHost::startAutomationSession(Function<void (bool, std::optional<Stri
     ASSERT(m_socketConnection);
     ASSERT(!m_startSessionCompletionHandler);
     m_startSessionCompletionHandler = WTFMove(completionHandler);
-    m_sessionID = createCanonicalUUIDString();
+    m_sessionID = createVersion4UUIDString();
     GVariantBuilder builder;
     m_socketConnection->sendMessage("StartAutomationSession", g_variant_new("(sa{sv})", m_sessionID.utf8().data(), buildSessionCapabilities(&builder) ? &builder : nullptr));
 }

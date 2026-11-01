@@ -15,11 +15,12 @@
 #include "compiler/translator/TranslatorMetalDirect/MapSymbols.h"
 #include "compiler/translator/TranslatorMetalDirect/Pipeline.h"
 #include "compiler/translator/TranslatorMetalDirect/RewritePipelines.h"
+#include "compiler/translator/TranslatorMetalDirect/SymbolEnv.h"
 #include "compiler/translator/tree_ops/PruneNoOps.h"
+#include "compiler/translator/tree_util/DriverUniform.h"
 #include "compiler/translator/tree_util/FindMain.h"
 #include "compiler/translator/tree_util/IntermRebuild.h"
 #include "compiler/translator/tree_util/IntermTraverse.h"
-#include "compiler/translator/TranslatorMetalDirect/SymbolEnv.h"
 using namespace sh;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -36,7 +37,7 @@ bool IsVariableInvariant(const std::vector<sh::ShaderVariable> &mVars, const Imm
             return var.isInvariant;
         }
     }
-    // TODO: this should be UNREACHABLE() but isn't because the translator generates
+    // TODO(kpidington): this should be UNREACHABLE() but isn't because the translator generates
     // declarations to unused built-in variables.
     return false;
 }
@@ -74,7 +75,7 @@ class GeneratePipelineStruct : private TIntermRebuild
   private:
     const Pipeline &mPipeline;
     SymbolEnv &mSymbolEnv;
-    const std::vector<sh::ShaderVariable>* mVariableInfos;
+    const std::vector<sh::ShaderVariable> *mVariableInfos;
     VariableList mPipelineVariableList;
     IdGen &mIdGen;
     PipelineStructInfo mInfo;
@@ -86,7 +87,7 @@ class GeneratePipelineStruct : private TIntermRebuild
                      IdGen &idGen,
                      const Pipeline &pipeline,
                      SymbolEnv &symbolEnv,
-                     const std::vector<sh::ShaderVariable>* variableInfos)
+                     const std::vector<sh::ShaderVariable> *variableInfos)
     {
         GeneratePipelineStruct self(compiler, idGen, pipeline, symbolEnv, variableInfos);
         if (!self.exec(root))
@@ -102,7 +103,7 @@ class GeneratePipelineStruct : private TIntermRebuild
                            IdGen &idGen,
                            const Pipeline &pipeline,
                            SymbolEnv &symbolEnv,
-                           const std::vector<sh::ShaderVariable>* variableInfos)
+                           const std::vector<sh::ShaderVariable> *variableInfos)
         : TIntermRebuild(compiler, true, true),
           mPipeline(pipeline),
           mSymbolEnv(symbolEnv),
@@ -136,16 +137,17 @@ class GeneratePipelineStruct : private TIntermRebuild
         }();
 
         ModifiedStructMachineries modifiedMachineries;
-        const bool isUBO = mPipeline.type == Pipeline::Type::UniformBuffer;
-        const bool modified = TryCreateModifiedStruct(mCompiler,
-            mSymbolEnv, mIdGen, mPipeline.externalStructModifyConfig(), pipelineStruct,
-            mPipeline.getStructTypeName(Pipeline::Variant::Modified),
-            modifiedMachineries, isUBO, !isUBO);
+        const bool isUBO    = mPipeline.type == Pipeline::Type::UniformBuffer;
+        const bool modified = TryCreateModifiedStruct(
+            mCompiler, mSymbolEnv, mIdGen, mPipeline.externalStructModifyConfig(), pipelineStruct,
+            mPipeline.getStructTypeName(Pipeline::Variant::Modified), modifiedMachineries, isUBO,
+            !isUBO);
 
         if (modified)
         {
             ASSERT(mPipeline.type != Pipeline::Type::Texture);
-            ASSERT(mPipeline.type == Pipeline::Type::AngleUniforms || !mPipeline.globalInstanceVar);  // This shouldn't happen by construction.
+            ASSERT(mPipeline.type == Pipeline::Type::AngleUniforms ||
+                   !mPipeline.globalInstanceVar);  // This shouldn't happen by construction.
 
             auto getFunction = [](sh::TIntermFunctionDefinition *funcDecl) {
                 return funcDecl ? funcDecl->getFunction() : nullptr;
@@ -259,7 +261,7 @@ class GeneratePipelineStruct : private TIntermRebuild
             {
                 for (const TVariable *var : mPipelineVariableList)
                 {
-                    auto &type  = CloneType(var->getType());
+                    auto &type = CloneType(var->getType());
                     if (mVariableInfos && IsVariableInvariant(*mVariableInfos, var->name()))
                     {
                         type.setInvariant(true);
@@ -411,7 +413,7 @@ class PipelineFunctionEnv
             {
                 std::vector<const TVariable *> variables;
                 TranslatorMetalReflection *reflection =
-                    ((sh::TranslatorMetalDirect *)&mCompiler)->getTranslatorMetalReflection();
+                    mtl::getTranslatorMetalReflection(&mCompiler);
                 for (const TField *field : mPipelineStruct.external->fields())
                 {
                     const TStructure *textureEnv = field->type()->getStruct();
@@ -432,11 +434,19 @@ class PipelineFunctionEnv
             }
             else if (isMain && mPipeline.type == Pipeline::Type::InstanceId)
             {
-                Name name = mPipeline.getStructInstanceName(Pipeline::Variant::Modified);
-                auto *var = new TVariable(&mSymbolTable, name.rawName(),
-                                          new TType(TBasicType::EbtUInt), name.symbolType());
-                newFunc   = &CloneFunctionAndPrependParam(mSymbolTable, nullptr, func, *var);
-                mPipelineMainLocalVar.external = var;
+                Name instanceIdName = mPipeline.getStructInstanceName(Pipeline::Variant::Modified);
+                auto *instanceIdVar =
+                    new TVariable(&mSymbolTable, instanceIdName.rawName(),
+                                  new TType(TBasicType::EbtUInt), instanceIdName.symbolType());
+
+                auto *baseInstanceVar =
+                    new TVariable(&mSymbolTable, kBaseInstanceName.rawName(),
+                                  new TType(TBasicType::EbtUInt), kBaseInstanceName.symbolType());
+
+                newFunc = &CloneFunctionAndPrependTwoParams(mSymbolTable, nullptr, func,
+                                                            *instanceIdVar, *baseInstanceVar);
+                mPipelineMainLocalVar.external      = instanceIdVar;
+                mPipelineMainLocalVar.externalExtra = baseInstanceVar;
             }
             else if (isMain && mPipeline.alwaysRequiresLocalVariableDeclarationInMain())
             {
@@ -460,7 +470,8 @@ class PipelineFunctionEnv
                     if (mPipeline.type == Pipeline::Type::UniformBuffer)
                     {
                         TranslatorMetalReflection *reflection =
-                            ((sh::TranslatorMetalDirect *)&mCompiler)->getTranslatorMetalReflection();
+                            ((sh::TranslatorMetalDirect *)&mCompiler)
+                                ->getTranslatorMetalReflection();
                         // TODO: need more checks to make sure they line up? Could be reordered?
                         ASSERT(mPipelineStruct.external->fields().size() ==
                                mPipelineStruct.internal->fields().size());
@@ -468,15 +479,17 @@ class PipelineFunctionEnv
                         {
                             const TField *externalField = mPipelineStruct.external->fields()[i];
                             const TField *internalField = mPipelineStruct.internal->fields()[i];
-                            const TType &externalType = *externalField->type();
-                            const TType &internalType = *internalField->type();
+                            const TType &externalType   = *externalField->type();
+                            const TType &internalType   = *internalField->type();
                             ASSERT(externalType.getBasicType() == internalType.getBasicType());
                             if (externalType.getBasicType() == TBasicType::EbtStruct)
                             {
                                 const TStructure *externalEnv = externalType.getStruct();
                                 const TStructure *internalEnv = internalType.getStruct();
-                                const std::string internalName = reflection->getOriginalName(internalEnv->uniqueId().get());
-                                reflection->addOriginalName(externalEnv->uniqueId().get(), internalName);
+                                const std::string internalName =
+                                    reflection->getOriginalName(internalEnv->uniqueId().get());
+                                reflection->addOriginalName(externalEnv->uniqueId().get(),
+                                                            internalName);
                             }
                         }
                     }
@@ -622,6 +635,20 @@ class UpdatePipelineFunctions : private TIntermRebuild
         {
             ASSERT(mainFunc.getParamCount() > 0);
             return *mainFunc.getParam(0);
+        }
+    }
+
+    const TVariable &getExternalExtraPipelineVariable(const TFunction &mainFunc)
+    {
+        ASSERT(mainFunc.isMain());
+        if (mPipelineMainLocalVar.externalExtra)
+        {
+            return *mPipelineMainLocalVar.externalExtra;
+        }
+        else
+        {
+            ASSERT(mainFunc.getParamCount() > 1);
+            return *mainFunc.getParam(1);
         }
     }
 
@@ -806,11 +833,15 @@ class UpdatePipelineFunctions : private TIntermRebuild
             }
             else if (mPipeline.type == Pipeline::Type::InstanceId)
             {
+                auto varInstanceId   = new TIntermSymbol(&getExternalPipelineVariable(func));
+                auto varBaseInstance = new TIntermSymbol(&getExternalExtraPipelineVariable(func));
+
                 newBody->appendStatement(new TIntermBinary(
                     TOperator::EOpAssign,
                     &AccessFieldByIndex(*new TIntermSymbol(&getInternalPipelineVariable(func)), 0),
-                    &AsType(mSymbolEnv, *new TType(TBasicType::EbtInt),
-                            *new TIntermSymbol(&getExternalPipelineVariable(func)))));
+                    &AsType(
+                        mSymbolEnv, *new TType(TBasicType::EbtInt),
+                        *new TIntermBinary(TOperator::EOpSub, varInstanceId, varBaseInstance))));
             }
             else if (!mPipelineMainLocalVar.isUniform())
             {
@@ -891,7 +922,7 @@ bool RewritePipeline(TCompiler &compiler,
                      IdGen &idGen,
                      const Pipeline &pipeline,
                      SymbolEnv &symbolEnv,
-                     const std::vector<sh::ShaderVariable>* variableInfo,
+                     const std::vector<sh::ShaderVariable> *variableInfo,
                      PipelineScoped<TStructure> &outStruct)
 {
     ASSERT(outStruct.isTotallyEmpty());
@@ -899,7 +930,8 @@ bool RewritePipeline(TCompiler &compiler,
     TSymbolTable &symbolTable = compiler.getSymbolTable();
 
     PipelineStructInfo psi;
-    if (!GeneratePipelineStruct::Exec(psi, compiler, root, idGen, pipeline, symbolEnv, variableInfo))
+    if (!GeneratePipelineStruct::Exec(psi, compiler, root, idGen, pipeline, symbolEnv,
+                                      variableInfo))
     {
         return false;
     }
@@ -948,7 +980,7 @@ bool sh::RewritePipelines(TCompiler &compiler,
                           const std::vector<sh::ShaderVariable> &inputVaryings,
                           const std::vector<sh::ShaderVariable> &outputVaryings,
                           IdGen &idGen,
-                          const TVariable &angleUniformsGlobalInstanceVar,
+                          DriverUniform &angleUniformsGlobalInstanceVar,
                           SymbolEnv &symbolEnv,
                           PipelineStructs &outStructs)
 {
@@ -963,15 +995,18 @@ bool sh::RewritePipelines(TCompiler &compiler,
     Info infos[] = {
         {Pipeline::Type::InstanceId, outStructs.instanceId, nullptr, nullptr},
         {Pipeline::Type::Texture, outStructs.texture, nullptr, nullptr},
-        {Pipeline::Type::NonConstantGlobals, outStructs.nonConstantGlobals, nullptr},
-        {Pipeline::Type::AngleUniforms, outStructs.angleUniforms, &angleUniformsGlobalInstanceVar},
+        {Pipeline::Type::NonConstantGlobals, outStructs.nonConstantGlobals, nullptr, nullptr},
+        {Pipeline::Type::AngleUniforms, outStructs.angleUniforms,
+         angleUniformsGlobalInstanceVar.getDriverUniformsVariable(), nullptr},
         {Pipeline::Type::UserUniforms, outStructs.userUniforms, nullptr, nullptr},
         {Pipeline::Type::VertexIn, outStructs.vertexIn, nullptr, &inputVaryings},
         {Pipeline::Type::VertexOut, outStructs.vertexOut, nullptr, &outputVaryings},
         {Pipeline::Type::FragmentIn, outStructs.fragmentIn, nullptr, &inputVaryings},
         {Pipeline::Type::FragmentOut, outStructs.fragmentOut, nullptr, &outputVaryings},
-        {Pipeline::Type::InvocationVertexGlobals, outStructs.invocationVertexGlobals, nullptr, nullptr},
-        {Pipeline::Type::InvocationFragmentGlobals, outStructs.invocationFragmentGlobals, nullptr, &inputVaryings},
+        {Pipeline::Type::InvocationVertexGlobals, outStructs.invocationVertexGlobals, nullptr,
+         nullptr},
+        {Pipeline::Type::InvocationFragmentGlobals, outStructs.invocationFragmentGlobals, nullptr,
+         &inputVaryings},
         {Pipeline::Type::UniformBuffer, outStructs.uniformBuffers, nullptr, nullptr},
     };
 

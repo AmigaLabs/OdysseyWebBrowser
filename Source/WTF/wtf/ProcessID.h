@@ -33,10 +33,12 @@
 #include <windows.h>
 #endif
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS) || OS(AMIGAOS)
 #include <exec/tasks.h>
 #include <proto/exec.h>
+#if OS(AMIGAOS)
 #undef Exception
+#endif
 #endif
 
 namespace WTF {
@@ -55,9 +57,6 @@ inline ProcessID getCurrentProcessID()
     return GetCurrentProcessId();
 #elif OS(MORPHOS)
 	return FindTask(0)->tc_ETask->UniqueID;
-#elif PLATFORM(MUI) && !OS(AMIGAOS)
-    // FIXME: wrong for 64-bits
-    return (int) (IPTR) FindTask(NULL);
 #else
     return getpid();
 #endif

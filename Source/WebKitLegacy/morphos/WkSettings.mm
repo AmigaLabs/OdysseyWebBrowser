@@ -9,7 +9,6 @@
 #import <WebCore/ResourceResponse.h>
 #import <WebCore/ResourceHandle.h>
 #import <WebCore/ResourceResponse.h>
-#import <WebCore/TextEncoding.h>
 #import <WebCore/MediaPlayerMorphOS.h>
 #import <WebCore/CurlProxySettings.h>
 #import <WebCore/NetworkStorageSession.h>

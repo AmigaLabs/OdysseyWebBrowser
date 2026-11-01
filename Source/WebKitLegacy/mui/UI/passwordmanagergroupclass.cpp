@@ -119,7 +119,7 @@ DEFTMETHOD(PasswordManagerGroup_Load)
         return 0;
     }
 
-    auto select = m_passwordDB.prepareStatement("SELECT host, realm, username, password, usernameField, passwordField, type FROM passwords;"_s);
+    auto select = m_passwordDB.prepareHeapStatement("SELECT host, realm, username, password, usernameField, passwordField, type FROM passwords;"_s);
 
     if(!select)
     {
@@ -181,7 +181,7 @@ DEFTMETHOD(PasswordManagerGroup_Clear)
         return 0;
     }
 
-    auto deleteStmt = m_passwordDB.prepareStatement("DELETE FROM passwords;"_s);
+    auto deleteStmt = m_passwordDB.prepareHeapStatement("DELETE FROM passwords;"_s);
 
     if(!deleteStmt)
     {
@@ -335,7 +335,7 @@ DEFSMETHOD(PasswordManagerGroup_Insert)
                 m_passwordDB.executeCommand("CREATE TABLE passwords (host TEXT, realm TEXT, username TEXT, password TEXT, usernameField TEXT, passwordField TEXT, type INTEGER);"_s);
             }
 
-            auto deleteStmt = m_passwordDB.prepareStatement("DELETE FROM passwords WHERE host=?1;"_s);
+            auto deleteStmt = m_passwordDB.prepareHeapStatement("DELETE FROM passwords WHERE host=?1;"_s);
 
             if(!deleteStmt)
             {
@@ -352,7 +352,7 @@ DEFSMETHOD(PasswordManagerGroup_Insert)
                 LOG_ERROR("Cannot save passwords");
             }
 
-            auto insert = m_passwordDB.prepareStatement("INSERT INTO passwords (host, realm, username, password, usernameField, passwordField, type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);"_s);
+            auto insert = m_passwordDB.prepareHeapStatement("INSERT INTO passwords (host, realm, username, password, usernameField, passwordField, type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);"_s);
 
             if(!insert)
             {
@@ -428,7 +428,7 @@ DEFSMETHOD(PasswordManagerGroup_Remove)
         return 0;
     }
 
-    auto deleteStmt = m_passwordDB.prepareStatement("DELETE FROM passwords where host=?1;"_s);
+    auto deleteStmt = m_passwordDB.prepareHeapStatement("DELETE FROM passwords where host=?1;"_s);
 
     if(!deleteStmt)
     {

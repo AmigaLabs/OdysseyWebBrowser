@@ -90,7 +90,7 @@ class FunctionsGLWindows : public FunctionsGL
 DisplayWGL::DisplayWGL(const egl::DisplayState &state)
     : DisplayGL(state),
       mRenderer(nullptr),
-      mCurrentData(),
+      mCurrentNativeContexts(),
       mOpenGLModule(nullptr),
       mFunctionsWGL(nullptr),
       mHasWGLCreateContextRobustness(false),
@@ -105,6 +105,7 @@ DisplayWGL::DisplayWGL(const egl::DisplayState &state)
       mD3d11Module(nullptr),
       mD3D11DeviceHandle(nullptr),
       mD3D11Device(nullptr),
+      mD3D11Device1(nullptr),
       mUseARBShare(true)
 {}
 
@@ -140,24 +141,25 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
     // available.
 
     // Work around compile error from not defining "UNICODE" while Chromium does
-    const LPSTR idcArrow = MAKEINTRESOURCEA(32512);
+    const LPWSTR idcArrow = MAKEINTRESOURCEW(32512);
 
-    std::ostringstream stream;
-    stream << "ANGLE DisplayWGL " << gl::FmtHex(display) << " Intermediate Window Class";
-    std::string className = stream.str();
+    std::wostringstream stream;
+    stream << L"ANGLE DisplayWGL " << gl::FmtHex<egl::Display *, wchar_t>(display)
+           << L" Intermediate Window Class";
+    std::wstring className = stream.str();
 
-    WNDCLASSA intermediateClassDesc     = {};
+    WNDCLASSW intermediateClassDesc     = {};
     intermediateClassDesc.style         = CS_OWNDC;
-    intermediateClassDesc.lpfnWndProc   = DefWindowProcA;
+    intermediateClassDesc.lpfnWndProc   = DefWindowProcW;
     intermediateClassDesc.cbClsExtra    = 0;
     intermediateClassDesc.cbWndExtra    = 0;
     intermediateClassDesc.hInstance     = GetModuleHandle(nullptr);
     intermediateClassDesc.hIcon         = nullptr;
-    intermediateClassDesc.hCursor       = LoadCursorA(nullptr, idcArrow);
-    intermediateClassDesc.hbrBackground = 0;
+    intermediateClassDesc.hCursor       = LoadCursorW(nullptr, idcArrow);
+    intermediateClassDesc.hbrBackground = nullptr;
     intermediateClassDesc.lpszMenuName  = nullptr;
     intermediateClassDesc.lpszClassName = className.c_str();
-    mWindowClass                        = RegisterClassA(&intermediateClassDesc);
+    mWindowClass                        = RegisterClassW(&intermediateClassDesc);
     if (!mWindowClass)
     {
         return egl::EglNotInitialized()
@@ -166,7 +168,7 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
     }
 
     HWND placeholderWindow =
-        CreateWindowExA(0, reinterpret_cast<const char *>(mWindowClass), "ANGLE Placeholder Window",
+        CreateWindowExW(0, reinterpret_cast<LPCWSTR>(mWindowClass), L"ANGLE Placeholder Window",
                         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
                         CW_USEDEFAULT, nullptr, nullptr, nullptr, nullptr);
     if (!placeholderWindow)
@@ -354,7 +356,7 @@ void DisplayWGL::destroy()
             mFunctionsWGL->makeCurrent(mDeviceContext, nullptr);
         }
     }
-    mCurrentData.clear();
+    mCurrentNativeContexts.clear();
 
     SafeDelete(mFunctionsWGL);
 
@@ -387,6 +389,7 @@ void DisplayWGL::destroy()
     }
 
     SafeRelease(mD3D11Device);
+    SafeRelease(mD3D11Device1);
 
     if (mDxgiModule)
     {
@@ -451,8 +454,8 @@ SurfaceImpl *DisplayWGL::createPbufferFromClientBuffer(const egl::SurfaceState &
     }
 
     return new D3DTextureSurfaceWGL(state, mRenderer->getStateManager(), buftype, clientBuffer,
-                                    this, mDeviceContext, mD3D11Device, mRenderer->getFunctions(),
-                                    mFunctionsWGL);
+                                    this, mDeviceContext, mD3D11Device, mD3D11Device1,
+                                    mRenderer->getFunctions(), mFunctionsWGL);
 }
 
 SurfaceImpl *DisplayWGL::createPixmapSurface(const egl::SurfaceState &state,
@@ -470,12 +473,6 @@ rx::ContextImpl *DisplayWGL::createContext(const gl::State &state,
                                            const egl::AttributeMap &attribs)
 {
     return new ContextWGL(state, errorSet, mRenderer);
-}
-
-DeviceImpl *DisplayWGL::createDevice()
-{
-    UNREACHABLE();
-    return nullptr;
 }
 
 egl::ConfigSet DisplayWGL::generateConfigs()
@@ -580,18 +577,12 @@ egl::Error DisplayWGL::validateClientBuffer(const egl::Config *configuration,
         case EGL_D3D_TEXTURE_ANGLE:
         case EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE:
             ANGLE_TRY(const_cast<DisplayWGL *>(this)->initializeD3DDevice());
-            return D3DTextureSurfaceWGL::ValidateD3DTextureClientBuffer(buftype, clientBuffer,
-                                                                        mD3D11Device);
+            return D3DTextureSurfaceWGL::ValidateD3DTextureClientBuffer(
+                buftype, clientBuffer, mD3D11Device, mD3D11Device1);
 
         default:
             return DisplayGL::validateClientBuffer(configuration, buftype, clientBuffer, attribs);
     }
-}
-
-std::string DisplayWGL::getVendorString() const
-{
-    // UNIMPLEMENTED();
-    return "";
 }
 
 egl::Error DisplayWGL::initializeD3DDevice()
@@ -627,6 +618,9 @@ egl::Error DisplayWGL::initializeD3DDevice()
     {
         return egl::EglNotInitialized() << "Could not create D3D11 device, " << gl::FmtHR(result);
     }
+
+    mD3D11Device->QueryInterface(__uuidof(ID3D11Device1),
+                                 reinterpret_cast<void **>(&mD3D11Device1));
 
     return registerD3DDevice(mD3D11Device, &mD3D11DeviceHandle);
 }
@@ -684,17 +678,13 @@ egl::Error DisplayWGL::makeCurrent(egl::Display *display,
                                    egl::Surface *readSurface,
                                    gl::Context *context)
 {
-    CurrentNativeContext &currentContext = mCurrentData[std::this_thread::get_id()];
+    CurrentNativeContext &currentContext = mCurrentNativeContexts[std::this_thread::get_id()];
 
-    HDC newDC = currentContext.dc;
+    HDC newDC = mDeviceContext;
     if (drawSurface)
     {
         SurfaceWGL *drawSurfaceWGL = GetImplAs<SurfaceWGL>(drawSurface);
         newDC                      = drawSurfaceWGL->getDC();
-    }
-    else
-    {
-        newDC = mDeviceContext;
     }
 
     HGLRC newContext = currentContext.glrc;
@@ -917,7 +907,7 @@ egl::Error DisplayWGL::createRenderer(std::shared_ptr<RendererWGL> *outRenderer)
     {
         return egl::EglNotInitialized() << "Failed to make the intermediate WGL context current.";
     }
-    CurrentNativeContext &currentContext = mCurrentData[std::this_thread::get_id()];
+    CurrentNativeContext &currentContext = mCurrentNativeContexts[std::this_thread::get_id()];
     currentContext.dc                    = mDeviceContext;
     currentContext.glrc                  = context;
 
@@ -1063,6 +1053,11 @@ void DisplayWGL::initializeFrontendFeatures(angle::FrontendFeatures *features) c
 void DisplayWGL::populateFeatureList(angle::FeatureList *features)
 {
     mRenderer->getFeatures().populateFeatureList(features);
+}
+
+RendererGL *DisplayWGL::getRenderer() const
+{
+    return reinterpret_cast<RendererGL *>(mRenderer.get());
 }
 
 }  // namespace rx

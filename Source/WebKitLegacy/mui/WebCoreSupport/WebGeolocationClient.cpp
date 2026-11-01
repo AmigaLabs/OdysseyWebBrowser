@@ -136,7 +136,7 @@ void WebGeolocationClient::geolocationDestroyed()
     ASSERT(!m_isActive);
 }
 
-void WebGeolocationClient::startUpdating()
+void WebGeolocationClient::startUpdating(const String& authorizationToken, bool needsHighAccuracy)
 {
     ASSERT(!m_isActive);
     m_isActive = true;

@@ -45,18 +45,14 @@ public:
     const String& cacheDirectory() { return m_cacheDir; }
     void setStorageSizeLimit(CurlCacheSizeType);
 
-    bool isCached(const String&);
+    bool isCached(const String&) const;
     HTTPHeaderMap& requestHeaders(const String&); // Load headers
     bool getCachedResponse(const String& url, ResourceResponse&);
 
     void didReceiveResponse(ResourceHandle&, ResourceResponse&);
-    void didReceiveData(ResourceHandle&, const uint8_t*, size_t); // Save data
+    void didReceiveData(ResourceHandle&, const SharedBuffer&); // Save data
     void didFinishLoading(ResourceHandle&);
     void didFail(ResourceHandle&);
-#if PLATFORM(MUI)
-    void didCancel(ResourceHandle&);
-    void saveIndex();
-#endif
 
     void addCacheEntryClient(const String& url, ResourceHandle* job);
     void removeCacheEntryClient(const String& url, ResourceHandle* job);
@@ -77,9 +73,7 @@ private:
     CurlCacheSizeType m_currentStorageSize;
     CurlCacheSizeType m_storageSizeLimit;
 
-#if !PLATFORM(MUI)
     void saveIndex();
-#endif
     void loadIndex();
     void makeRoomForNewEntry();
 

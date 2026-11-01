@@ -66,7 +66,7 @@ ThreadedCompositor::ThreadedCompositor(Client& client, ThreadedDisplayRefreshMon
         m_attributes.needsResize = !viewportSize.isEmpty();
     }
 
-    m_compositingRunLoop->performTaskSync([this, protectedThis = makeRef(*this)] {
+    m_compositingRunLoop->performTaskSync([this, protectedThis = Ref { *this }] {
         m_scene = adoptRef(new CoordinatedGraphicsScene(this));
         m_nativeSurfaceHandle = m_client.nativeSurfaceHandleForCompositing();
 
@@ -103,9 +103,14 @@ void ThreadedCompositor::invalidate()
     m_scene->detach();
     m_compositingRunLoop->stopUpdates();
     m_displayRefreshMonitor->invalidate();
-    m_compositingRunLoop->performTaskSync([this, protectedThis = makeRef(*this)] {
+    m_compositingRunLoop->performTaskSync([this, protectedThis = Ref { *this }] {
         if (!m_context || !m_context->makeContextCurrent())
             return;
+
+        // Update the scene at this point ensures the layers state are correctly propagated
+        // in the ThreadedCompositor and in the CompositingCoordinator.
+        updateSceneWithoutRendering();
+
         m_scene->purgeGLResources();
         m_context = nullptr;
         m_client.didDestroyGLContext();
@@ -120,7 +125,7 @@ void ThreadedCompositor::suspend()
         return;
 
     m_compositingRunLoop->suspend();
-    m_compositingRunLoop->performTaskSync([this, protectedThis = makeRef(*this)] {
+    m_compositingRunLoop->performTaskSync([this, protectedThis = Ref { *this }] {
         m_scene->setActive(false);
     });
 }
@@ -131,7 +136,7 @@ void ThreadedCompositor::resume()
     if (--m_suspendedCount > 0)
         return;
 
-    m_compositingRunLoop->performTaskSync([this, protectedThis = makeRef(*this)] {
+    m_compositingRunLoop->performTaskSync([this, protectedThis = Ref { *this }] {
         m_scene->setActive(true);
     });
     m_compositingRunLoop->resume();
@@ -171,7 +176,7 @@ void ThreadedCompositor::forceRepaint()
     // FIXME: Enable this for WPE once it's possible to do these forced updates
     // in a way that doesn't starve out the underlying graphics buffers.
 #if PLATFORM(GTK) && !USE(WPE_RENDERER)
-    m_compositingRunLoop->performTaskSync([this, protectedThis = makeRef(*this)] {
+    m_compositingRunLoop->performTaskSync([this, protectedThis = Ref { *this }] {
         renderLayerTree();
     });
 #endif
@@ -279,6 +284,19 @@ void ThreadedCompositor::updateSceneState(const CoordinatedGraphicsState& state)
 void ThreadedCompositor::updateScene()
 {
     m_compositingRunLoop->scheduleUpdate();
+}
+
+void ThreadedCompositor::updateSceneWithoutRendering()
+{
+    Vector<WebCore::CoordinatedGraphicsState> states;
+
+    {
+        Locker locker { m_attributes.lock };
+        states = WTFMove(m_attributes.states);
+
+    }
+    m_scene->applyStateChanges(states);
+    m_scene->updateSceneState();
 }
 
 RefPtr<WebCore::DisplayRefreshMonitor> ThreadedCompositor::displayRefreshMonitor(PlatformDisplayID)

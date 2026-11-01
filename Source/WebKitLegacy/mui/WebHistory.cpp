@@ -83,7 +83,7 @@ bool WebHistory::loadHistoryFromDatabase(int sortCriterium, bool desc, std::vect
 
     /* Prune older entries */
     double minAge = MonotonicTime::now().secondsSinceEpoch().value() - maxAge*24*3600;
-    auto deleteStmt = m_historyDB.prepareStatement("DELETE FROM history WHERE lastAccessed < ?1;"_s);
+    auto deleteStmt = m_historyDB.prepareHeapStatement("DELETE FROM history WHERE lastAccessed < ?1;"_s);
 
     if(!deleteStmt)
     {
@@ -141,7 +141,7 @@ bool WebHistory::loadHistoryFromDatabase(int sortCriterium, bool desc, std::vect
     request.append(end);
 
     // Problem if the database is not connected
-    auto select = m_historyDB.prepareStatement(ASCIILiteral::fromLiteralUnsafe(request.latin1().data()));
+    auto select = m_historyDB.prepareHeapStatement(ASCIILiteral::fromLiteralUnsafe(request.latin1().data()));
 
     if(!select)
     {
@@ -194,7 +194,7 @@ bool WebHistory::insertHistoryItemIntoDatabase(String& url, String& title, doubl
         m_historyDB.executeCommand("CREATE TABLE history (url TEXT, title TEXT, lastAccessed DOUBLE);"_s);
     }
 
-    auto deleteStmt = m_historyDB.prepareStatement("DELETE FROM history WHERE url=?1;"_s);
+    auto deleteStmt = m_historyDB.prepareHeapStatement("DELETE FROM history WHERE url=?1;"_s);
 
     if(!deleteStmt)
     {
@@ -211,7 +211,7 @@ bool WebHistory::insertHistoryItemIntoDatabase(String& url, String& title, doubl
         LOG_ERROR("Cannot save history");
     }
 
-    auto insert = m_historyDB.prepareStatement("INSERT INTO history (url, title, lastAccessed) VALUES (?1, ?2, ?3);"_s);
+    auto insert = m_historyDB.prepareHeapStatement("INSERT INTO history (url, title, lastAccessed) VALUES (?1, ?2, ?3);"_s);
 
     if(!insert)
     {

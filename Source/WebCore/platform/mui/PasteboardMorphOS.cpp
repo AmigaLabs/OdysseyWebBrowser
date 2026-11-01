@@ -29,6 +29,7 @@
 
 #include "config.h"
 #include "Logging.h"
+#include "NotImplemented.h"
 #include "Pasteboard.h"
 #include "CachedImage.h"
 #include "DataObjectMorphOS.h"
@@ -170,7 +171,8 @@ std::unique_ptr<Pasteboard> Pasteboard::create(const DragData& dragData)
 }
 
 Pasteboard::Pasteboard(RefPtr<DataObjectMorphOS> dataObject, int clipboard)
-    : m_dataObject(dataObject)
+    : Pasteboard(nullptr)
+    , m_dataObject(dataObject)
     , m_morphosClipboard(clipboard)
 {
     D(kprintf("Pasteboard::Pasteboard(dataObject %p, clipboard %d)\n", dataObject.get(), clipboard));
@@ -178,14 +180,16 @@ Pasteboard::Pasteboard(RefPtr<DataObjectMorphOS> dataObject, int clipboard)
 }
 
 Pasteboard::Pasteboard(int clipboard)
-    : m_dataObject(DataObjectMorphOS::forClipboard(clipboard))
+    : Pasteboard(nullptr)
+    , m_dataObject(DataObjectMorphOS::forClipboard(clipboard))
     , m_morphosClipboard(clipboard)
 {
     D(kprintf("Pasteboard::Pasteboard(clipboard %d)\n", clipboard));
     ASSERT(m_dataObject);
 }
 
-Pasteboard::~Pasteboard()
+Pasteboard::Pasteboard(std::unique_ptr<PasteboardContext>&& context)
+    : m_context(WTFMove(context))
 {
 }
 
@@ -302,7 +306,7 @@ void Pasteboard::write(const PasteboardURL& pasteboardURL)
 {
     D(kprintf("Pasteboard::writeURL %s %d\n", pasteboardURL.url.string().utf8().data(), m_morphosClipboard));
 
-    ASSERT(!url.isEmpty());
+    ASSERT(!pasteboardURL.url.isEmpty());
 
     if(m_morphosClipboard == 0)
     {
@@ -336,8 +340,6 @@ static URL getURLForImageNode(Node* node)
 
 void Pasteboard::writeImage(Element& element, const URL&, const String& title)
 {
-    ASSERT(node);
-
     D(kprintf("Pasteboard::writeImage\n"));
 
     if (!(element.renderer() && element.renderer()->isImage()))
@@ -685,6 +687,10 @@ void Pasteboard::writeTrustworthyWebURLsPboardType(const PasteboardURL&)
 }
 
 void Pasteboard::write(const PasteboardImage&)
+{
+}
+
+void Pasteboard::write(const PasteboardBuffer&)
 {
 }
 

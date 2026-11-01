@@ -2,8 +2,9 @@
 
 #if ENABLE(NOTIFICATIONS)
 
-#include <WebCore/NotificationPermissionCallback.h>
 #include <WebCore/ScriptExecutionContext.h>
+#include <WebCore/NotificationPermissionCallback.h>
+#include <wtf/CompletionHandler.h>
 #include "WebPage.h"
 
 #define D(x) 
@@ -18,63 +19,45 @@ WebNotificationClient::WebNotificationClient(WebPage *webView)
 	D(dprintf("%s(%p)\n", __PRETTY_FUNCTION__, this));
 }
 
-bool WebNotificationClient::show(Notification* notification)
+bool WebNotificationClient::show(Notification& notification)
 {
 	if (!m_webPage->_fShowNotification)
 		return false;
 
 	D(dprintf("%s(%p): %p\n", __PRETTY_FUNCTION__, this, notification));
-	auto it = m_notificationContextMap.find(notification->scriptExecutionContext());
+	auto it = m_notificationContextMap.find(notification.scriptExecutionContext());
 
 	if (it == m_notificationContextMap.end())
 	{
-		it = m_notificationContextMap.add(notification->scriptExecutionContext(), Vector<RefPtr<WebCore::Notification>>()).iterator;
+		it = m_notificationContextMap.add(notification.scriptExecutionContext(), Vector<RefPtr<WebCore::Notification>>()).iterator;
 	}
 
 	if (it != m_notificationContextMap.end())
 	{
-		it->value.append(notification);
+		it->value.append(&notification);
 	}
 	
-	m_webPage->_fShowNotification(notification);
+	m_webPage->_fShowNotification(&notification);
 
     return true;
 }
 
-void WebNotificationClient::cancel(Notification* notification)
+void WebNotificationClient::cancel(Notification& notification)
 {
 	D(dprintf("%s(%p): %p\n", __PRETTY_FUNCTION__, this, notification));
 	if (m_webPage->_fHideNotification)
-		m_webPage->_fHideNotification(notification);
+		m_webPage->_fHideNotification(&notification);
 }
 
-void WebNotificationClient::clearNotifications(ScriptExecutionContext* context)
-{
-	D(dprintf("%s(%p): %p\n", __PRETTY_FUNCTION__, this, context));
-	auto it = m_notificationContextMap.find(context);
-	if (it != m_notificationContextMap.end())
-	{
-		for (auto nit = it->value.begin(); nit != it->value.end(); nit++)
-		{
-			WebCore::Notification *notification = nit->get();
-			notification->finalize();
-			if (m_webPage->_fHideNotification)
-				m_webPage->_fHideNotification(notification);
-		}
-
-		m_notificationContextMap.remove(it);
-	}
-}
-
-void WebNotificationClient::notificationObjectDestroyed(Notification* notification)
+void WebNotificationClient::notificationObjectDestroyed(Notification& notification)
 {
 	if (m_webPage->_fHideNotification)
-		m_webPage->_fHideNotification(notification);
+		m_webPage->_fHideNotification(&notification);
 	
-	auto it = m_notificationContextMap.find(notification->scriptExecutionContext());
+	auto it = m_notificationContextMap.find(notification.scriptExecutionContext());
 	if (it != m_notificationContextMap.end())
 	{
-		size_t index = it->value.find(notification);
+		size_t index = it->value.find(&notification);
 		if (index != notFound)
 			it->value.remove(index);
 	}
@@ -98,7 +81,7 @@ void WebNotificationClient::requestPermission(WebCore::ScriptExecutionContext&co
 	}
 	else
 	{
-		callback(Notification::Permission::Denied);
+		callback(NotificationClient::Permission::Denied);
 	}
 }
 

@@ -104,7 +104,7 @@ bool Image::isPostScriptResource(const String& mimeType, const URL& url)
 }
 
 
-EncodedDataStatus Image::setData(RefPtr<SharedBuffer>&& data, bool allDataReceived)
+EncodedDataStatus Image::setData(RefPtr<FragmentedSharedBuffer>&& data, bool allDataReceived)
 {
     m_encodedImageData = WTFMove(data);
 
@@ -147,7 +147,7 @@ void Image::drawPattern(GraphicsContext& ctxt, const FloatRect& destRect, const 
     if (!tileImage)
         return;
 
-    ctxt.drawPattern(*tileImage, size(), destRect, tileRect, patternTransform, phase, spacing, options);
+    ctxt.drawPattern(*tileImage, destRect, tileRect, patternTransform, phase, spacing, options);
 
     if (imageObserver())
         imageObserver()->didDraw(*this);
@@ -352,6 +352,11 @@ void Image::startAnimationAsynchronously()
     m_animationStartTimer->startOneShot(0_s);
 }
 
+DestinationColorSpace Image::colorSpace()
+{
+    return DestinationColorSpace::SRGB();
+}
+
 void Image::dump(TextStream& ts) const
 {
     if (isAnimated())
@@ -386,7 +391,7 @@ TextStream& operator<<(TextStream& ts, const Image& image)
     return ts;
 }
 
-#if !PLATFORM(COCOA) && !PLATFORM(GTK) && !PLATFORM(WIN) && !PLATFORM(MUI)
+#if !PLATFORM(COCOA) && !PLATFORM(GTK) && !PLATFORM(WIN) && !OS(MORPHOS) && !OS(AMIGAOS)
 
 void BitmapImage::invalidatePlatformData()
 {

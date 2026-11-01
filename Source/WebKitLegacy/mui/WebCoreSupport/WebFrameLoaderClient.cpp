@@ -158,18 +158,19 @@ void WebFrameLoaderClient::getLoadDecisionForIcons(const Vector<std::pair<WebCor
     for (auto& icon : icons) {
         // Pages without a host (local files) would all share one ".ico" file, so they get no icon.
         if (icon.first.type != WebCore::LinkIconType::Favicon || loader->url().host().isEmpty()) {
-            loader->didGetLoadDecisionForIcon(false, icon.second, [](WebCore::SharedBuffer*) { });
+            loader->didGetLoadDecisionForIcon(false, icon.second, [](WebCore::FragmentedSharedBuffer*) { });
             continue;
         }
 
-        loader->didGetLoadDecisionForIcon(true, icon.second, [pageURL](WebCore::SharedBuffer* data) {
+        loader->didGetLoadDecisionForIcon(true, icon.second, [pageURL](WebCore::FragmentedSharedBuffer* data) {
             if (!data || !data->size())
                 return;
 
+            auto contiguous = data->makeContiguous();
             FILE* file = fopen(favIconPathForPageURL(pageURL).utf8().data(), "wb");
             if (!file)
                 return;
-            fwrite(data->dataAsCharPtr(), 1, data->size(), file);
+            fwrite(contiguous->dataAsCharPtr(), 1, contiguous->size(), file);
             fclose(file);
 
             SetAttrs(app, MA_OWBApp_DidReceiveFavIcon, pageURL.utf8().data(), TAG_DONE);
@@ -182,7 +183,7 @@ bool WebFrameLoaderClient::hasWebView() const
     return m_webFrame->webView();
 }
 
-void WebFrameLoaderClient::assignIdentifierToInitialRequest(unsigned long identifier, DocumentLoader* loader, const ResourceRequest& request)
+void WebFrameLoaderClient::assignIdentifierToInitialRequest(WebCore::ResourceLoaderIdentifier identifier, DocumentLoader* loader, const ResourceRequest& request)
 {
     WebView* webView = m_webFrame->webView();
     SharedPtr<WebResourceLoadDelegate> resourceLoadDelegate = webView->webResourceLoadDelegate();
@@ -190,11 +191,11 @@ void WebFrameLoaderClient::assignIdentifierToInitialRequest(unsigned long identi
         return;
 
     WebMutableURLRequest* webURLRequest = WebMutableURLRequest::createInstance(request);
-    resourceLoadDelegate->identifierForInitialRequest(webView, webURLRequest, getWebDataSource(loader), identifier);
+    resourceLoadDelegate->identifierForInitialRequest(webView, webURLRequest, getWebDataSource(loader), identifier.toUInt64());
     delete webURLRequest;
 }
 
-void WebFrameLoaderClient::dispatchDidReceiveAuthenticationChallenge(DocumentLoader* loader, unsigned long identifier, const AuthenticationChallenge& challenge)
+void WebFrameLoaderClient::dispatchDidReceiveAuthenticationChallenge(DocumentLoader* loader, WebCore::ResourceLoaderIdentifier identifier, const AuthenticationChallenge& challenge)
 {
     ASSERT(challenge.authenticationClient());
 
@@ -221,7 +222,7 @@ void WebFrameLoaderClient::dispatchDidReceiveAuthenticationChallenge(DocumentLoa
     challenge.authenticationClient()->receivedRequestToContinueWithoutCredential(challenge);
 }
 
-bool WebFrameLoaderClient::shouldUseCredentialStorage(DocumentLoader* loader, unsigned long identifier)
+bool WebFrameLoaderClient::shouldUseCredentialStorage(DocumentLoader* loader, WebCore::ResourceLoaderIdentifier identifier)
 {
     /*WebView* webView = m_webFrame->webView();
     SharedPtr<WebResourceLoadDelegate> resourceLoadDelegate = webView->webResourceLoadDelegate();
@@ -235,11 +236,11 @@ bool WebFrameLoaderClient::shouldUseCredentialStorage(DocumentLoader* loader, un
     return true;
 }
 
-void WebFrameLoaderClient::dispatchWillSendRequest(DocumentLoader* loader, unsigned long identifier, ResourceRequest& request, const ResourceResponse& redirectResponse)
+void WebFrameLoaderClient::dispatchWillSendRequest(DocumentLoader* loader, WebCore::ResourceLoaderIdentifier identifier, ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
 }
 
-void WebFrameLoaderClient::dispatchDidReceiveResponse(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& response)
+void WebFrameLoaderClient::dispatchDidReceiveResponse(DocumentLoader* loader, WebCore::ResourceLoaderIdentifier identifier, const ResourceResponse& response)
 {
     WebView* webView = m_webFrame->webView();
 
@@ -250,12 +251,12 @@ void WebFrameLoaderClient::dispatchDidReceiveResponse(DocumentLoader* loader, un
         return;
 
     WebURLResponse* webURLResponse = WebURLResponse::createInstance(response);
-    resourceLoadDelegate->didReceiveResponse(webView, identifier, webURLResponse, getWebDataSource(loader));
+    resourceLoadDelegate->didReceiveResponse(webView, identifier.toUInt64(), webURLResponse, getWebDataSource(loader));
     delete webURLResponse;
 
 }
 
-void WebFrameLoaderClient::dispatchDidReceiveContentLength(DocumentLoader* loader, unsigned long identifier, int length)
+void WebFrameLoaderClient::dispatchDidReceiveContentLength(DocumentLoader* loader, WebCore::ResourceLoaderIdentifier identifier, int length)
 {
 
     WebView* webView = m_webFrame->webView();
@@ -266,10 +267,10 @@ void WebFrameLoaderClient::dispatchDidReceiveContentLength(DocumentLoader* loade
     if (!resourceLoadDelegate)
         return;
 
-    resourceLoadDelegate->didReceiveContentLength(webView, identifier, length, getWebDataSource(loader));
+    resourceLoadDelegate->didReceiveContentLength(webView, identifier.toUInt64(), length, getWebDataSource(loader));
 }
 
-void WebFrameLoaderClient::dispatchDidFinishLoading(DocumentLoader* loader, unsigned long identifier)
+void WebFrameLoaderClient::dispatchDidFinishLoading(DocumentLoader* loader, WebCore::ResourceLoaderIdentifier identifier)
 {
 
     WebView* webView = m_webFrame->webView();
@@ -280,10 +281,10 @@ void WebFrameLoaderClient::dispatchDidFinishLoading(DocumentLoader* loader, unsi
     if (!resourceLoadDelegate)
         return;
 
-    resourceLoadDelegate->didFinishLoadingFromDataSource(webView, identifier, getWebDataSource(loader));
+    resourceLoadDelegate->didFinishLoadingFromDataSource(webView, identifier.toUInt64(), getWebDataSource(loader));
 }
 
-void WebFrameLoaderClient::dispatchDidFailLoading(DocumentLoader* loader, unsigned long identifier, const ResourceError& error)
+void WebFrameLoaderClient::dispatchDidFailLoading(DocumentLoader* loader, WebCore::ResourceLoaderIdentifier identifier, const ResourceError& error)
 {
     WebView* webView = m_webFrame->webView();
 
@@ -295,7 +296,7 @@ void WebFrameLoaderClient::dispatchDidFailLoading(DocumentLoader* loader, unsign
         return;
 
     WebError* webError = WebError::createInstance(error);
-    resourceLoadDelegate->didFailLoadingWithError(webView, identifier, webError, getWebDataSource(loader));
+    resourceLoadDelegate->didFailLoadingWithError(webView, identifier.toUInt64(), webError, getWebDataSource(loader));
     delete webError;
 }
 
@@ -415,9 +416,9 @@ void WebFrameLoaderClient::setMainDocumentError(DocumentLoader*, const ResourceE
 {
 }
 
-void WebFrameLoaderClient::committedLoad(DocumentLoader* loader, const uint8_t* data, int length)
+void WebFrameLoaderClient::committedLoad(DocumentLoader* loader, const WebCore::SharedBuffer& data)
 {
-    loader->commitData(data, length);
+    loader->commitData(data);
 
     // If the document is a stand-alone media document, now is the right time to cancel the WebKit load.
     // FIXME: This code should be shared across all ports. <http://webkit.org/b/48762>.
@@ -845,7 +846,7 @@ void WebFrameLoaderClient::receivedPolicyDecision(PolicyAction action)
     function(action, m_policyListenerPrivate->m_policyCheckIdentifier);
 }
 
-void WebFrameLoaderClient::dispatchDecidePolicyForResponse(const ResourceResponse& response, const ResourceRequest& request, WebCore::PolicyCheckIdentifier identifier, const String&, BrowsingContextGroupSwitchDecision, FramePolicyFunction&& function)
+void WebFrameLoaderClient::dispatchDecidePolicyForResponse(const ResourceResponse& response, const ResourceRequest& request, WebCore::PolicyCheckIdentifier identifier, const String&, FramePolicyFunction&& function)
 {
     SharedPtr<WebPolicyDelegate> policyDelegate = m_webFrame->webView()->policyDelegate();
     if (!policyDelegate)

@@ -514,7 +514,7 @@ DEFNEW
                     ResourceRequest request(baseURL);
                     
                     Frame* sourceFrame = core(((WebView *) data->source_view)->mainFrame());
-                    RefPtr<SharedBuffer> dataSource = sourceFrame->loader().documentLoader() ? sourceFrame->loader().documentLoader()->mainResourceData() : 0;
+                    RefPtr<FragmentedSharedBuffer> dataSource = sourceFrame->loader().documentLoader() ? sourceFrame->loader().documentLoader()->mainResourceData() : 0;
 
                     // Show the raw markup as text, like the old view-source mode did.
                     mimeType = "text/plain";
@@ -3076,7 +3076,7 @@ DEFSMETHOD(OWBBrowser_Autofill_HandleNavigationEvent)
         const PlatformKeyboardEvent* keyEvent = event->underlyingPlatformEvent();
         if (keyEvent)
         {
-            if (keyEvent->type() == PlatformKeyboardEvent::RawKeyDown)
+            if (keyEvent->type() == PlatformEvent::RawKeyDown)
             {
                 int virtualKey = keyEvent->windowsVirtualKeyCode();
 
@@ -3710,7 +3710,7 @@ DEFMMETHOD(DragFinish)
             IntPoint position(data->last_drag_position);
             DragData dragData((DataObjectMorphOS *) dataObject, position, position, (DragOperation) data->dragoperation);
             D(kprintf("dragExited\n"));
-            core(data->view->webView)->dragController().dragExited(&dragData);
+            core(data->view->webView)->dragController().dragExited(dragData);
         }
 #endif
 

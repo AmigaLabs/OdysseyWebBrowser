@@ -58,6 +58,7 @@ namespace WebCore {
 class Animation;
 class GraphicsContext;
 class GraphicsLayerFactory;
+class GraphicsLayerContentsDisplayDelegate;
 class Image;
 class Model;
 class TiledBacking;
@@ -249,6 +250,7 @@ class GraphicsLayer : public RefCounted<GraphicsLayer> {
 public:
     enum class Type : uint8_t {
         Normal,
+        Structural, // Supports position and transform only, and doesn't flatten (i.e. behaves like preserves3D is true). Uses CATransformLayer on Cocoa platforms.
         PageTiledBacking,
         ScrollContainer,
         ScrolledContents,
@@ -374,13 +376,13 @@ public:
     bool hasNonIdentityChildrenTransform() const { return m_childrenTransform && !m_childrenTransform->isIdentity(); }
 
     bool preserves3D() const { return m_preserves3D; }
-    virtual void setPreserves3D(bool b) { m_preserves3D = b; }
+    virtual void setPreserves3D(bool);
     
     bool masksToBounds() const { return m_masksToBounds; }
-    virtual void setMasksToBounds(bool b) { m_masksToBounds = b; }
+    virtual void setMasksToBounds(bool);
     
     bool drawsContent() const { return m_drawsContent; }
-    virtual void setDrawsContent(bool b) { m_drawsContent = b; }
+    virtual void setDrawsContent(bool);
 
     bool contentsAreVisible() const { return m_contentsVisible; }
     virtual void setContentsVisible(bool b) { m_contentsVisible = b; }
@@ -423,11 +425,11 @@ public:
     virtual void setBackfaceVisibility(bool b) { m_backfaceVisibility = b; }
 
     float opacity() const { return m_opacity; }
-    virtual void setOpacity(float opacity) { m_opacity = opacity; }
+    WEBCORE_EXPORT virtual void setOpacity(float);
 
     const FilterOperations& filters() const { return m_filters; }
     // Returns true if filter can be rendered by the compositor.
-    virtual bool setFilters(const FilterOperations& filters) { m_filters = filters; return true; }
+    virtual bool setFilters(const FilterOperations&);
 
     const FilterOperations& backdropFilters() const { return m_backdropFilters; }
     virtual bool setBackdropFilters(const FilterOperations& filters) { m_backdropFilters = filters; return true; }
@@ -522,6 +524,7 @@ public:
     // Pass an invalid color to remove the contents layer.
     virtual void setContentsToSolidColor(const Color&) { }
     virtual void setContentsToPlatformLayer(PlatformLayer*, ContentsLayerPurpose) { }
+    virtual void setContentsDisplayDelegate(RefPtr<GraphicsLayerContentsDisplayDelegate>&&, ContentsLayerPurpose);
 #if ENABLE(MODEL_ELEMENT)
     virtual void setContentsToModel(RefPtr<Model>&&) { }
     virtual PlatformLayerID contentsLayerIDForModel() const { return 0; }
@@ -532,13 +535,19 @@ public:
     void paintGraphicsLayerContents(GraphicsContext&, const FloatRect& clip, GraphicsLayerPaintBehavior = GraphicsLayerPaintNormal);
 
     // For hosting this GraphicsLayer in a native layer hierarchy.
-    virtual PlatformLayer* platformLayer() const { return 0; }
+    virtual PlatformLayer* platformLayer() const { return nullptr; }
 
     enum class CompositingCoordinatesOrientation : uint8_t { TopDown, BottomUp };
 
     // Flippedness of the contents of this layer. Does not affect sublayer geometry.
     virtual void setContentsOrientation(CompositingCoordinatesOrientation orientation) { m_contentsOrientation = orientation; }
     CompositingCoordinatesOrientation contentsOrientation() const { return m_contentsOrientation; }
+
+    enum class ScalingFilter { Linear, Nearest, Trilinear };
+    virtual void setContentsMinificationFilter(ScalingFilter filter) { m_contentsMinificationFilter = filter; }
+    ScalingFilter contentsMinificationFilter() const { return m_contentsMinificationFilter; }
+    virtual void setContentsMagnificationFilter(ScalingFilter filter) { m_contentsMagnificationFilter = filter; }
+    ScalingFilter contentsMagnificationFilter() const { return m_contentsMagnificationFilter; }
 
     void dumpLayer(WTF::TextStream&, OptionSet<LayerTreeAsTextOptions> = { }) const;
 
@@ -638,7 +647,7 @@ public:
     const std::optional<FloatRect>& animationExtent() const { return m_animationExtent; }
     void setAnimationExtent(std::optional<FloatRect> animationExtent) { m_animationExtent = animationExtent; }
 
-    static void traverse(GraphicsLayer&, const WTF::Function<void (GraphicsLayer&)>&);
+    static void traverse(GraphicsLayer&, const Function<void(GraphicsLayer&)>&);
 
 protected:
     WEBCORE_EXPORT explicit GraphicsLayer(Type, GraphicsLayerClient&);
@@ -656,12 +665,10 @@ protected:
     // Given a KeyframeValueList containing filterOperations, return true if the operations are valid.
     static int validateFilterOperations(const KeyframeValueList&);
 
-    // Given a list of TransformAnimationValues, see if all the operations for each keyframe match. If so
-    // return the index of the KeyframeValueList entry that has that list of operations (it may not be
-    // the first entry because some keyframes might have an empty transform and those match any list).
-    // If the lists don't match return -1. On return, if hasBigRotation is true, functions contain 
-    // rotations of >= 180 degrees
-    static int validateTransformOperations(const KeyframeValueList&, bool& hasBigRotation);
+    // Given a list of TransformAnimationValues keyframes, place a list of primitive operations which can
+    // represent the transform functions of every keyframe in the sharedPrimitives out parameter and return
+    // true. If the keyframes do not share compatible functions, return false.
+    static bool getSharedPrimitivesForTransformKeyframes(const KeyframeValueList&, Vector<TransformOperation::OperationType>& sharedPrimitives);
 
     virtual bool shouldRepaintOnSizeChange() const { return drawsContent(); }
 
@@ -769,6 +776,8 @@ protected:
     FloatRoundedRect m_masksToBoundsRect;
     FloatSize m_contentsTilePhase;
     FloatSize m_contentsTileSize;
+    ScalingFilter m_contentsMinificationFilter = ScalingFilter::Linear;
+    ScalingFilter m_contentsMagnificationFilter = ScalingFilter::Linear;
     FloatRoundedRect m_backdropFiltersRect;
     std::optional<FloatRect> m_animationExtent;
 

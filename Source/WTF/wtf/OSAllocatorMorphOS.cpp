@@ -62,10 +62,6 @@ char *getUsage(OSAllocator::Usage usage)
 			return usages[0];
 		case OSAllocator::FastMallocPages:
 			return usages[1];
-		case OSAllocator::JSGCHeapPages:
-			return usages[2];
-		case OSAllocator::JSVMStackPages:
-			return usages[3];
 		case OSAllocator::JSJITCodePages:
 			return usages[4];
 	}
@@ -73,7 +69,7 @@ char *getUsage(OSAllocator::Usage usage)
 	return NULL;
 }
 
-void* OSAllocator::reserveUncommitted(size_t bytes, Usage usage, bool, bool, bool)
+void* OSAllocator::reserveUncommitted(size_t bytes, Usage usage, bool, bool, bool, bool)
 {
 	ULONG *mem = NULL;
 	
@@ -104,10 +100,10 @@ void* OSAllocator::reserveUncommitted(size_t bytes, Usage usage, bool, bool, boo
 	return mem;
 }
 
-void* OSAllocator::reserveAndCommit(size_t bytes, Usage usage, bool a, bool b, bool c)
+void* OSAllocator::reserveAndCommit(size_t bytes, Usage usage, bool a, bool b, bool c, bool d)
 {
 	//D(kprintf("OSAllocator::reserveAndCommit(%lu)\n", bytes));
-	return reserveUncommitted(bytes, usage, a, b, c);
+	return reserveUncommitted(bytes, usage, a, b, c, d);
 }
 
 void OSAllocator::commit(void* address, size_t bytes, bool, bool)

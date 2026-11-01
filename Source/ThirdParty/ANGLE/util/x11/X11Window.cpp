@@ -396,6 +396,12 @@ EGLNativeWindowType X11Window::getNativeWindow() const
     return mWindow;
 }
 
+void *X11Window::getPlatformExtension()
+{
+    // X11 native window for eglCreateSurfacePlatformEXT is Window*
+    return &mWindow;
+}
+
 EGLNativeDisplayType X11Window::getNativeDisplay() const
 {
     return reinterpret_cast<EGLNativeDisplayType>(mDisplay);
@@ -441,7 +447,8 @@ bool X11Window::resize(int width, int height)
     // Wait until the window has actually been resized so that the code calling resize
     // can assume the window has been resized.
     const double kResizeWaitDelay = 0.2;
-    while ((mHeight != height || mWidth != width) && timer.getElapsedTime() < kResizeWaitDelay)
+    while ((mHeight != height || mWidth != width) &&
+           timer.getElapsedWallClockTime() < kResizeWaitDelay)
     {
         messageLoop();
         angle::Sleep(10);

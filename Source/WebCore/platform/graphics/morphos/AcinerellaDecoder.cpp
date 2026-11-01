@@ -113,7 +113,7 @@ void AcinerellaDecoder::onReadyToPlay()
 	{
 		m_readying = false;
 		if (m_client)
-			m_client->onDecoderReadyToPlay(makeRef(*this));
+			m_client->onDecoderReadyToPlay(Ref{*this});
 	}
 }
 
@@ -286,7 +286,7 @@ void AcinerellaDecoder::decodeUntilBufferFull()
 	{
 		m_warminUp = false;
 		if (m_client)
-			m_client->onDecoderWarmedUp(makeRef(*this));
+			m_client->onDecoderWarmedUp(Ref{*this});
 	}
 
 	if (isReadyToPlay() && m_readying)
@@ -328,14 +328,14 @@ void AcinerellaDecoder::onPositionChanged()
 #endif
 	DPOS(dprintf("[%s]%s: %p to %f\033[0m\n", isAudio() ? "\033[33mA":"\033[35mV", __func__, this, position()));
 	if (m_client)
-		m_client->onDecoderUpdatedPosition(makeRef(*this), position());
+		m_client->onDecoderUpdatedPosition(Ref{*this}, position());
 }
 
 void AcinerellaDecoder::onDurationChanged()
 {
 	D(dprintf("[%s]%s: %p to %f\033[0m\n", isAudio() ? "\033[33mA":"\033[35mV", __func__, this, duration()));
 	if (m_client)
-		m_client->onDecoderUpdatedDuration(makeRef(*this), duration());
+		m_client->onDecoderUpdatedDuration(Ref{*this}, duration());
 }
 
 void AcinerellaDecoder::onEnded()
@@ -343,7 +343,7 @@ void AcinerellaDecoder::onEnded()
 	EP_EVENT(ended);
 	D(dprintf("[%s]%s: %p\033[0m\n", isAudio() ? "\033[33mA":"\033[35mV", __func__, this));
 	if (m_client)
-		m_client->onDecoderEnded(makeRef(*this));
+		m_client->onDecoderEnded(Ref{*this});
 }
 
 void AcinerellaDecoder::terminate()
@@ -378,7 +378,7 @@ void AcinerellaDecoder::threadEntryPoint()
 {
 	SetTaskPri(FindTask(0), isAudio() ? 3 : 2);
 
-	RefPtr<AcinerellaDecoder> refSelf = WTF::makeRef(*this);
+	RefPtr<AcinerellaDecoder> refSelf = WTF::Ref{*this};
 
 	DI(dprintf("[%s]%s: %p\033[0m\n", isAudio() ? "\033[33mA":"\033[35mV", __func__, this));
 	if (!onThreadInitialize())

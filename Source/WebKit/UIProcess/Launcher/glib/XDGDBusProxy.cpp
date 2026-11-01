@@ -28,6 +28,7 @@
 
 #if ENABLE(BUBBLEWRAP_SANDBOX)
 #include "BubblewrapLauncher.h"
+#include <WebCore/PlatformDisplay.h>
 #include <wtf/UniStdExtras.h>
 #include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/GUniquePtr.h>
@@ -48,25 +49,9 @@ XDGDBusProxy::XDGDBusProxy(Type type, bool allowPortals)
         m_dbusAddress = g_getenv("DBUS_SESSION_BUS_ADDRESS");
         break;
     case Type::AccessibilityBus:
-        // FIXME: Avoid blocking IO... (It is at least a one-time cost)
-        if (GRefPtr<GDBusConnection> sessionBus = adoptGRef(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr))) {
-            GRefPtr<GDBusMessage> msg = adoptGRef(g_dbus_message_new_method_call("org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus", "GetAddress"));
-            g_dbus_message_set_body(msg.get(), g_variant_new("()"));
-            GRefPtr<GDBusMessage> reply = adoptGRef(g_dbus_connection_send_message_with_reply_sync(
-                sessionBus.get(), msg.get(), G_DBUS_SEND_MESSAGE_FLAGS_NONE, 30000, nullptr, nullptr, nullptr));
-
-            if (reply) {
-                GUniqueOutPtr<GError> error;
-                if (g_dbus_message_to_gerror(reply.get(), &error.outPtr())) {
-                    if (!g_error_matches(error.get(), G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN))
-                        g_warning("Can't find a11y bus: %s", error->message);
-                } else {
-                    GUniqueOutPtr<char> a11yAddress;
-                    g_variant_get(g_dbus_message_get_body(reply.get()), "(s)", &a11yAddress.outPtr());
-                    m_dbusAddress = a11yAddress.get();
-                }
-            }
-        }
+#if ENABLE(ACCESSIBILITY)
+        m_dbusAddress = WebCore::PlatformDisplay::sharedDisplay().accessibilityBusAddress().utf8();
+#endif
         break;
     }
 
@@ -76,6 +61,11 @@ XDGDBusProxy::XDGDBusProxy(Type type, bool allowPortals)
     m_proxyPath = makeProxy();
     if (m_proxyPath.isNull())
         return;
+
+#if USE(ATSPI)
+    if (m_type == Type::AccessibilityBus)
+        WebCore::PlatformDisplay::sharedDisplay().setAccessibilityBusAddress(makeString("unix:path=", m_proxyPath.data()));
+#endif
 
     if (const char* path = strstr(m_dbusAddress.data(), "path=")) {
         path += strlen("path=");
@@ -152,6 +142,14 @@ int XDGDBusProxy::launch(bool allowPortals) const
 
     switch (m_type) {
     case Type::SessionBus: {
+#if ENABLE(MEDIA_SESSION)
+        if (auto* app = g_application_get_default()) {
+            if (const char* appID = g_application_get_application_id(app)) {
+                auto mprisSessionID = makeString("--own=org.mpris.MediaPlayer2.", appID, ".*");
+                proxyArgs.append(mprisSessionID.ascii().data());
+            }
+        }
+#endif
         // GStreamers plugin install helper.
         proxyArgs.append("--call=org.freedesktop.PackageKit=org.freedesktop.PackageKit.Modify2.InstallGStreamerResources@/org/freedesktop/PackageKit");
 
@@ -160,6 +158,7 @@ int XDGDBusProxy::launch(bool allowPortals) const
         break;
     }
     case Type::AccessibilityBus:
+#if ENABLE(ACCESSIBILITY)
         proxyArgs.appendVector(Vector<CString> {
             "--sloppy-names",
             "--call=org.a11y.atspi.Registry=org.a11y.atspi.Socket.Embed@/org/a11y/atspi/accessible/root",
@@ -170,6 +169,7 @@ int XDGDBusProxy::launch(bool allowPortals) const
             "--call=org.a11y.atspi.Registry=org.a11y.atspi.DeviceEventController.NotifyListenersSync@/org/a11y/atspi/registry/deviceeventcontroller",
             "--call=org.a11y.atspi.Registry=org.a11y.atspi.DeviceEventController.NotifyListenersAsync@/org/a11y/atspi/registry/deviceeventcontroller",
         });
+#endif
         break;
     }
 
@@ -192,7 +192,7 @@ int XDGDBusProxy::launch(bool allowPortals) const
     // Warning: do not set a child setup function, because we want GIO to be able to spawn with
     // posix_spawn() rather than fork()/exec(), in order to better accomodate applications that use
     // a huge amount of memory or address space in the UI process, like Eclipse.
-    GRefPtr<GSubprocessLauncher> launcher = adoptGRef(g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_INHERIT_FDS));
+    GRefPtr<GSubprocessLauncher> launcher = adoptGRef(g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_NONE));
     g_subprocess_launcher_take_fd(launcher.get(), proxyFd, proxyFd);
     g_subprocess_launcher_take_fd(launcher.get(), syncFds[1], syncFds[1]);
 
@@ -201,8 +201,10 @@ int XDGDBusProxy::launch(bool allowPortals) const
 
     ProcessLauncher::LaunchOptions launchOptions;
     launchOptions.processType = ProcessLauncher::ProcessType::DBusProxy;
+#if ENABLE(ACCESSIBILITY)
     if (m_type == Type::AccessibilityBus && !m_path.isNull())
         launchOptions.extraSandboxPaths.add(m_path, SandboxPermission::ReadOnly);
+#endif
     GUniqueOutPtr<GError> error;
     GRefPtr<GSubprocess> process = bubblewrapSpawn(launcher.get(), launchOptions, argv, &error.outPtr());
     if (!process)

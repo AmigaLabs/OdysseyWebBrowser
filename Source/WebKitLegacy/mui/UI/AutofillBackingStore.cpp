@@ -76,22 +76,22 @@ bool AutofillBackingStore::open(const String& dbPath)
 
     // Prepare the statements.
     auto s1 = m_database.prepareHeapStatement("INSERT INTO autofill (name, value) VALUES (?, ?)"_s);
-    HANDLE_SQL_EXEC_FAILURE(s1,
+    HANDLE_SQL_EXEC_FAILURE(!s1,
         false, "Failed to prepare add statement");
     m_addStatement = s1.value().moveToUniquePtr();
 
     auto s2 = m_database.prepareHeapStatement("UPDATE autofill SET count = (SELECT count + 1 from autofill WHERE name = ? AND value = ?) WHERE name = ? AND value = ?"_s);
-    HANDLE_SQL_EXEC_FAILURE(s2,
+    HANDLE_SQL_EXEC_FAILURE(!s2,
         false, "Failed to prepare update statement");
     m_updateStatement = s2.value().moveToUniquePtr();
 
     auto s3 = m_database.prepareHeapStatement("SELECT COUNT(*) FROM autofill WHERE name = ? AND value = ?"_s);
-    HANDLE_SQL_EXEC_FAILURE(s3,
+    HANDLE_SQL_EXEC_FAILURE(!s3,
         false, "Failed to prepare contains statement");
     m_containsStatement = s3.value().moveToUniquePtr();
 
     auto s4 = m_database.prepareHeapStatement("SELECT value FROM autofill WHERE name = ? and value like ? ORDER BY count DESC"_s);
-    HANDLE_SQL_EXEC_FAILURE(s4,
+    HANDLE_SQL_EXEC_FAILURE(!s4,
         false, "Failed to prepare get statement");
     m_getStatement = s4.value().moveToUniquePtr();
 

@@ -38,9 +38,11 @@
 #include "SharedBuffer.h"
 #include <wtf/StringExtras.h>
 
+#if OS(AMIGAOS)
 extern "C" {
     void *memmem(const void *h0, size_t k, const void *n0, size_t l);
 }
+#endif
 
 namespace WebCore {
 
@@ -141,7 +143,7 @@ void CurlMultipartHandle::didComplete()
     if (m_state != State::End) {
         // It seems we are still not at the end of the processing.
         // Push out the remaining data.
-        m_client.didReceiveDataFromMultipart(SharedBuffer::create(m_buffer.data(), m_buffer.size()));
+        m_client.didReceiveDataFromMultipart(SharedBuffer::create(WTFMove(m_buffer)));
         m_state = State::End;
     }
 

@@ -398,7 +398,7 @@ void AcinerellaNetworkBufferHLS::start(uint64_t from)
 		m_stream.clear();
 		m_hasMasterList = false;
 
-		m_hlsRequest = AcinerellaNetworkFileRequest::create(m_url, [this, protect = makeRef(*this)](bool succ) { masterPlaylistReceived(succ); });
+		m_hlsRequest = AcinerellaNetworkFileRequest::create(m_url, [this, protect = Ref{*this}](bool succ) { masterPlaylistReceived(succ); });
 	}
 	else
 	{
@@ -477,7 +477,7 @@ void AcinerellaNetworkBufferHLS::masterPlaylistReceived(bool succ)
 					return;
 				}
 
-				m_hlsRequest = AcinerellaNetworkFileRequest::create(m_selectedStream.m_url, [this, protect = makeRef(*this)](bool succ) { childPlaylistReceived(succ); });
+				m_hlsRequest = AcinerellaNetworkFileRequest::create(m_selectedStream.m_url, [this, protect = Ref{*this}](bool succ) { childPlaylistReceived(succ); });
 				return;
 			}
 		}
@@ -551,7 +551,7 @@ void AcinerellaNetworkBufferHLS::childPlaylistReceived(bool succ)
 				if (initial && 0 != m_stream.map().m_url.length())
 				{
 					D(dprintf("%s(%p) initial %d, map url %s\n", __func__, this, initial, m_stream.map().m_url.utf8().data()));
-					m_initializationChunkRequest = AcinerellaNetworkFileRequest::create(m_stream.map().m_url, [this, protect = makeRef(*this)](bool succ) { initializationSegmentReceived(succ); });
+					m_initializationChunkRequest = AcinerellaNetworkFileRequest::create(m_stream.map().m_url, [this, protect = Ref{*this}](bool succ) { initializationSegmentReceived(succ); });
 				}
 				else
 				{
@@ -631,7 +631,7 @@ bool AcinerellaNetworkBufferHLS::encryptionKeyNeeded(const HLSChunk& chunk)
 		if (it == m_keys.end())
 		{
 			DENC(dprintf("%s(%p) requesting a key...\n", "encryptionKeyNeeded", this));
-			m_keys.emplace(std::make_pair(chunk.m_encryption.m_keyURL, AcinerellaNetworkFileRequest::create(chunk.m_encryption.m_keyURL, [this, protect = makeRef(*this), url = chunk.m_encryption.m_keyURL](bool) {
+			m_keys.emplace(std::make_pair(chunk.m_encryption.m_keyURL, AcinerellaNetworkFileRequest::create(chunk.m_encryption.m_keyURL, [this, protect = Ref{*this}, url = chunk.m_encryption.m_keyURL](bool) {
 
 				requestNextChunk();
 				DENC(dprintf("%s(%p) key obtained\n", "encryptionKeyNeeded", this));
@@ -675,7 +675,7 @@ void AcinerellaNetworkBufferHLS::refreshTimerFired()
 	D(dprintf("%s(%p) \n", __func__, this));
 	if (m_hlsRequest)
 		m_hlsRequest->cancel();
-	m_hlsRequest = AcinerellaNetworkFileRequest::create(m_selectedStream.m_url, [this, protect = makeRef(*this)](bool succ) { childPlaylistReceived(succ); });
+	m_hlsRequest = AcinerellaNetworkFileRequest::create(m_selectedStream.m_url, [this, protect = Ref{*this}](bool succ) { childPlaylistReceived(succ); });
 }
 
 // main thread
@@ -753,7 +753,7 @@ int AcinerellaNetworkBufferHLS::read(uint8_t *outBuffer, int size, int64_t readP
 				}
 			}
 			
-			WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+			WTF::callOnMainThread([this, protect = Ref{*this}]() {
 				chunkSwallowed();
 			});
 		}
@@ -764,7 +764,7 @@ int AcinerellaNetworkBufferHLS::read(uint8_t *outBuffer, int size, int64_t readP
 
 			if (signalChunkSwallowed)
 			{
-				WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+				WTF::callOnMainThread([this, protect = Ref{*this}]() {
 					chunkSwallowed();
 				});
 			}
@@ -836,7 +836,7 @@ bool AcinerellaNetworkBufferHLS::markLastFrameRead()
 	
 	if (doSwallow)
 	{
-		WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+		WTF::callOnMainThread([this, protect = Ref{*this}]() {
 			chunkSwallowed();
 		});
 	}

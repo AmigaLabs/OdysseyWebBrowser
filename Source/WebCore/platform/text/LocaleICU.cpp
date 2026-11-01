@@ -176,7 +176,7 @@ std::unique_ptr<Vector<String>> LocaleICU::createLabelVector(const UDateFormat* 
         return makeUnique<Vector<String>>();
 
     auto labels = makeUnique<Vector<String>>();
-    labels->reserveCapacity(size);
+    labels->reserveInitialCapacity(size);
     for (int32_t i = 0; i < size; ++i) {
         UErrorCode status = U_ZERO_ERROR;
         int32_t length = udat_getSymbols(dateFormat, type, startIndex + i, 0, 0, &status);
@@ -187,7 +187,7 @@ std::unique_ptr<Vector<String>> LocaleICU::createLabelVector(const UDateFormat* 
         udat_getSymbols(dateFormat, type, startIndex + i, buffer.data(), length, &status);
         if (U_FAILURE(status))
             return makeUnique<Vector<String>>();
-        labels->append(String::adopt(WTFMove(buffer)));
+        labels->uncheckedAppend(String::adopt(WTFMove(buffer)));
     }
     return labels;
 }
@@ -195,9 +195,9 @@ std::unique_ptr<Vector<String>> LocaleICU::createLabelVector(const UDateFormat* 
 static std::unique_ptr<Vector<String>> createFallbackMonthLabels()
 {
     auto labels = makeUnique<Vector<String>>();
-    labels->reserveCapacity(WTF_ARRAY_LENGTH(WTF::monthFullName));
-    for (unsigned i = 0; i < WTF_ARRAY_LENGTH(WTF::monthFullName); ++i)
-        labels->append(WTF::monthFullName[i]);
+    labels->reserveInitialCapacity(std::size(WTF::monthFullName));
+    for (auto* monthName : WTF::monthFullName)
+        labels->uncheckedAppend(monthName);
     return labels;
 }
 
@@ -216,11 +216,7 @@ const Vector<String>& LocaleICU::monthLabels()
 
 static std::unique_ptr<Vector<String>> createFallbackAMPMLabels()
 {
-    auto labels = makeUnique<Vector<String>>();
-    labels->reserveCapacity(2);
-    labels->append("AM");
-    labels->append("PM");
-    return labels;
+    return makeUnique<Vector<String>>(Vector<String>::from("AM"_str, "PM"_str));
 }
 
 void LocaleICU::initializeDateTimeFormat()
@@ -271,11 +267,11 @@ static String getFormatForSkeleton(const char* locale, const UChar* skeleton, in
     if (!patternGenerator)
         return format;
     status = U_ZERO_ERROR;
-    int32_t length = udatpg_getBestPattern(patternGenerator, StringView(String(skeleton)).upconvertedCharacters(), skeletonLength, 0, 0, &status);
+    int32_t length = udatpg_getBestPattern(patternGenerator, skeleton, skeletonLength, 0, 0, &status);
     if (needsToGrowToProduceBuffer(status) && length) {
         Vector<UChar> buffer(length);
         status = U_ZERO_ERROR;
-        udatpg_getBestPattern(patternGenerator, StringView(String(skeleton)).upconvertedCharacters(), skeletonLength, buffer.data(), length, &status);
+        udatpg_getBestPattern(patternGenerator, skeleton, skeletonLength, buffer.data(), length, &status);
         if (U_SUCCESS(status))
             format = String::adopt(WTFMove(buffer));
     }

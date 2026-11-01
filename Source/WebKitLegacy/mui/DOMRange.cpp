@@ -102,7 +102,7 @@ void DOMRange::setStart(DOMNode* refNode, int offset)
     if (!m_range)
         return ;
 
-    m_range->setStart(*refNode->node(), offset);
+    m_range->setStart(Ref<Node>(*refNode->node()), offset);
 }
 
 void DOMRange::setEnd(DOMNode* refNode, int offset)
@@ -110,7 +110,7 @@ void DOMRange::setEnd(DOMNode* refNode, int offset)
     if (!m_range)
         return ;
 
-    m_range->setEnd(*refNode->node(), offset);
+    m_range->setEnd(Ref<Node>(*refNode->node()), offset);
 }
 
 void DOMRange::setStartBefore(DOMNode* refNode)

@@ -72,6 +72,10 @@ public:
 #if PLATFORM(MUI)
     void appendItem(ContextMenuItem&, ContextMenu* parentMenu);
 #endif
+    
+#if ENABLE(SERVICE_CONTROLS)
+    void showImageControlsMenu(Event&);
+#endif
 
 private:
     std::unique_ptr<ContextMenu> maybeCreateContextMenu(Event&, OptionSet<HitTestRequest::Type> hitType, ContextMenuContext::Type);

@@ -33,17 +33,11 @@
 #include "SQLiteFileSystem.h"
 #include <wtf/DateMath.h>
 #include <wtf/FileSystem.h>
-#include <wtf/Locker.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/URL.h>
 #include <wtf/Vector.h>
 #include <wtf/WallTime.h>
 #include <wtf/text/StringConcatenateNumbers.h>
-
-#include <sys/stat.h>
-#if !OS(AMIGAOS)
-#include <aros/debug.h>
-#endif
 
 namespace WebCore {
 
@@ -73,8 +67,6 @@ namespace WebCore {
     "SELECT DISTINCT domain FROM Cookie;"_s
 #define CHECK_EXISTS_COOKIE_SQL \
     "SELECT domain FROM Cookie WHERE ((domain = ?) OR (domain GLOB ?));"_s
-#define SELECT_ALL_DOMAINS_SQL \
-    "SELECT DISTINCT domain FROM Cookie;"_s
 #define CHECK_EXISTS_HTTPONLY_COOKIE_SQL \
     "SELECT name FROM Cookie WHERE (name = ?) AND (domain = ?) AND (path = ?) AND (httponly = 1);"_s
 #define SET_COOKIE_SQL \
@@ -107,13 +99,11 @@ CookieJarDB::CookieJarDB(const String& databasePath)
 
 CookieJarDB::~CookieJarDB()
 {
-    Locker locker { m_lock };
     closeDatabase();
 }
 
 void CookieJarDB::open()
 {
-    Locker locker { m_lock };
     if (!m_database.isOpen()) {
         checkDatabaseCorruptionAndRemoveIfNeeded();
         openDatabase();
@@ -175,8 +165,6 @@ bool CookieJarDB::openDatabase()
         }
     }
 
-    // Wait for a lock held by another connection instead of failing at once.
-    m_database.setBusyTimeout(5000);
     m_database.setSynchronous(SQLiteDatabase::SyncNormal);
 
     // create prepared statements
@@ -193,7 +181,6 @@ bool CookieJarDB::openDatabase()
 
 void CookieJarDB::closeDatabase()
 {
-    Locker locker { m_lock };
     if (m_database.isOpen()) {
         m_statements.clear();
         m_database.close();
@@ -328,7 +315,6 @@ void CookieJarDB::deleteAllDatabaseFiles()
 
 bool CookieJarDB::isEnabled() const
 {
-    Locker locker { m_lock };
     if (m_databasePath.isEmpty())
         return false;
 
@@ -384,7 +370,6 @@ bool CookieJarDB::hasCookies(const URL& url)
 
 std::optional<Vector<Cookie>> CookieJarDB::searchCookies(const URL& firstParty, const URL& requestUrl, const std::optional<bool>& httpOnly, const std::optional<bool>& secure, const std::optional<bool>& session)
 {
-    Locker locker { m_lock };
     if (!isEnabled() || !m_database.isOpen())
         return std::nullopt;
 
@@ -467,7 +452,6 @@ std::optional<Vector<Cookie>> CookieJarDB::searchCookies(const URL& firstParty, 
 
 Vector<Cookie> CookieJarDB::getAllCookies()
 {
-    Locker locker { m_lock };
     Vector<Cookie> result;
     if (!isEnabled() || !m_database.isOpen())
         return result;
@@ -504,6 +488,18 @@ bool CookieJarDB::hasHttpOnlyCookie(const String& name, const String& domain, co
     return statement.step() == SQLITE_ROW;
 }
 
+static bool checkSecureCookie(const Cookie& cookie)
+{
+    if (cookie.name.startsWith("__Secure-"_s) && !cookie.secure)
+        return false;
+
+    // Cookies for __Host must have the Secure attribute, path explicitly set to "/", and no domain attribute
+    if (cookie.name.startsWith("__Host-"_s) && (!cookie.secure || cookie.path != "/"_s || !cookie.domain.isEmpty()))
+        return false;
+
+    return true;
+}
+
 bool CookieJarDB::canAcceptCookie(const Cookie& cookie, const URL& firstParty, const URL& url, CookieJarDB::Source source)
 {
 #if ENABLE(PUBLIC_SUFFIX_LIST)
@@ -526,9 +522,8 @@ bool CookieJarDB::canAcceptCookie(const Cookie& cookie, const URL& firstParty, c
 
 bool CookieJarDB::setCookie(const Cookie& cookie)
 {
-    Locker locker { m_lock };
     auto expires = cookie.expires.value_or(0.0);
-    if (!cookie.session && MonotonicTime::fromRawSeconds(expires / WTF::msPerSecond) <= MonotonicTime::now())
+    if (!cookie.session && MonotonicTime::fromRawSeconds(expires / msPerSecond) <= MonotonicTime::now())
         return deleteCookieInternal(cookie.name, cookie.domain, cookie.path);
 
     auto& statement = preparedStatement(SET_COOKIE_SQL);
@@ -548,7 +543,6 @@ bool CookieJarDB::setCookie(const Cookie& cookie)
 
 bool CookieJarDB::setCookie(const URL& firstParty, const URL& url, const String& body, CookieJarDB::Source source, std::optional<Seconds> cappedLifetime)
 {
-    Locker locker { m_lock };
     if (!isEnabled() || !m_database.isOpen())
         return false;
 
@@ -556,11 +550,14 @@ bool CookieJarDB::setCookie(const URL& firstParty, const URL& url, const String&
         return false;
 
     auto cookie = CookieUtil::parseCookieHeader(body);
-    if (!cookie)
+    if (!cookie || (cookie->name.isEmpty() && cookie->value.isEmpty()))
+        return false;
+
+    if (!checkSecureCookie(*cookie))
         return false;
 
     if (cookie->domain.isEmpty())
-        cookie->domain = "." + url.host().convertToASCIILowercase(); // Original Odyssey logic
+        cookie->domain = url.host().convertToASCIILowercase();
 
     if (cookie->path.isEmpty())
         cookie->path = CookieUtil::defaultPathForURL(url);
@@ -571,7 +568,7 @@ bool CookieJarDB::setCookie(const URL& firstParty, const URL& url, const String&
     if (cappedLifetime && cookie->expires) {
         ASSERT(*cappedLifetime >= 0_s);
         auto cappedExpires = WallTime::now() + *cappedLifetime;
-        if (cappedExpires < WallTime::fromRawSeconds(*cookie->expires / WTF::msPerSecond))
+        if (cappedExpires < WallTime::fromRawSeconds(*cookie->expires / msPerSecond))
             cookie->expires = cappedExpires.secondsSinceEpoch().milliseconds();
     }
 
@@ -580,7 +577,6 @@ bool CookieJarDB::setCookie(const URL& firstParty, const URL& url, const String&
 
 HashSet<String> CookieJarDB::allDomains()
 {
-    Locker locker { m_lock };
     auto statement = m_database.prepareStatement(SELECT_ALL_DOMAINS_SQL);
     if (!statement)
         return { };
@@ -595,7 +591,6 @@ HashSet<String> CookieJarDB::allDomains()
 
 bool CookieJarDB::deleteCookie(const String& url, const String& name)
 {
-    Locker locker { m_lock };
     if (!isEnabled() || !m_database.isOpen())
         return false;
 
@@ -625,7 +620,6 @@ bool CookieJarDB::deleteCookieInternal(const String& name, const String& domain,
 
 bool CookieJarDB::deleteCookies(const String&)
 {
-    Locker locker { m_lock };
     // NOT IMPLEMENTED
     // TODO: this function will be called if application calls WKCookieManagerDeleteCookiesForHostname() in WKCookieManager.h.
     return false;
@@ -633,7 +627,6 @@ bool CookieJarDB::deleteCookies(const String&)
 
 bool CookieJarDB::deleteCookiesForHostname(const String& hostname, IncludeHttpOnlyCookies includeHttpOnlyCookies)
 {
-    Locker locker { m_lock };
     auto& statement = preparedStatement(includeHttpOnlyCookies == IncludeHttpOnlyCookies::Yes ? DELETE_COOKIES_BY_DOMAIN_SQL : DELETE_COOKIES_BY_DOMAIN_EXCEPT_HTTP_ONLY_SQL);
     statement.bindText(1, hostname);
     return checkSQLiteReturnCode(statement.step());
@@ -641,7 +634,6 @@ bool CookieJarDB::deleteCookiesForHostname(const String& hostname, IncludeHttpOn
 
 bool CookieJarDB::deleteAllCookies()
 {
-    Locker locker { m_lock };
     if (!isEnabled() || !m_database.isOpen())
         return false;
 

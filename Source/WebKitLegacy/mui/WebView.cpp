@@ -97,6 +97,9 @@
 #include <WebCore/ContextMenuController.h>
 #include <WebCore/CrossOriginPreflightResultCache.h>
 #include <WebCore/CurlCacheManager.h>
+#include <WebCore/DummyModelPlayerProvider.h>
+#include <WebCore/DummyStorageProvider.h>
+#include <WebCore/WebLockRegistry.h>
 #include <WebCore/Cursor.h>
 #include <WebCore/DatabaseManager.h>
 #include <WebCore/DragController.h>
@@ -420,7 +423,10 @@ WebView::WebView()
         makeUniqueRef<DummySpeechRecognitionProvider>(),
         makeUniqueRef<MediaRecorderProvider>(),
         WebBroadcastChannelRegistry::getOrCreate(false),
-        WebCore::DummyPermissionController::create()
+        WebCore::LocalWebLockRegistry::create(),
+        WebCore::DummyPermissionController::create(),
+        makeUniqueRef<WebCore::DummyStorageProvider>(),
+        makeUniqueRef<WebCore::DummyModelPlayerProvider>()
     );
     configuration.backForwardClient = BackForwardList::create();
     configuration.chromeClient = new WebChromeClient(this);
@@ -447,21 +453,10 @@ WebView::WebView()
 #endif
     WebCore::Settings& settings = m_page->settings();
     /* Defaults */
-    settings.setFTPDirectoryTemplatePath("PROGDIR:resource/FTPDirectoryTemplate.html");
-
 #if ENABLE(VIDEO)
-    settings.setMediaEnabled(true);
-    settings.setInvisibleAutoplayNotPermitted(true);
     settings.setAudioPlaybackRequiresUserGesture(true);
     settings.setVideoPlaybackRequiresUserGesture(true);
 #endif
-#if ENABLE(WEB_AUDIO)
-    settings.setWebAudioEnabled(true);
-#endif
-
-    settings.setAllowDisplayOfInsecureContent(true);
-    settings.setTextAreasAreResizable(true);
-    settings.setDataTransferItemsEnabled(true);
 
     RuntimeEnabledFeatures::sharedFeatures().setCSSPaintingAPIEnabled(true);
     RuntimeEnabledFeatures::sharedFeatures().setCSSTypedOMEnabled(true);
@@ -958,18 +953,13 @@ void WebView::reloadFromOrigin()
 
 void WebView::setCookieEnabled(bool enable)
 {
-    if (!m_page)
-        return;
-
-    m_page->settings().setCookieEnabled(enable);
+    // shortcut: 2.36 has no per-page cookie-enabled setting (cookies are governed by the cookie jar); no UI calls this.
+    (void)enable;
 }
 
 bool WebView::cookieEnabled()
 {
-    if (!m_page)
-        return false;
-
-    return m_page->settings().cookieEnabled();
+    return true;
 }
 
 Page* WebView::page()
@@ -2580,9 +2570,6 @@ void WebView::notifyPreferencesChanged(WebPreferences* preferences)
 
     enabled = preferences->shouldPrintBackgrounds();
     settings->setShouldPrintBackgrounds(!!enabled);
-
-    enabled = preferences->textAreasAreResizable();
-    settings->setTextAreasAreResizable(!!enabled);
 
     WebKitEditableLinkBehavior behavior = preferences->editableLinkBehavior();
     settings->setEditableLinkBehavior((EditableLinkBehavior)behavior);

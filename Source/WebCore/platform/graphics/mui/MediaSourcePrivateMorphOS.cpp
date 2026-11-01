@@ -27,7 +27,7 @@ Ref<MediaSourcePrivateMorphOS> MediaSourcePrivateMorphOS::create(MediaPlayerPriv
 }
 
 MediaSourcePrivateMorphOS::MediaSourcePrivateMorphOS(MediaPlayerPrivateMorphOS& parent, MediaSourcePrivateClient& client, const String &url)
-    : m_player(makeWeakPtr(parent))
+    : m_player(WeakPtr { parent })
     , m_client(client)
     , m_watchdogTimer(RunLoop::current(), this, &MediaSourcePrivateMorphOS::watchdogTimerFired)
 {
@@ -128,7 +128,7 @@ void MediaSourcePrivateMorphOS::waitForSeekCompleted()
 
 void MediaSourcePrivateMorphOS::onSourceBufferLoadingProgressed()
 {
-	WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+	WTF::callOnMainThread([this, protect = Ref{*this}]() {
 		D(dprintf("[MS]onSourceBufferLoadingProgressed: \n"));
 		setReadyState(MediaPlayer::ReadyState::HaveCurrentData);
 
@@ -324,7 +324,7 @@ const WebCore::MediaPlayerMorphOSStreamSettings& MediaSourcePrivateMorphOS::stre
 
 void MediaSourcePrivateMorphOS::onSourceBufferInitialized(RefPtr<MediaSourceBufferPrivateMorphOS> &)
 {
-	WTF::callOnMainThread([this, protect = makeRef(*this)]() {
+	WTF::callOnMainThread([this, protect = Ref{*this}]() {
 		D(dprintf("onSourceBufferInitialized: allinitialized %d seeking %d csdone %d\n", areDecodersInitialized(), m_seeking, m_clientSeekDone));
 		if (areDecodersInitialized())
 		{

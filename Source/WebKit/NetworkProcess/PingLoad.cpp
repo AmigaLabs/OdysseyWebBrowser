@@ -74,14 +74,14 @@ void PingLoad::initialize(NetworkProcess& networkProcess)
     m_networkLoadChecker->setParentCrossOriginEmbedderPolicy(m_parameters.parentCrossOriginEmbedderPolicy);
     m_networkLoadChecker->setCrossOriginEmbedderPolicy(m_parameters.crossOriginEmbedderPolicy);
 #if ENABLE(CONTENT_EXTENSIONS)
-    m_networkLoadChecker->setContentExtensionController(WTFMove(m_parameters.mainDocumentURL), m_parameters.userContentControllerIdentifier);
+    m_networkLoadChecker->setContentExtensionController(WTFMove(m_parameters.mainDocumentURL), WTFMove(m_parameters.frameURL), m_parameters.userContentControllerIdentifier);
 #endif
 
     // If the server never responds, this object will hang around forever.
     // Set a very generous timeout, just in case.
     m_timeoutTimer.startOneShot(60000_s);
 
-    m_networkLoadChecker->check(ResourceRequest { m_parameters.request }, nullptr, [this, weakThis = makeWeakPtr(*this), networkProcess = makeRef(networkProcess)] (auto&& result) {
+    m_networkLoadChecker->check(ResourceRequest { m_parameters.request }, nullptr, [this, weakThis = WeakPtr { *this }, networkProcess = Ref { networkProcess }] (auto&& result) {
         if (!weakThis)
             return;
         WTF::switchOn(result,
@@ -134,13 +134,14 @@ void PingLoad::willPerformHTTPRedirection(ResourceResponse&& redirectResponse, R
 {
     m_networkLoadChecker->checkRedirection(ResourceRequest { }, WTFMove(request), WTFMove(redirectResponse), nullptr, [this, completionHandler = WTFMove(completionHandler)] (auto&& result) mutable {
         if (!result.has_value()) {
-            completionHandler({ });
             this->didFinish(result.error());
+            completionHandler({ });
             return;
         }
         auto request = WTFMove(result->redirectRequest);
         if (!request.url().protocolIsInHTTPFamily()) {
             this->didFinish(ResourceError { String { }, 0, request.url(), "Redirection to URL with a scheme that is not HTTP(S)"_s, ResourceError::Type::AccessControl });
+            completionHandler({ });
             return;
         }
 
@@ -151,28 +152,28 @@ void PingLoad::willPerformHTTPRedirection(ResourceResponse&& redirectResponse, R
 void PingLoad::didReceiveChallenge(AuthenticationChallenge&& challenge, NegotiatedLegacyTLS negotiatedLegacyTLS, ChallengeCompletionHandler&& completionHandler)
 {
     PING_RELEASE_LOG("didReceiveChallenge");
-    if (challenge.protectionSpace().authenticationScheme() == ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested) {
+    if (challenge.protectionSpace().authenticationScheme() == ProtectionSpace::AuthenticationScheme::ServerTrustEvaluationRequested) {
         m_networkLoadChecker->networkProcess().authenticationManager().didReceiveAuthenticationChallenge(m_sessionID, m_parameters.webPageProxyID,  m_parameters.topOrigin ? &m_parameters.topOrigin->data() : nullptr, challenge, negotiatedLegacyTLS, WTFMove(completionHandler));
         return;
     }
-    auto weakThis = makeWeakPtr(*this);
+    WeakPtr weakThis { *this };
     completionHandler(AuthenticationChallengeDisposition::Cancel, { });
     if (!weakThis)
         return;
     didFinish(ResourceError { String(), 0, currentURL(), "Failed HTTP authentication"_s, ResourceError::Type::AccessControl });
 }
 
-void PingLoad::didReceiveResponse(ResourceResponse&& response, NegotiatedLegacyTLS, ResponseCompletionHandler&& completionHandler)
+void PingLoad::didReceiveResponse(ResourceResponse&& response, NegotiatedLegacyTLS, PrivateRelayed, ResponseCompletionHandler&& completionHandler)
 {
     PING_RELEASE_LOG("didReceiveResponse - httpStatusCode=%d", response.httpStatusCode());
-    auto weakThis = makeWeakPtr(*this);
+    WeakPtr weakThis { *this };
     completionHandler(PolicyAction::Ignore);
     if (!weakThis)
         return;
     didFinish({ }, response);
 }
 
-void PingLoad::didReceiveData(Ref<SharedBuffer>&&)
+void PingLoad::didReceiveData(const SharedBuffer&)
 {
     PING_RELEASE_LOG("didReceiveData");
     ASSERT_NOT_REACHED();
@@ -208,6 +209,12 @@ void PingLoad::wasBlockedByRestrictions()
 {
     PING_RELEASE_LOG("wasBlockedByRestrictions");
     didFinish(wasBlockedByRestrictionsError(ResourceRequest { currentURL() }));
+}
+
+void PingLoad::wasBlockedByDisabledFTP()
+{
+    PING_RELEASE_LOG("wasBlockedByDisabledFTP");
+    didFinish(ftpDisabledError(ResourceRequest(currentURL())));
 }
 
 void PingLoad::timeoutTimerFired()

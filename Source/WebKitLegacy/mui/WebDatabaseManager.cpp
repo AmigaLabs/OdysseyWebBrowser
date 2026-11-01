@@ -125,7 +125,7 @@ vector<WebSecurityOrigin*> WebDatabaseManager::origins()
 
     Vector<RefPtr<SecurityOrigin>> origins;
     for (auto& origin : DatabaseTracker::singleton().origins())
-        origins.append(origin.securityOrigin());
+        origins.append(SecurityOrigin::create(origin.toURL()));
 
     for(size_t i = 0; i < origins.size(); i++)
         ori.push_back(WebSecurityOrigin::createInstance(origins[i].get()));

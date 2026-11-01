@@ -32,6 +32,10 @@
 #include <wtf/WindowsExtras.h>
 #include <wtf/text/WTFString.h>
 
+#if PLATFORM(MUI)
+#include "BALBase.h"
+#endif
+
 #if PLATFORM(COCOA)
 #include <wtf/RetainPtr.h>
 OBJC_CLASS NSEvent;
@@ -43,10 +47,6 @@ OBJC_CLASS WebEvent;
 
 #if OS(MORPHOS)
 struct IntuiMessage;
-#endif
-
-#if PLATFORM(MUI)
-#include "BALBase.h"
 #endif
 
 namespace WebCore {
@@ -71,9 +71,6 @@ namespace WebCore {
             , m_code(code)
             , m_keyIdentifier(keyIdentifier)
             , m_windowsVirtualKeyCode(windowsVirtualKeyCode)
-#if PLATFORM(MUI)
-            , m_balEventKey(0)
-#endif
         {
         }
 
@@ -143,6 +140,11 @@ namespace WebCore {
 		PlatformKeyboardEvent(struct IntuiMessage *imsg);
 #endif
 
+#if PLATFORM(MUI)
+        PlatformKeyboardEvent(BalEventKey*);
+        BalEventKey* balEventKey() const;
+#endif
+
 #if PLATFORM(GTK)
         // Used by WebKit2
         static String keyValueForGdkKeyCode(unsigned);
@@ -159,11 +161,6 @@ namespace WebCore {
         static String keyIdentifierForWPEKeyCode(unsigned);
         static int windowsKeyCodeForWPEKeyCode(unsigned);
         static String singleCharacterString(unsigned);
-#endif
-
-#if PLATFORM(MUI)
-        PlatformKeyboardEvent(BalEventKey*);
-        BalEventKey* balEventKey() const;
 #endif
 
     protected:
@@ -208,7 +205,7 @@ namespace WebCore {
         static std::optional<OptionSet<Modifier>> s_currentModifiers;
 
 #if PLATFORM(MUI)
-        BalEventKey* m_balEventKey;
+        BalEventKey* m_balEventKey { nullptr };
 #endif
     };
     

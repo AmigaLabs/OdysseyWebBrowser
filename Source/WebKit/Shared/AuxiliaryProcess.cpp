@@ -26,6 +26,7 @@
 #include "config.h"
 #include "AuxiliaryProcess.h"
 
+#include "AuxiliaryProcessCreationParameters.h"
 #include "ContentWorldShared.h"
 #include "LogInitialization.h"
 #include "Logging.h"
@@ -34,6 +35,7 @@
 #include <WebCore/LogInitialization.h>
 #include <pal/SessionID.h>
 #include <wtf/LogInitialization.h>
+#include <wtf/SetForScope.h>
 
 #if !OS(WINDOWS)
 #include <unistd.h>
@@ -48,18 +50,25 @@ using namespace WebCore;
 
 AuxiliaryProcess::AuxiliaryProcess()
     : m_terminationCounter(0)
-    , m_terminationTimer(RunLoop::main(), this, &AuxiliaryProcess::terminationTimerFired)
     , m_processSuppressionDisabled("Process Suppression Disabled by UIProcess")
 {
 }
 
 AuxiliaryProcess::~AuxiliaryProcess()
 {
+    if (m_connection)
+        m_connection->invalidate();
 }
 
 void AuxiliaryProcess::didClose(IPC::Connection&)
 {
+// Stop the run loop for GTK and WPE to ensure a normal exit, since we need
+// atexit handlers to be called to cleanup resources like EGL displays.
+#if PLATFORM(GTK) || PLATFORM(WPE)
+    stopRunLoop();
+#else
     _exit(EXIT_SUCCESS);
+#endif
 }
 
 void AuxiliaryProcess::initialize(const AuxiliaryProcessInitializationParameters& parameters)
@@ -77,10 +86,10 @@ void AuxiliaryProcess::initialize(const AuxiliaryProcessInitializationParameters
     m_priorityBoostMessage = parameters.priorityBoostMessage;
 #endif
 
-    initializeProcess(parameters);
-
     SandboxInitializationParameters sandboxParameters;
     initializeSandbox(parameters, sandboxParameters);
+
+    initializeProcess(parameters);
 
 #if !LOG_DISABLED || !RELEASE_LOG_DISABLED
     WTF::logChannels().initializeLogChannelsIfNecessary();
@@ -148,7 +157,6 @@ void AuxiliaryProcess::removeMessageReceiver(IPC::MessageReceiver& messageReceiv
 void AuxiliaryProcess::disableTermination()
 {
     m_terminationCounter++;
-    m_terminationTimer.stop();
 }
 
 void AuxiliaryProcess::enableTermination()
@@ -156,15 +164,11 @@ void AuxiliaryProcess::enableTermination()
     ASSERT(m_terminationCounter > 0);
     m_terminationCounter--;
 
-    if (m_terminationCounter)
+    if (m_terminationCounter || m_isInShutDown)
         return;
 
-    if (!m_terminationTimeout) {
-        terminationTimerFired();
-        return;
-    }
-
-    m_terminationTimer.startOneShot(m_terminationTimeout);
+    if (shouldTerminate())
+        terminate();
 }
 
 void AuxiliaryProcess::mainThreadPing(CompletionHandler<void()>&& completionHandler)
@@ -180,14 +184,6 @@ IPC::Connection* AuxiliaryProcess::messageSenderConnection() const
 uint64_t AuxiliaryProcess::messageSenderDestinationID() const
 {
     return 0;
-}
-
-void AuxiliaryProcess::terminationTimerFired()
-{
-    if (!shouldTerminate())
-        return;
-
-    terminate();
 }
 
 void AuxiliaryProcess::stopRunLoop()
@@ -211,6 +207,7 @@ void AuxiliaryProcess::terminate()
 
 void AuxiliaryProcess::shutDown()
 {
+    SetForScope<bool> isInShutDown(m_isInShutDown, true);
     terminate();
 }
 
@@ -242,6 +239,15 @@ std::optional<std::pair<IPC::Connection::Identifier, IPC::Attachment>> Auxiliary
 #else
     notImplemented();
     return { };
+#endif
+}
+
+void AuxiliaryProcess::applyProcessCreationParameters(const AuxiliaryProcessCreationParameters& parameters)
+{
+#if !LOG_DISABLED || !RELEASE_LOG_DISABLED
+    WTF::logChannels().initializeLogChannelsIfNecessary(parameters.wtfLoggingChannels);
+    WebCore::logChannels().initializeLogChannelsIfNecessary(parameters.webCoreLoggingChannels);
+    WebKit::logChannels().initializeLogChannelsIfNecessary(parameters.webKitLoggingChannels);
 #endif
 }
 

@@ -35,15 +35,28 @@
 #if USE(PTHREADS)
 
 #include <errno.h>
-#include <time.h>
 #include <wtf/NeverDestroyed.h>
+#include <wtf/SafeStrerror.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/ThreadingPrimitives.h>
 #include <wtf/WTFConfig.h>
 #include <wtf/WordLock.h>
 
+#if OS(AMIGAOS)
+#include <semaphore.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <proto/exec.h>
+#endif
+
 #if OS(LINUX)
+#include <sched.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <wtf/linux/RealTimeThreads.h>
+#ifndef SCHED_RESET_ON_FORK
+#define SCHED_RESET_ON_FORK 0x40000000
+#endif
 #endif
 
 #if !COMPILER(MSVC)
@@ -70,10 +83,6 @@
 #include <mach/thread_switch.h>
 #endif
 
-#if OS(LINUX)
-#include <sys/syscall.h>
-#endif
-
 #if OS(MORPHOS)
 #include <semaphore.h>
 #include <sys/mman.h>
@@ -88,21 +97,7 @@ int pthread_setname_np(pthread_t thread, const char *name);
 }
 #endif
 
-#if OS(AROS)
-#include <proto/exec.h>
-#include <semaphore.h>
-#endif
-
-#if OS(AMIGAOS)
-#include <semaphore.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <proto/exec.h>
-#endif
-
 namespace WTF {
-
-static Lock globalSuspendLock;
 
 Thread::~Thread()
 {
@@ -141,7 +136,7 @@ static LazyNeverDestroyed<Semaphore> globalSemaphoreForSuspendResume;
 
 static std::atomic<Thread*> targetThread { nullptr };
 
-#if !OS(MORPHOS) && !OS(AMIGAOS)
+#if !OS(MORPHOS)
 void Thread::signalHandlerSuspendResume(int, siginfo_t*, void* ucontext)
 {
     // Touching a global variable atomic types from signal handlers is allowed.
@@ -172,12 +167,12 @@ void Thread::signalHandlerSuspendResume(int, siginfo_t*, void* ucontext)
 
 #if HAVE(MACHINE_CONTEXT)
     ucontext_t* userContext = static_cast<ucontext_t*>(ucontext);
-    thread->m_savedPlatformRegisters = registersFromUContext(userContext);
+    thread->m_platformRegisters = &registersFromUContext(userContext);
 #else
     UNUSED_PARAM(ucontext);
-    thread->m_savedPlatformRegisters = PlatformRegisters { approximateStackPointer };
+    PlatformRegisters platformRegisters { approximateStackPointer };
+    thread->m_platformRegisters = &platformRegisters;
 #endif
-    thread->m_platformRegisters = &thread->m_savedPlatformRegisters;
 
     // Allow suspend caller to see that this thread is suspended.
     // sem_post is async-signal-safe function. It means that we can call this from a signal handler.
@@ -199,7 +194,7 @@ void Thread::signalHandlerSuspendResume(int, siginfo_t*, void* ucontext)
     // Allow resume caller to see that this thread is resumed.
     globalSemaphoreForSuspendResume->post();
 }
-#endif // !OS(MORPHOS) && !OS(AMIGAOS)
+#endif
 #endif // !OS(DARWIN)
 
 void Thread::initializePlatformThreading()
@@ -214,10 +209,10 @@ void Thread::initializePlatformThreading()
     }
     g_wtfConfig.isThreadSuspendResumeSignalConfigured = true;
 
-#if !OS(DARWIN) && !OS(AROS)
+#if !OS(DARWIN)
     globalSemaphoreForSuspendResume.construct(0);
 
-#if !OS(MORPHOS) && !OS(AMIGAOS)
+#if !OS(MORPHOS)
     // Signal handlers are process global configuration.
     // Intentionally block sigThreadSuspendResume in the handler.
     // sigThreadSuspendResume will be allowed in the handler by sigsuspend.
@@ -257,7 +252,7 @@ ThreadIdentifier Thread::currentID()
 
 void Thread::initializeCurrentThreadEvenIfNonWTFCreated()
 {
-#if !OS(DARWIN) && !OS(MORPHOS) && !OS(AROS) && !OS(AMIGAOS)
+#if !OS(DARWIN) && !OS(MORPHOS)
     RELEASE_ASSERT(g_wtfConfig.isThreadSuspendResumeSignalConfigured);
     sigset_t mask;
     sigemptyset(&mask);
@@ -290,18 +285,31 @@ dispatch_qos_class_t Thread::dispatchQOSClass(QOS qos)
 }
 #endif
 
+#if OS(LINUX)
+static int schedPolicy(Thread::QOS qos)
+{
+    switch (qos) {
+    case Thread::QOS::UserInteractive:
+        return SCHED_RR;
+    case Thread::QOS::UserInitiated:
+    case Thread::QOS::Default:
+        return SCHED_OTHER;
+    case Thread::QOS::Utility:
+        return SCHED_BATCH;
+    case Thread::QOS::Background:
+        return SCHED_IDLE;
+    }
+    RELEASE_ASSERT_NOT_REACHED();
+}
+#endif
+
 bool Thread::establishHandle(NewThreadContext* context, std::optional<size_t> stackSize, QOS qos)
 {
     pthread_t threadHandle;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-#if OS(AROS) || OS(AMIGAOS)
-    pthread_attr_setstacksize(&attr, 512 * 1024);
-#endif
 #if HAVE(QOS_CLASSES)
     pthread_attr_set_qos_class_np(&attr, dispatchQOSClass(qos), 0);
-#else
-    UNUSED_PARAM(qos);
 #endif
     if (stackSize)
         pthread_attr_setstacksize(&attr, stackSize.value());
@@ -311,6 +319,21 @@ bool Thread::establishHandle(NewThreadContext* context, std::optional<size_t> st
         LOG_ERROR("Failed to create pthread at entry point %p with context %p", wtfThreadEntryPoint, context);
         return false;
     }
+
+#if OS(LINUX)
+    int policy = schedPolicy(qos);
+    if (policy == SCHED_RR)
+        RealTimeThreads::singleton().registerThread(*this);
+    else {
+        struct sched_param param = { 0 };
+        error = pthread_setschedparam(threadHandle, policy | SCHED_RESET_ON_FORK, &param);
+        if (error)
+            LOG_ERROR("Failed to set sched policy %d for thread %ld: %s", policy, threadHandle, safeStrerror(error).data());
+    }
+#elif !HAVE(QOS_CLASSES)
+    UNUSED_PARAM(qos);
+#endif
+
     establishPlatformSpecificHandle(threadHandle);
     return true;
 }
@@ -322,7 +345,7 @@ void Thread::initializeCurrentThreadInternal(const char* threadName)
 #elif OS(LINUX)
     prctl(PR_SET_NAME, normalizeThreadName(threadName));
 #elif OS(MORPHOS)
-	char nameBuffer[256] = {0};
+	char nameBuffer[256];
 	strcpy(nameBuffer, "WkWebView:");
 	stccpy(nameBuffer + 10, threadName, sizeof(nameBuffer) - 10);
 	pthread_setname_np(pthread_self(), nameBuffer);
@@ -337,8 +360,6 @@ void Thread::initializeCurrentThreadInternal(const char* threadName)
 		pthread_setschedparam(pthread_self(), SCHED_MORPHOS, &param);
 	}
 #endif
-#elif OS(AROS)|| OS(AMIGAOS)
-    pthread_setname_np(pthread_self(), threadName);
 #else
     UNUSED_PARAM(threadName);
 #endif
@@ -415,7 +436,7 @@ Thread& Thread::initializeCurrentTLS()
     return initializeTLS(WTFMove(thread));
 }
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#ifdef __MORPHOS__
 Thread* Thread::getUserDataThreadPointer()
 {
     return (Thread *)FindTask(NULL)->tc_UserData;
@@ -431,27 +452,15 @@ bool Thread::signal(int signalNumber)
     return !errNo; // A 0 errNo means success.
 }
 
-auto Thread::suspend() -> Expected<void, PlatformSuspendError>
+auto Thread::suspend(const ThreadSuspendLocker&) -> Expected<void, PlatformSuspendError>
 {
     RELEASE_ASSERT_WITH_MESSAGE(this != &Thread::current(), "We do not support suspending the current thread itself.");
-    // During suspend, suspend or resume should not be executed from the other threads.
-    // We use global lock instead of per thread lock.
-    // Consider the following case, there are threads A and B.
-    // And A attempt to suspend B and B attempt to suspend A.
-    // A and B send signals. And later, signals are delivered to A and B.
-    // In that case, both will be suspended.
-    //
-    // And it is important to use a global lock to suspend and resume. Let's consider using per-thread lock.
-    // Your issuing thread (A) attempts to suspend the target thread (B). Then, you will suspend the thread (C) additionally.
-    // This case frequently happens if you stop threads to perform stack scanning. But thread (B) may hold the lock of thread (C).
-    // In that case, dead lock happens. Using global lock here avoids this dead lock.
-    Locker locker { globalSuspendLock };
 #if OS(DARWIN)
     kern_return_t result = thread_suspend(m_platformThread);
     if (result != KERN_SUCCESS)
         return makeUnexpected(result);
     return { };
-#elif !PLATFORM(MUI)
+#elif !OS(MORPHOS)
     if (!m_suspendCount) {
         targetThread.store(this);
 
@@ -469,17 +478,16 @@ auto Thread::suspend() -> Expected<void, PlatformSuspendError>
         }
     }
     ++m_suspendCount;
-#endif
     return { };
+#endif
+	return { };
 }
 
-void Thread::resume()
+void Thread::resume(const ThreadSuspendLocker&)
 {
-    // During resume, suspend or resume should not be executed from the other threads.
-    Locker locker { globalSuspendLock };
 #if OS(DARWIN)
     thread_resume(m_platformThread);
-#elif !PLATFORM(MUI)
+#elif !OS(MORPHOS)
     if (m_suspendCount == 1) {
         // When allowing sigThreadSuspendResume interrupt in the signal handler by sigsuspend and SigThreadSuspendResume is actually issued,
         // the signal handler itself will be called once again.
@@ -532,16 +540,8 @@ static ThreadStateMetadata threadStateMetadata()
 }
 #endif // OS(DARWIN)
 
-size_t Thread::getRegisters(PlatformRegisters& registers)
+size_t Thread::getRegisters(const ThreadSuspendLocker&, PlatformRegisters& registers)
 {
-    // On PLATFORM(MUI) (MorphOS/AmigaOS), suspend() is a no-op that returns success
-    // without actually suspending the thread or setting m_platformRegisters.
-    // The lock is only needed when signal-based suspension is active; acquiring it
-    // here on MUI builds crashes because globalSuspendLock is in the SDA section
-    // and r13 is not properly set in all threads (clib4/-mlongcall ABI).
-#if !PLATFORM(MUI)
-    Locker locker { globalSuspendLock };
-#endif
 #if OS(DARWIN)
     auto metadata = threadStateMetadata();
     kern_return_t result = thread_get_state(m_platformThread, metadata.flavor, (thread_state_t)&registers, &metadata.userCount);
@@ -552,11 +552,8 @@ size_t Thread::getRegisters(PlatformRegisters& registers)
     return metadata.userCount * sizeof(uintptr_t);
 #else
     ASSERT_WITH_MESSAGE(m_suspendCount, "We can get registers only if the thread is suspended.");
-    PlatformRegisters* platformRegisters = m_platformRegisters;
-    ASSERT_WITH_MESSAGE(platformRegisters || !m_suspendCount, "Missing suspended-thread register snapshot.");
-    if (UNLIKELY(!platformRegisters))
-        platformRegisters = &m_savedPlatformRegisters;
-    registers = *platformRegisters;
+    ASSERT(m_platformRegisters);
+    registers = *m_platformRegisters;
     return sizeof(PlatformRegisters);
 #endif
 }
@@ -570,7 +567,7 @@ void Thread::establishPlatformSpecificHandle(pthread_t handle)
 #endif
 }
 
-#if OS(MORPHOS) || OS(AMIGAOS)
+#if OS(MORPHOS)
 void Thread::deleteTLSKey()
 {
 #if !HAVE(FAST_TLS)
@@ -620,7 +617,6 @@ void Thread::destructTLS(void* data)
 #if !HAVE(FAST_TLS)
     ASSERT(s_key != InvalidThreadSpecificKey);
     threadSpecificSet(s_key, thread);
-    FindTask(NULL)->tc_UserData = NULL;
 #else
     _pthread_setspecific_direct(WTF_THREAD_DATA_KEY, thread);
     pthread_key_init_np(WTF_THREAD_DATA_KEY, &destructTLS);
@@ -678,31 +674,6 @@ bool ThreadCondition::timedWait(Mutex& mutex, WallTime absoluteTime)
         return pthread_cond_wait(&m_condition, &mutex.impl()) == 0;
     }
 
-#if OS(AMIGAOS)
-    // On this port WallTime::now() adds the locale GMT/DST offsets on top of
-    // gettimeofday() (see currentTime() in CurrentTime.cpp), while clib4's
-    // pthread_cond_timedwait measures the absolute deadline against its own
-    // CLOCK_REALTIME. Passing the WallTime-based deadline directly makes the
-    // wait expire immediately (or far too late) whenever the two clocks are
-    // skewed. Preserve the intended relative duration by rebasing the
-    // deadline onto the pthread clock.
-    double relativeSeconds = (absoluteTime - WallTime::now()).value();
-    if (relativeSeconds < 0)
-        relativeSeconds = 0;
-
-    timespec targetTime;
-    clock_gettime(CLOCK_REALTIME, &targetTime);
-
-    time_t timeSeconds = static_cast<time_t>(relativeSeconds);
-    long timeNanoseconds = static_cast<long>((relativeSeconds - timeSeconds) * 1E9);
-
-    targetTime.tv_sec += timeSeconds;
-    targetTime.tv_nsec += timeNanoseconds;
-    if (targetTime.tv_nsec >= 1000000000L) {
-        targetTime.tv_sec++;
-        targetTime.tv_nsec -= 1000000000L;
-    }
-#else
     double rawSeconds = absoluteTime.secondsSinceEpoch().value();
 
     int timeSeconds = static_cast<int>(rawSeconds);
@@ -711,7 +682,6 @@ bool ThreadCondition::timedWait(Mutex& mutex, WallTime absoluteTime)
     timespec targetTime;
     targetTime.tv_sec = timeSeconds;
     targetTime.tv_nsec = timeNanoseconds;
-#endif
 
     return pthread_cond_timedwait(&m_condition, &mutex.impl(), &targetTime) == 0;
 }

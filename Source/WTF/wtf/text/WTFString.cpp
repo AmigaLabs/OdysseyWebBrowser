@@ -694,8 +694,6 @@ CString String::latin1() const
 
 #if OS(MORPHOS) || OS(AMIGAOS)
 #if OS(AMIGAOS)
-// struct Library *CodesetsBase; struct CodesetsIFace *ICodesets;
-
 LONG GetLength(APTR str, LONG bytes, ULONG mib)
 {
     if (str == NULL) return -1;
@@ -750,10 +748,35 @@ String::String(const char * characters, unsigned inlength, unsigned mib)
 }
 #endif
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS)
 CString String::native() const
 {
-    return latin1();
+	// string > MorphOS' default codepage string - required for FS access, etc
+    unsigned length = this->length();
+
+    if (!length)
+        return CString("", 0);
+
+	struct TagItem tags[] = { { CST_DoNotTerminate, TRUE }, { TAG_DONE, 0 } };
+
+    if (is8Bit())
+    {
+    	char* characterBuffer;
+		CString result = CString::newUninitialized(length, characterBuffer);
+		ConvertTagList(reinterpret_cast<APTR>(const_cast<unsigned char *>(this->characters8())), length, reinterpret_cast<APTR>(characterBuffer),
+			length, MIBENUM_ISO_8859_1, MIBENUM_SYSTEM, tags);
+		return result;
+	}
+
+    const UChar* characters = this->characters16();
+
+    char* characterBuffer;
+    CString result = CString::newUninitialized(length, characterBuffer);
+
+	ConvertTagList(reinterpret_cast<APTR>(const_cast<UChar *>(characters)), length * sizeof(UChar), reinterpret_cast<APTR>(characterBuffer),
+		length, MIBENUM_UTF_16, MIBENUM_SYSTEM, tags);
+
+    return result;
 }
 #endif
 
@@ -841,10 +864,10 @@ String String::fromUTF8(const LChar* stringStart, size_t length)
 
 String String::fromUTF8ReplacingInvalidSequences(const LChar* characters, size_t length)
 {
-#if OS(AMIGAOS)    
+#if OS(AMIGAOS)
     if (!characters)
         return String();
-#endif        
+#endif
     return fromUTF8Impl<true>(characters, length);
 }
 

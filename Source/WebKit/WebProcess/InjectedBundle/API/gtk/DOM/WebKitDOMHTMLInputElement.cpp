@@ -24,9 +24,10 @@
 #include "DOMObjectCache.h"
 #include <WebCore/DOMException.h>
 #include <WebCore/Document.h>
-#include "GObjectEventListener.h"
+#include <WebCore/ElementInlines.h>
 #include <WebCore/HTMLNames.h>
 #include <WebCore/JSExecState.h>
+#include "GObjectEventListener.h"
 #include "WebKitDOMEventPrivate.h"
 #include "WebKitDOMEventTarget.h"
 #include "WebKitDOMFileListPrivate.h"
@@ -972,7 +973,7 @@ void webkit_dom_html_input_element_set_capture_type(WebKitDOMHTMLInputElement* s
     g_return_if_fail(WEBKIT_DOM_IS_HTML_INPUT_ELEMENT(self));
     g_return_if_fail(value);
     WebCore::HTMLInputElement* item = WebKit::core(self);
-    WTF::String convertedValue = WTF::String::fromUTF8(value);
+    auto convertedValue = WTF::AtomString::fromUTF8(value);
     item->setAttributeWithoutSynchronization(WebCore::HTMLNames::captureAttr, convertedValue);
 #else
     UNUSED_PARAM(self);

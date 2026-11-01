@@ -107,7 +107,7 @@ class VideoTrackPrivateGStreamer;
 
 void registerWebKitGStreamerElements();
 
-// Use eager initialization for the WeakPtrFactory since we call makeWeakPtr() from another thread.
+// Use eager initialization for the WeakPtrFactory since we construct WeakPtrs on another thread.
 class MediaPlayerPrivateGStreamer : public MediaPlayerPrivateInterface
     , public CanMakeWeakPtr<MediaPlayerPrivateGStreamer, WeakPtrFactoryInitialization::Eager>
 #if !RELEASE_LOG_DISABLED
@@ -181,6 +181,7 @@ public:
     AudioSourceProvider* audioSourceProvider() final;
 #endif
     void paint(GraphicsContext&, const FloatRect&) final;
+    DestinationColorSpace colorSpace() final;
     bool supportsFullscreen() const final;
     MediaPlayer::MovieLoadType movieLoadType() const final;
 
@@ -215,6 +216,8 @@ public:
     void updateEnabledVideoTrack();
     void updateEnabledAudioTrack();
     void playbin3SendSelectStreamsIfAppropriate();
+
+    void updateVideoOrientation(const GstTagList*);
 
     // Append pipeline interface
     // FIXME: Use the client interface pattern, AppendPipeline does not need the full interface to this class just for this function.
@@ -342,7 +345,7 @@ protected:
     bool m_areVolumeAndMuteInitialized { false };
 
 #if USE(TEXTURE_MAPPER_GL)
-    TextureMapperGL::Flags m_textureMapperFlags;
+    TextureMapperGL::Flags m_textureMapperFlags { TextureMapperGL::NoFlag };
 #endif
 
     GRefPtr<GstStreamVolume> m_volumeElement;
@@ -432,6 +435,7 @@ private:
 
     void syncOnClock(bool sync);
 
+    GstClockTime gstreamerPositionFromSinks() const;
     MediaTime playbackPosition() const;
 
     virtual void updateStates();
@@ -461,6 +465,8 @@ private:
     void purgeOldDownloadFiles(const String& downloadFilePrefixPath);
     void configureDownloadBuffer(GstElement*);
     static void downloadBufferFileCreatedCallback(MediaPlayerPrivateGStreamer*);
+
+    void configureVideoDecoder(GstElement*);
 
     void setPlaybinURL(const URL& urlString);
 
@@ -557,6 +563,9 @@ private:
     DataMutex<TaskAtMediaTimeScheduler> m_TaskAtMediaTimeSchedulerDataMutex;
 
 private:
+    std::optional<VideoFrameMetadata> videoFrameMetadata() final;
+    uint64_t m_sampleCount { 0 };
+    uint64_t m_lastVideoFrameMetadataSampleCount { 0 };
 #if USE(WPE_VIDEO_PLANE_DISPLAY_DMABUF)
     GUniquePtr<struct wpe_video_plane_display_dmabuf_source> m_wpeVideoPlaneDisplayDmaBuf;
 #endif

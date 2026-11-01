@@ -68,6 +68,7 @@
 #include <WebCore/Node.h>
 #include <WebCore/NetworkingContext.h>
 #include <WebCore/NetworkStorageSession.h>
+#include <WebCore/Color.h>
 #include <wtf/text/StringBuilder.h>
 
 #if PLATFORM(COCOA)
@@ -79,6 +80,8 @@
 #endif
 
 #include <proto/exec.h>
+
+#define D(x) 
 
 namespace WebKit {
 using namespace JSC;
@@ -270,19 +273,9 @@ void WebFrame::startDownload(const WTF::URL &url, const String& suggestedName)
 		webpage->_fDownload(url, suggestedName.length() ? suggestedName : suggestedFilenameForResourceWithURL(url));
 }
 
-void WebFrame::startDownload(const WebCore::ResourceRequest& , const String&)
+void WebFrame::startDownload(const WebCore::ResourceRequest& resourceRequest, const String& suggestedName)
 {
-	notImplemented();
-#if 0
-    ASSERT(m_policyDownloadID.downloadID());
-
-    auto policyDownloadID = m_policyDownloadID;
-    m_policyDownloadID = { };
-
-    auto& webProcess = WebProcess::singleton();
-    PAL::SessionID sessionID = page() ? page()->sessionID() : PAL::SessionID::defaultSessionID();
-    webProcess.ensureNetworkProcessConnection().connection().send(Messages::NetworkConnectionToWebProcess::StartDownload(sessionID, policyDownloadID, request, suggestedName), 0);
-#endif
+	startDownload(resourceRequest.url(), suggestedName);
 }
 
 void WebFrame::convertMainResourceLoadToDownload(DocumentLoader* documentLoader, const ResourceRequest& request, const ResourceResponse& response)
@@ -313,10 +306,11 @@ String WebFrame::source() const
     DocumentLoader* documentLoader = m_coreFrame->loader().activeDocumentLoader();
     if (!documentLoader)
         return String();
-    RefPtr<SharedBuffer> mainResourceData = documentLoader->mainResourceData();
+    auto mainResourceData = documentLoader->mainResourceData();
     if (!mainResourceData)
         return String();
-    return decoder->encoding().decode(mainResourceData->data(), mainResourceData->size());
+    auto data = mainResourceData->extractData();
+    return decoder->encoding().decode(data.data(), data.size());
 }
 
 String WebFrame::contentsAsString() const 
@@ -629,7 +623,7 @@ bool WebFrame::getDocumentBackgroundColor(double* red, double* green, double* bl
     if (!bgColor.isValid())
         return false;
 
-    auto [r, g, b, a] = bgColor.toSRGBALossy<float>();
+    auto [r, g, b, a] = bgColor.toColorTypeLossy<SRGBA<float>>().resolved();
     *red = r;
     *green = g;
     *blue = b;

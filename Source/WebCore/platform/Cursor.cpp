@@ -438,7 +438,7 @@ const Cursor& grabbingCursor()
     return c;
 }
 
-#if !HAVE(NSCURSOR) && !PLATFORM(GTK) && !PLATFORM(WIN) && !PLATFORM(MUI)
+#if !HAVE(NSCURSOR) && !PLATFORM(GTK) && !PLATFORM(WIN) && !OS(MORPHOS) && !PLATFORM(MUI)
 void Cursor::ensurePlatformCursor() const
 {
     notImplemented();

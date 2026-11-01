@@ -129,17 +129,18 @@ private:
 
 namespace Wasm {
 
-class FunctionCodeBlock;
+class FunctionCodeBlockGenerator;
 struct ModuleInformation;
 
-class BytecodeDumper final : public JSC::BytecodeDumper<FunctionCodeBlock> {
+class BytecodeDumper final : public JSC::BytecodeDumper<FunctionCodeBlockGenerator> {
 public:
-    static void dumpBlock(FunctionCodeBlock*, const ModuleInformation&, PrintStream& out);
+    static void dumpBlock(FunctionCodeBlockGenerator*, const ModuleInformation&, PrintStream& out);
 
 private:
-    using JSC::BytecodeDumper<FunctionCodeBlock>::BytecodeDumper;
+    using JSC::BytecodeDumper<FunctionCodeBlockGenerator>::BytecodeDumper;
 
     void dumpConstants();
+    void dumpExceptionHandlers();
     CString constantName(VirtualRegister index) const final;
     CString formatConstant(Type, uint64_t) const;
 };

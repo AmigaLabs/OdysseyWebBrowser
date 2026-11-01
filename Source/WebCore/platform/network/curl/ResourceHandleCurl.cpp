@@ -46,19 +46,10 @@
 #include "SecurityOrigin.h"
 #include "SharedBuffer.h"
 #include "SynchronousLoaderClient.h"
-#include "TextEncoding.h"
+#include <pal/text/TextEncoding.h>
 #include <wtf/CompletionHandler.h>
 #include <wtf/FileSystem.h>
 #include <wtf/text/Base64.h>
-
-#if PLATFORM(MUI)
-#include "gui.h"
-#include <clib/debug_protos.h>
-#define D(x)
-#undef String
-#undef set
-#undef get
-#endif
 
 namespace WebCore {
 
@@ -95,39 +86,14 @@ bool ResourceHandle::start()
         d->m_curlRequest->cancel();
 	}
 
-#if PLATFORM(MUI)
-    if ((!d->m_user.isEmpty() || !d->m_password.isEmpty()) && !shouldUseCredentialStorage()) {
-        // Credentials for ftp can only be passed in URL, the didReceiveAuthenticationChallenge delegate call won't be made.
-        URL urlWithCredentials(d->m_firstRequest.url());
-        urlWithCredentials.setUser(d->m_user);
-        urlWithCredentials.setPassword(d->m_password);
-        d->m_firstRequest.setURL(urlWithCredentials);
-    }
-#endif
-
     d->m_curlRequest = createCurlRequest(WTFMove(request));
 
     if (auto credential = getCredential(d->m_firstRequest, false)) {
         d->m_curlRequest->setUserPass(credential->user(), credential->password());
-        d->m_curlRequest->setAuthenticationScheme(ProtectionSpaceAuthenticationSchemeHTTPBasic);
+        d->m_curlRequest->setAuthenticationScheme(ProtectionSpace::AuthenticationScheme::HTTPBasic);
     }
 
-#if 0
-// broken 2.34.6
-    d->m_curlRequest->setStartTime(d->m_startTime);
-#endif
-    if (d->m_startCurlRequestAtStart) {
-#if PLATFORM(MUI)
-        d->m_received = 0;
-        d->m_totalSize = 0;
-        d->m_bodyDataSent = 0;
-        d->m_bodySize = 0;
-        d->m_state = STATUS_CONNECTING;
-        if (app)
-            methodstack_push_sync(app, 2, MM_Network_AddJob, this);
-#endif
-        d->m_curlRequest->start();
-    }
+    d->m_curlRequest->start();
 
     return true;
 }
@@ -137,10 +103,6 @@ void ResourceHandle::cancel()
     ASSERT(isMainThread());
 
     d->m_cancelled = true;
-#if PLATFORM(MUI)
-    if (app)
-        methodstack_push_sync(app, 2, MM_Network_RemoveJob, this);
-#endif
 
     if (d->m_curlRequest)
         d->m_curlRequest->cancel();
@@ -214,7 +176,7 @@ CurlResourceHandleDelegate* ResourceHandle::delegate()
     return d->m_delegate.get();
 }
 
-#if OS(WINDOWS) || PLATFORM(MUI)
+#if OS(WINDOWS) || OS(MORPHOS) || PLATFORM(MUI)
 
 void ResourceHandle::setHostAllowsAnyHTTPSCertificate(const String& host)
 {
@@ -286,7 +248,7 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
     }
 
     if (shouldUseCredentialStorage()) {
-        if (/*!d->m_initialCredential.isEmpty() ||*/ challenge.previousFailureCount()) { // MORPHOS: the original check is weird 
+        if (!d->m_initialCredential.isEmpty() || challenge.previousFailureCount()) {
             // The stored credential wasn't accepted, stop using it.
             // There is a race condition here, since a different credential might have already been stored by another ResourceHandle,
             // but the observable effect should be very minor, if any.
@@ -311,7 +273,7 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
     d->m_currentWebChallenge = challenge;
 
     if (client()) {
-        auto protectedThis = makeRef(*this);
+        Ref protectedThis { *this };
         client()->didReceiveAuthenticationChallenge(this, d->m_currentWebChallenge);
     }
 }
@@ -320,7 +282,7 @@ void ResourceHandle::receivedCredential(const AuthenticationChallenge& challenge
 {
     ASSERT(isMainThread());
 
-    if (challenge != d->m_currentWebChallenge)
+    if (!AuthenticationChallengeBase::equalForWebKitLegacyChallengeComparison(challenge, d->m_currentWebChallenge))
         return;
 
     if (credential.isEmpty()) {
@@ -334,12 +296,6 @@ void ResourceHandle::receivedCredential(const AuthenticationChallenge& challenge
         if (challenge.failureResponse().httpStatusCode() == 401) {
             URL urlToStore = challenge.failureResponse().url();
             d->m_context->storageSession()->credentialStorage().set(partition, credential, challenge.protectionSpace(), urlToStore);
-#if PLATFORM(MUI)
-            String host = challenge.protectionSpace().host();
-            String realm = challenge.protectionSpace().realm();
-            //kprintf("Storing credentials in db for host %s realm %s (%s %s)\n", host.utf8().data(), realm.utf8().data(), credential.user().utf8().data(), credential.password().utf8().data());
-            methodstack_push_sync(app, 4, MM_OWBApp_SetCredential, &host, &realm, &credential);
-#endif
         }
     }
 
@@ -352,12 +308,12 @@ void ResourceHandle::receivedRequestToContinueWithoutCredential(const Authentica
 {
     ASSERT(isMainThread());
 
-    if (challenge != d->m_currentWebChallenge)
+    if (!AuthenticationChallengeBase::equalForWebKitLegacyChallengeComparison(challenge, d->m_currentWebChallenge))
         return;
 
     clearAuthentication();
 
-    didReceiveResponse(ResourceResponse(delegate()->response()), [this, protectedThis = makeRef(*this)] {
+    didReceiveResponse(ResourceResponse(delegate()->response()), [this, protectedThis = Ref { *this }] {
         continueAfterDidReceiveResponse();
     });
 }
@@ -366,11 +322,11 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
 {
     ASSERT(isMainThread());
 
-    if (challenge != d->m_currentWebChallenge)
+    if (!AuthenticationChallengeBase::equalForWebKitLegacyChallengeComparison(challenge, d->m_currentWebChallenge))
         return;
 
     if (client()) {
-        auto protectedThis = makeRef(*this);
+        Ref protectedThis { *this };
         client()->receivedCancellation(this, challenge);
     }
 }
@@ -457,7 +413,7 @@ void ResourceHandle::platformLoadResourceSynchronously(NetworkingContext* contex
 
     if (auto credential = handle->getCredential(handle->d->m_firstRequest, false)) {
         handle->d->m_curlRequest->setUserPass(credential->user(), credential->password());
-        handle->d->m_curlRequest->setAuthenticationScheme(ProtectionSpaceAuthenticationSchemeHTTPBasic);
+        handle->d->m_curlRequest->setAuthenticationScheme(ProtectionSpace::AuthenticationScheme::HTTPBasic);
     }
 
     handle->d->m_curlRequest->start();
@@ -550,7 +506,7 @@ void ResourceHandle::willSendRequest()
     }
 
     ResourceResponse responseCopy = delegate()->response();
-    client()->willSendRequestAsync(this, WTFMove(newRequest), WTFMove(responseCopy), [this, protectedThis = makeRef(*this)] (ResourceRequest&& request) {
+    client()->willSendRequestAsync(this, WTFMove(newRequest), WTFMove(responseCopy), [this, protectedThis = Ref { *this }] (ResourceRequest&& request) {
         continueAfterWillSendRequest(WTFMove(request));
     });
 }
@@ -613,8 +569,8 @@ void ResourceHandle::handleDataURL()
     response.setURL(d->m_firstRequest.url());
 
     if (base64) {
-        data = decodeURLEscapeSequences(data);
-        didReceiveResponse(WTFMove(response), [this, protectedThis = makeRef(*this)] {
+        data = PAL::decodeURLEscapeSequences(data);
+        didReceiveResponse(WTFMove(response), [this, protectedThis = Ref { *this }] {
             continueAfterDidReceiveResponse();
         });
 
@@ -625,15 +581,15 @@ void ResourceHandle::handleDataURL()
                 client()->didReceiveBuffer(this, SharedBuffer::create(decodedData->data(), decodedData->size()), originalSize);
         }
     } else {
-        TextEncoding encoding(charset);
-        data = decodeURLEscapeSequences(data, encoding);
-        didReceiveResponse(WTFMove(response), [this, protectedThis = makeRef(*this)] {
+        PAL::TextEncoding encoding(charset);
+        data = PAL::decodeURLEscapeSequences(data, encoding);
+        didReceiveResponse(WTFMove(response), [this, protectedThis = Ref { *this }] {
             continueAfterDidReceiveResponse();
         });
 
         // didReceiveResponse might cause the client to be deleted.
         if (client()) {
-            auto encodedData = encoding.encode(data, UnencodableHandling::URLEncodedEntities);
+            auto encodedData = encoding.encode(data, PAL::UnencodableHandling::URLEncodedEntities);
             if (encodedData.size())
                 client()->didReceiveBuffer(this, SharedBuffer::create(WTFMove(encodedData)), originalSize);
         }

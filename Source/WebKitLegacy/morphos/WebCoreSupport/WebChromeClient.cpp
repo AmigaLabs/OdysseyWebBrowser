@@ -56,6 +56,8 @@
 #include <WebCore/SecurityOrigin.h>
 #include <WebCore/WindowFeatures.h>
 #include <WebCore/ApplicationCacheStorage.h>
+#include <WebCore/CookieConsentDecisionResult.h>
+#include <WebCore/ModalContainerTypes.h>
 #include "PopupMenu.h"
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -237,7 +239,7 @@ bool WebChromeClient::runBeforeUnloadConfirmPanel(const String& message, Frame& 
 	return true;
 }
 
-void WebChromeClient::closeWindowSoon()
+void WebChromeClient::closeWindow()
 {
     // We need to remove the parent WebPage from WebPageSets here, before it actually
     // closes, to make sure that JavaScript code that executes before it closes
@@ -513,6 +515,21 @@ void WebChromeClient::clearPlaybackControlsManager()
 // dprintf("%s:\n", __PRETTY_FUNCTION__);
 }
  #endif
+
+void WebChromeClient::requestCookieConsent(CompletionHandler<void(CookieConsentDecisionResult)>&& completion)
+{
+    completion(CookieConsentDecisionResult::NotSupported);
+}
+
+void WebChromeClient::classifyModalContainerControls(Vector<String>&&, CompletionHandler<void(Vector<ModalContainerControlType>&&)>&& completion)
+{
+    completion({ });
+}
+
+void WebChromeClient::decidePolicyForModalContainer(OptionSet<ModalContainerControlType>, CompletionHandler<void(ModalContainerDecision)>&& completion)
+{
+    completion(ModalContainerDecision::Show);
+}
 
 }
 

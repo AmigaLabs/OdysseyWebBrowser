@@ -34,6 +34,9 @@ class CSSStyleSheet;
 class ProcessingInstruction final : public CharacterData, private CachedStyleSheetClient {
     WTF_MAKE_ISO_ALLOCATED(ProcessingInstruction);
 public:
+    using WeakValueType = CharacterData::WeakValueType;
+    using CharacterData::weakPtrFactory;
+
     static Ref<ProcessingInstruction> create(Document&, const String& target, const String& data);
     virtual ~ProcessingInstruction();
 
@@ -89,7 +92,6 @@ private:
 #if ENABLE(XSLT)
     bool m_isXSL { false };
 #endif
-    bool m_isHandlingBeforeLoad { false };
 };
 
 } // namespace WebCore

@@ -33,7 +33,7 @@
 #include "Options.h"
 #include "SuperSampler.h"
 
-#if PLATFORM(MUI)
+#if OS(MORPHOS) || OS(AMIGAOS)
 extern "C" { void oomCrash(); }
 #endif
 
@@ -138,6 +138,8 @@ void* LocalAllocator::allocateSlowCase(Heap& heap, GCDeferralContext* deferralCo
     if (LIKELY(result != nullptr))
         return result;
 
+    // FIXME GlobalGC: Need to synchronize here to when allocating from the BlockDirectory in the server.
+
     Subspace* subspace = m_directory->m_subspace;
     if (subspace->isIsoSubspace()) {
         if (void* result = static_cast<IsoSubspace*>(subspace)->tryAllocateFromLowerTier())
@@ -168,6 +170,7 @@ void LocalAllocator::didConsumeFreeList()
 
 void* LocalAllocator::tryAllocateWithoutCollecting()
 {
+    // FIXME: GlobalGC
     // FIXME: If we wanted this to be used for real multi-threaded allocations then we would have to
     // come up with some concurrency protocol here. That protocol would need to be able to handle:
     //
@@ -253,7 +256,7 @@ void* LocalAllocator::tryAllocateIn(MarkedBlock::Handle* block)
 
 void LocalAllocator::doTestCollectionsIfNeeded(Heap& heap, GCDeferralContext* deferralContext)
 {
-    if (!Options::slowPathAllocsBetweenGCs())
+    if (LIKELY(!Options::slowPathAllocsBetweenGCs()))
         return;
 
     static unsigned allocationCount = 0;

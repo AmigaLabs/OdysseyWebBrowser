@@ -117,6 +117,27 @@ TEST_P(ContextNoErrorTest, NoError)
     EXPECT_GL_NO_ERROR();
 }
 
+// Test glDetachShader to make sure it resolves linking with a no error context and doesn't assert
+TEST_P(ContextNoErrorTest, DetachAfterLink)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_KHR_no_error"));
+
+    GLuint vs      = CompileShader(GL_VERTEX_SHADER, essl1_shaders::vs::Simple());
+    GLuint fs      = CompileShader(GL_FRAGMENT_SHADER, essl1_shaders::fs::Red());
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
+
+    glDetachShader(program, vs);
+    glDetachShader(program, fs);
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    glDeleteProgram(program);
+    EXPECT_GL_NO_ERROR();
+}
+
 // Tests that we can draw with a program pipeline when GL_KHR_no_error is enabled.
 TEST_P(ContextNoErrorTest31, DrawWithPPO)
 {
@@ -141,5 +162,33 @@ TEST_P(ContextNoErrorTest31, DrawWithPPO)
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
 }
 
+// Tests that an incorrect enum to GetInteger does not cause an application crash.
+TEST_P(ContextNoErrorTest, InvalidGetIntegerDoesNotCrash)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_KHR_no_error"));
+
+    GLint value = 1;
+    glGetIntegerv(GL_TEXTURE_2D, &value);
+    EXPECT_GL_NO_ERROR();
+    EXPECT_EQ(value, 1);
+}
+
+// Test that we ignore an invalid texture type when EGL_KHR_create_context_no_error is enabled.
+TEST_P(ContextNoErrorTest, InvalidTextureType)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_KHR_no_error"));
+
+    GLTexture texture;
+    constexpr GLenum kInvalidTextureType = 0;
+
+    glBindTexture(kInvalidTextureType, texture);
+    ASSERT_GL_NO_ERROR();
+
+    glTexParameteri(kInvalidTextureType, GL_TEXTURE_BASE_LEVEL, 0);
+    ASSERT_GL_NO_ERROR();
+}
+
 ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(ContextNoErrorTest);
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ContextNoErrorTest31);
 ANGLE_INSTANTIATE_TEST_ES31(ContextNoErrorTest31);

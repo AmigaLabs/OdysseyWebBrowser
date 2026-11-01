@@ -5,17 +5,8 @@
 #if ENABLE(VIDEO)
 #include <proto/ahi.h>
 #include <proto/exec.h>
-#if OS(AMIGAOS)
-#define ODYSSEY
-#endif
 #include <proto/dos.h>
 #include <dos/dos.h>
-
-#if OS(AROS)
-#include <aros/debug.h>
-#undef D
-#define dprintf bug
-#endif
 
 namespace WebCore {
 namespace Acinerella {
@@ -97,27 +88,11 @@ bool AcinerellaAudioDecoder::isPlaying() const
 	return m_playing;
 }
 
-#if OS(AROS)
-AROS_UFH3(void, AROS_SoundFunc,
-        AROS_UFHA(struct Hook *, hook, A0),
-        AROS_UFHA(struct AHIAudioCtrl *, actrl, A2),
-        AROS_UFHA(struct AHISoundMessage *, smsg, A1))
-{
-    AROS_USERFUNC_INIT
-
-	AHIAudioCtrl *ahiCtrl = reinterpret_cast<AHIAudioCtrl *>(actrl);
-	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(ahiCtrl->ahiac_UserData);
-	AcinerellaAudioDecoder::soundFunc(me);
-
-    AROS_USERFUNC_EXIT
-}
-#endif
-
 bool AcinerellaAudioDecoder::initializeAudio()
 {
 	D(dprintf("[AD]%s:\n", __func__));
 	EP_SCOPE(initializeAudio);
-	printf("[AD]%s: m_ahiBase %p - m_ahiControl %p\n", __func__, m_ahiBase, m_ahiControl);
+	
 	if (m_ahiControl)
 		return true;
 	
@@ -132,7 +107,6 @@ bool AcinerellaAudioDecoder::initializeAudio()
 
 				D(dprintf("[AD]%s: ahiBase %p\n", __func__, m_ahiBase));
 
-#if OS(MORPHOS)
 				static struct EmulLibEntry GATE_SoundFunc = {
 					TRAP_LIB, 0, (void (*)(void))AcinerellaAudioDecoder::soundFunc
 				};
@@ -142,27 +116,6 @@ bool AcinerellaAudioDecoder::initializeAudio()
 					(ULONG (*)()) &GATE_SoundFunc,
 					NULL, NULL,
 				};
-#endif
-#if OS(AROS)
-				static struct Hook __soundHook = {
-					{NULL,NULL},
-					(APTR) AROS_SoundFunc,
-					NULL, NULL,
-				};
-#endif
-#if OS(AMIGAOS)
-				IAHI = (struct AHIIFace *)GetInterface( m_ahiBase, "main", 1, NULL );
-				if( !IAHI ) 
-					return FALSE;
-
-				struct Hook __soundHook =
-				{
-					{NULL,NULL},
-					(ULONG (*)(Hook*, void*, void*)) &AcinerellaAudioDecoder::soundFunc,
-					NULL,
-					NULL,
-				};
-#endif
 
 				if ((m_ahiControl = AHI_AllocAudio(
 					AHIA_UserData, reinterpret_cast<IPTR>(this),
@@ -259,7 +212,7 @@ bool AcinerellaAudioDecoder::initializeAudio()
 		DeleteMsgPort(m_ahiPort);
 		m_ahiPort = nullptr;
 	}
-	printf("[AD]%s: AHI initialization failed\n", __func__);
+	
 	return false;
 }
 
@@ -287,8 +240,7 @@ void AcinerellaAudioDecoder::ahiCleanup()
 	if (m_ahiThread)
 	{
 		m_ahiThreadShuttingDown = true;
-		if (m_pumpTask)
-			Signal(m_pumpTask, SIGF_SINGLE);
+		m_ahiSampleConsumed.signal();
 	}
 
 	if (m_ahiControl)
@@ -410,26 +362,17 @@ void AcinerellaAudioDecoder::dumpStatus()
 
 #undef AHI_BASE_NAME
 #define AHI_BASE_NAME me->m_ahiBase
-#if OS(MORPHOS)
 void AcinerellaAudioDecoder::soundFunc()
 {
 	AHIAudioCtrl *ahiCtrl = reinterpret_cast<AHIAudioCtrl *>(REG_A2);
 	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(ahiCtrl->ahiac_UserData);
-#elif OS(AROS)
-void AcinerellaAudioDecoder::soundFunc(void *ptr)
-{
-	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(ptr);
-#elif OS(AMIGAOS)
-void AcinerellaAudioDecoder::soundFunc(struct Hook *hook, struct AHIAudioCtrl * actrl, struct AHISoundMessage * smsg)
-{
-	AcinerellaAudioDecoder *me = reinterpret_cast<AcinerellaAudioDecoder *>(actrl->ahiac_UserData);
-#endif
+	
 	me->m_ahiSampleBeingPlayed ++;
 	AHI_SetSound(0, me->m_ahiSampleBeingPlayed % 2, 0, 0, me->m_ahiControl, 0);
 
 	// D(dprintf("[AD]%s: setSound %d (%d)\n", __func__, me->m_ahiSampleBeingPlayed % 2, me->m_ahiSampleBeingPlayed));
 
-	Signal(me->m_pumpTask, SIGF_SINGLE);
+	me->m_ahiSampleConsumed.signal();
 }
 
 void AcinerellaAudioDecoder::fillBuffer(int index)
@@ -527,7 +470,7 @@ void AcinerellaAudioDecoder::fillBuffer(int index)
 	{
 		if (didPopFrames)
 		{
-			dispatch([this, protectedThis(makeRef(*this))]() {
+			dispatch([this, protectedThis(Ref{*this})]() {
 				if (!m_ahiThreadShuttingDown)
 				{
 					m_position += 0.5f;
@@ -546,7 +489,7 @@ void AcinerellaAudioDecoder::fillBuffer(int index)
 
 		if (didPopFrames)
 		{
-			dispatch([this, positionToAnnounce, protectedThis(makeRef(*this))]() {
+			dispatch([this, positionToAnnounce, protectedThis(Ref{*this})]() {
 				if (!m_ahiThreadShuttingDown)
 				{
 					m_position = positionToAnnounce;
@@ -559,7 +502,7 @@ void AcinerellaAudioDecoder::fillBuffer(int index)
 	
 	if ((bytesLeft == m_ahiSampleLength * 4) && (m_decoderEOF || (m_position + 1.5f > m_duration && !m_isHLS)))
 	{
-		dispatch([this, protectedThis(makeRef(*this))]() {
+		dispatch([this, protectedThis(Ref{*this})]() {
 			stopPlaying();
 			if (!m_ahiThreadShuttingDown)
 			{
@@ -572,11 +515,10 @@ void AcinerellaAudioDecoder::fillBuffer(int index)
 
 void AcinerellaAudioDecoder::ahiThreadEntryPoint()
 {
-	m_pumpTask = FindTask(0);
-	SetTaskPri(m_pumpTask, 50);
+	SetTaskPri(FindTask(0), 50);
 	while (!m_ahiThreadShuttingDown)
 	{
-		Wait(SIGF_SINGLE);
+		m_ahiSampleConsumed.wait();
 		uint32_t index = m_ahiSampleBeingPlayed % 2; // this sample will play next
 		fillBuffer(index);
 	}

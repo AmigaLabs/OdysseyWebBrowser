@@ -26,9 +26,6 @@
 #include "config.h"
 #include "CryptoDigest.h"
 
-#ifdef __amigaos4__
-//#include <proto/amissl.h>
-#endif
 #include <openssl/sha.h>
 
 namespace {

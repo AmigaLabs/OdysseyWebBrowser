@@ -179,7 +179,7 @@ void AcinerellaVideoDecoder::startPlaying()
 void AcinerellaVideoDecoder::onGetReadyToPlay()
 {
 	D(dprintf("\033[35m[VD]%s: %p\033[0m\n", __func__, this));
-	m_client->onDecoderWantsToRender(makeRef(*this));
+	m_client->onDecoderWantsToRender(Ref{*this});
 }
 
 void AcinerellaVideoDecoder::stopPlaying()
@@ -509,7 +509,7 @@ void AcinerellaVideoDecoder::readbackHwFrame()
 	if (err == 0)
 	{
 		dispatch([this] {
-			m_client->onDecoderWantsToRender(makeRef(*this));
+			m_client->onDecoderWantsToRender(Ref{*this});
 		});
 	}
 }
@@ -557,7 +557,7 @@ void AcinerellaVideoDecoder::paint(GraphicsContext& gc, const FloatRect& rect)
 
 	if (needsToSetCoords && m_client)
 	{
-		m_client->onDecoderRenderUpdate(makeRef(*this));
+		m_client->onDecoderRenderUpdate(Ref{*this});
 	}
 
 #if 0
@@ -729,7 +729,7 @@ void AcinerellaVideoDecoder::blitFrameLocked()
 				return;
 			m_frameSizeTransition = true;
 
-			WTF::callOnMainThread([this, width = avFrame->width, height = avFrame->height, protectedThis = makeRef(*this)]() {
+			WTF::callOnMainThread([this, width = avFrame->width, height = avFrame->height, protectedThis = Ref{*this}]() {
 				auto lock = holdLock(m_lock);
 				
 				m_frameWidth = width;
@@ -919,7 +919,7 @@ void AcinerellaVideoDecoder::pullThreadEntryPoint()
 							else
 #endif
 							dispatch([this] {
-								m_client->onDecoderWantsToRender(makeRef(*this));
+								m_client->onDecoderWantsToRender(Ref{*this});
 							});
 						}
 						else

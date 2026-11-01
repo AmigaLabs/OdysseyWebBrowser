@@ -327,6 +327,10 @@ void Pasteboard::write(const PasteboardWebContent& content)
 	}
 }
 
+void Pasteboard::write(const PasteboardBuffer&)
+{
+}
+
 Pasteboard::FileContentState Pasteboard::fileContentState()
 {
     notImplemented();

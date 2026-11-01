@@ -31,6 +31,7 @@ class ContextMtl;
 namespace mtl
 {
 
+class ContextDevice;
 class CommandQueue;
 class BlitCommandEncoder;
 class Resource;
@@ -63,8 +64,15 @@ class Resource : angle::NonCopyable
     bool isCPUReadMemNeedSync() const { return mUsageRef->cpuReadMemNeedSync; }
     void resetCPUReadMemNeedSync() { mUsageRef->cpuReadMemNeedSync = false; }
 
+    bool isCPUReadMemSyncPending() const { return mUsageRef->cpuReadMemSyncPending; }
+    void setCPUReadMemSyncPending(bool value) const { mUsageRef->cpuReadMemSyncPending = value; }
+    void resetCPUReadMemSyncPending() { mUsageRef->cpuReadMemSyncPending = false; }
+
     bool isCPUReadMemDirty() const { return mUsageRef->cpuReadMemDirty; }
     void resetCPUReadMemDirty() { mUsageRef->cpuReadMemDirty = false; }
+
+    virtual size_t estimatedByteSize() const = 0;
+    virtual id getID() const                 = 0;
 
   protected:
     Resource();
@@ -80,8 +88,13 @@ class Resource : angle::NonCopyable
         uint64_t cmdBufferQueueSerial = 0;
 
         // This flag means the resource was issued to be modified by GPU, if CPU wants to read
-        // its content, explicit synchornization call must be invoked.
+        // its content, explicit synchronization call must be invoked.
         bool cpuReadMemNeedSync = false;
+
+        // This flag is set when synchronization for the resource has been
+        // encoded on the GPU, and a map operation must wait
+        // until it's completed.
+        bool cpuReadMemSyncPending = false;
 
         // This flag is useful for BufferMtl to know whether it should update the shadow copy
         bool cpuReadMemDirty = false;
@@ -259,6 +272,9 @@ class Texture final : public Resource,
 
     // Explicitly sync content between CPU and GPU
     void syncContent(ContextMtl *context, mtl::BlitCommandEncoder *encoder);
+    void setEstimatedByteSize(size_t bytes) { mEstimatedByteSize = bytes; }
+    size_t estimatedByteSize() const override { return mEstimatedByteSize; }
+    id getID() const override { return get(); }
 
   private:
     using ParentClass = WrappedObject<id<MTLTexture>>;
@@ -325,6 +341,8 @@ class Texture final : public Resource,
     TextureRef mStencilView;
     // Readable copy of texture
     TextureRef mReadCopy;
+
+    size_t mEstimatedByteSize = 0;
 };
 
 class Buffer final : public Resource,
@@ -374,6 +392,9 @@ class Buffer final : public Resource,
 
     // Explicitly sync content between CPU and GPU
     void syncContent(ContextMtl *context, mtl::BlitCommandEncoder *encoder);
+
+    size_t estimatedByteSize() const override { return size(); }
+    id getID() const override { return get(); }
 
   private:
     Buffer(ContextMtl *context, bool forceUseSharedMem, size_t size, const uint8_t *data);

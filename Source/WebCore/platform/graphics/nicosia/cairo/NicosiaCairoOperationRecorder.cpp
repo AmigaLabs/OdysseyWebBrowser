@@ -30,6 +30,8 @@
 #include "NicosiaCairoOperationRecorder.h"
 
 #include "CairoOperations.h"
+#include "Filter.h"
+#include "FilterResults.h"
 #include "FloatRoundedRect.h"
 #include "Gradient.h"
 #include "ImageBuffer.h"
@@ -82,7 +84,7 @@ CairoOperationRecorder::CairoOperationRecorder(PaintingOperations& commandList)
     m_stateStack.append({ { }, { }, FloatRect::infiniteRect() });
 }
 
-void CairoOperationRecorder::updateState(const GraphicsContextState& state, GraphicsContextState::StateChangeFlags flags)
+void CairoOperationRecorder::didUpdateState(const GraphicsContextState& state, GraphicsContextState::StateChangeFlags flags)
 {
     if (flags & GraphicsContextState::StrokeThicknessChange) {
         struct StrokeThicknessChange final : PaintingOperation, OperationData<float> {
@@ -536,9 +538,70 @@ void CairoOperationRecorder::drawGlyphs(const Font& font, const GlyphBufferGlyph
         state.strokeThickness, state.shadowOffset, state.shadowColor, fontSmoothing));
 }
 
-void CairoOperationRecorder::drawImageBuffer(ImageBuffer&, const FloatRect&, const FloatRect&, const ImagePaintingOptions&)
+void CairoOperationRecorder::drawImageBuffer(ImageBuffer& buffer, const FloatRect& destRect, const FloatRect& srcRect, const ImagePaintingOptions& options)
 {
-    // FIXME: Not implemented.
+    struct DrawImageBuffer final : PaintingOperation, OperationData<RefPtr<cairo_surface_t>, FloatRect, FloatRect, ImagePaintingOptions, float, Cairo::ShadowState> {
+        virtual ~DrawImageBuffer() = default;
+
+        void execute(PaintingOperationReplay& replayer) override
+        {
+            Cairo::drawPlatformImage(contextForReplay(replayer), arg<0>().get(), arg<1>(), arg<2>(), arg<3>(), arg<4>(), arg<5>());
+        }
+
+        void dump(TextStream& ts) override
+        {
+            ts << indent << "DrawImageBuffer<>\n";
+        }
+    };
+
+    RefPtr<Image> image = buffer.copyImage(DontCopyBackingStore);
+    if (!image)
+        return;
+
+    auto nativeImage = image->nativeImageForCurrentFrame();
+    if (!nativeImage)
+        return;
+
+    auto& state = this->state();
+    append(createCommand<DrawImageBuffer>(nativeImage->platformImage(), destRect, srcRect, ImagePaintingOptions(options, state.imageInterpolationQuality), state.alpha, Cairo::ShadowState(state)));
+}
+
+void CairoOperationRecorder::drawFilteredImageBuffer(ImageBuffer* srcImage, const FloatRect& srcRect, Filter& filter, FilterResults& results)
+{
+    struct DrawFilteredImageBuffer final : PaintingOperation, OperationData<RefPtr<cairo_surface_t>, FloatRect, FloatRect, FloatSize, ImagePaintingOptions, float, Cairo::ShadowState> {
+        virtual ~DrawFilteredImageBuffer() = default;
+
+        void execute(PaintingOperationReplay& replayer) override
+        {
+            Cairo::scale(contextForReplay(replayer), { 1 / arg<3>().width(), 1 / arg<3>().height() });
+            Cairo::drawPlatformImage(contextForReplay(replayer), arg<0>().get(), arg<1>(), arg<2>(), arg<4>(), arg<5>(), arg<6>());
+            Cairo::scale(contextForReplay(replayer), arg<3>());
+        }
+
+        void dump(TextStream& ts) override
+        {
+            ts << indent << "DrawFilteredImageBuffer<>\n";
+        }
+    };
+
+    auto result = filter.apply(srcImage, srcRect, results);
+    if (!result)
+        return;
+
+    auto imageBuffer = result->imageBuffer();
+    if (!imageBuffer)
+        return;
+
+    RefPtr<Image> image = imageBuffer->copyImage(DontCopyBackingStore);
+    if (!image)
+        return;
+
+    auto nativeImage = image->nativeImageForCurrentFrame();
+    if (!nativeImage)
+        return;
+
+    auto& state = this->state();
+    append(createCommand<DrawFilteredImageBuffer>(nativeImage->platformImage(), FloatRect(result->absoluteImageRect()), FloatRect({ } , imageBuffer->logicalSize()), filter.filterScale(), ImagePaintingOptions(state.imageInterpolationQuality), state.alpha, Cairo::ShadowState(state)));
 }
 
 void CairoOperationRecorder::drawNativeImage(NativeImage& nativeImage, const FloatSize& imageSize, const FloatRect& destRect, const FloatRect& srcRect, const ImagePaintingOptions& options)
@@ -562,7 +625,7 @@ void CairoOperationRecorder::drawNativeImage(NativeImage& nativeImage, const Flo
     append(createCommand<DrawNativeImage>(nativeImage.platformImage(), destRect, srcRect, ImagePaintingOptions(options, state.imageInterpolationQuality), state.alpha, Cairo::ShadowState(state)));
 }
 
-void CairoOperationRecorder::drawPattern(NativeImage& nativeImage, const FloatSize& imageSize, const FloatRect& destRect, const FloatRect& tileRect, const AffineTransform& patternTransform, const FloatPoint& phase, const FloatSize& spacing, const ImagePaintingOptions& options)
+void CairoOperationRecorder::drawPattern(NativeImage& nativeImage, const FloatRect& destRect, const FloatRect& tileRect, const AffineTransform& patternTransform, const FloatPoint& phase, const FloatSize& spacing, const ImagePaintingOptions& options)
 {
     struct DrawPattern final : PaintingOperation, OperationData<RefPtr<cairo_surface_t>, IntSize, FloatRect, FloatRect, AffineTransform, FloatPoint, ImagePaintingOptions> {
         virtual ~DrawPattern() = default;
@@ -579,7 +642,7 @@ void CairoOperationRecorder::drawPattern(NativeImage& nativeImage, const FloatSi
     };
 
     UNUSED_PARAM(spacing);
-    append(createCommand<DrawPattern>(nativeImage.platformImage(), IntSize(imageSize), destRect, tileRect, patternTransform, phase, options));
+    append(createCommand<DrawPattern>(nativeImage.platformImage(), nativeImage.size(), destRect, tileRect, patternTransform, phase, options));
 }
 
 void CairoOperationRecorder::drawRect(const FloatRect& rect, float borderThickness)
@@ -1104,12 +1167,6 @@ FloatRect CairoOperationRecorder::roundToDevicePixels(const FloatRect& rect, Gra
 void CairoOperationRecorder::append(std::unique_ptr<PaintingOperation>&& command)
 {
     m_commandList.append(WTFMove(command));
-}
-
-GraphicsContext::ClipToDrawingCommandsResult CairoOperationRecorder::clipToDrawingCommands(const FloatRect&, const DestinationColorSpace&, Function<void(GraphicsContext&)>&&)
-{
-    // FIXME: Not implemented.
-    return ClipToDrawingCommandsResult::Success;
 }
 
 #if ENABLE(VIDEO)

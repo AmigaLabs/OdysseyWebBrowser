@@ -86,7 +86,7 @@ inline JSArrayBufferView* speciesConstruct(JSGlobalObject* globalObject, JSObjec
     return nullptr;
 }
 
-inline unsigned argumentClampedIndexFromStartOrEnd(JSGlobalObject* globalObject, JSValue value, unsigned length, unsigned undefinedValue = 0)
+inline size_t argumentClampedIndexFromStartOrEnd(JSGlobalObject* globalObject, JSValue value, size_t length, size_t undefinedValue = 0)
 {
     if (value.isUndefined())
         return undefinedValue;
@@ -94,9 +94,9 @@ inline unsigned argumentClampedIndexFromStartOrEnd(JSGlobalObject* globalObject,
     double indexDouble = value.toIntegerOrInfinity(globalObject);
     if (indexDouble < 0) {
         indexDouble += length;
-        return indexDouble < 0 ? 0 : static_cast<unsigned>(indexDouble);
+        return indexDouble < 0 ? 0 : static_cast<size_t>(indexDouble);
     }
-    return indexDouble > length ? length : static_cast<unsigned>(indexDouble);
+    return indexDouble > length ? length : static_cast<size_t>(indexDouble);
 }
 
 template<typename ViewClass>
@@ -110,13 +110,16 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncSet(VM& vm, JSGlobalO
     if (UNLIKELY(!callFrame->argumentCount()))
         return throwVMTypeError(globalObject, scope, "Expected at least one argument"_s);
 
-    unsigned offset;
+    size_t offset;
     if (callFrame->argumentCount() >= 2) {
         double offsetNumber = callFrame->uncheckedArgument(1).toIntegerOrInfinity(globalObject);
         RETURN_IF_EXCEPTION(scope, encodedJSValue());
         if (UNLIKELY(offsetNumber < 0))
             return throwVMRangeError(globalObject, scope, "Offset should not be negative");
-        offset = static_cast<unsigned>(std::min(offsetNumber, static_cast<double>(std::numeric_limits<unsigned>::max())));
+        if (offsetNumber <= maxSafeInteger() && offsetNumber <= static_cast<double>(std::numeric_limits<size_t>::max()))
+            offset = offsetNumber;
+        else
+            offset = std::numeric_limits<size_t>::max();
     } else
         offset = 0;
 
@@ -126,7 +129,7 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncSet(VM& vm, JSGlobalO
     JSObject* sourceArray = callFrame->uncheckedArgument(0).toObject(globalObject);
     RETURN_IF_EXCEPTION(scope, { });
 
-    unsigned length;
+    size_t length;
     if (isTypedView(sourceArray->classInfo(vm)->typedArrayStorageType)) {
         JSArrayBufferView* sourceView = jsCast<JSArrayBufferView*>(sourceArray);
         if (UNLIKELY(sourceView->isDetached()))
@@ -136,7 +139,7 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncSet(VM& vm, JSGlobalO
     } else {
         JSValue lengthValue = sourceArray->get(globalObject, vm.propertyNames->length);
         RETURN_IF_EXCEPTION(scope, encodedJSValue());
-        length = lengthValue.toUInt32(globalObject);
+        length = lengthValue.toLength(globalObject);
     }
 
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
@@ -156,18 +159,20 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncCopyWithin(VM& vm, JS
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    long length = thisObject->length();
-    long to = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(0), length);
+    size_t length = thisObject->length();
+    size_t to = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(0), length);
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
-    long from = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length);
+    size_t from = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length);
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
-    long final = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(2), length, length);
+    size_t final = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(2), length, length);
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
 
     if (final < from)
         return JSValue::encode(callFrame->thisValue());
 
-    long count = std::min(length - std::max(to, from), final - from);
+    ASSERT(to <= length);
+    ASSERT(from <= length);
+    size_t count = std::min(length - std::max(to, from), final - from);
 
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
@@ -187,14 +192,14 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncIncludes(VM& vm, JSGl
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    unsigned length = thisObject->length();
+    size_t length = thisObject->length();
 
     if (!length)
         return JSValue::encode(jsBoolean(false));
 
     JSValue valueToFind = callFrame->argument(0);
 
-    unsigned index = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length);
+    size_t index = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length);
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
 
     if (thisObject->isDetached())
@@ -210,11 +215,10 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncIncludes(VM& vm, JSGl
 
     double targetOptionLittleEndianAsDouble;
 #if CPU(BIG_ENDIAN)
-    switch (ViewClass::TypedArrayStorageType) {
-    case TypeFloat32:
-    case TypeFloat64:
+    if constexpr (TypeFloat32 == ViewClass::TypedArrayStorageType || TypeFloat64 == ViewClass::TypedArrayStorageType) {
         targetOptionLittleEndianAsDouble = static_cast<double>(*targetOption);
-    default:
+    }
+    else {
         // typed array views are commonly expected to be little endian views of the underlying data
         targetOptionLittleEndianAsDouble = static_cast<double>(flipBytes(*targetOption));
     }
@@ -226,11 +230,10 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncIncludes(VM& vm, JSGl
         for (; index < length; ++index) {
             double arrayElementLittleEndianAsDouble;
 #if CPU(BIG_ENDIAN)
-            switch (ViewClass::TypedArrayStorageType) {
-            case TypeFloat32:
-            case TypeFloat64:
+            if constexpr (TypeFloat32 == ViewClass::TypedArrayStorageType || TypeFloat64 == ViewClass::TypedArrayStorageType) {
                 arrayElementLittleEndianAsDouble = static_cast<double>(array[index]);
-            default:
+            }
+            else {
                 // typed array views are commonly expected to be little endian views of the underlying data
                 arrayElementLittleEndianAsDouble = static_cast<double>(flipBytes(array[index]));
             }
@@ -260,13 +263,13 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncIndexOf(VM& vm, JSGlo
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    unsigned length = thisObject->length();
+    size_t length = thisObject->length();
 
     if (!length)
         return JSValue::encode(jsNumber(-1));
 
     JSValue valueToFind = callFrame->argument(0);
-    unsigned index = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length);
+    size_t index = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length);
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
 
     if (thisObject->isDetached())
@@ -296,17 +299,22 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncJoin(VM& vm, JSGlobal
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    unsigned length = thisObject->length();
+    size_t length = thisObject->length();
     auto joinWithSeparator = [&] (StringView separator) -> EncodedJSValue {
         JSStringJoiner joiner(globalObject, separator, length);
         RETURN_IF_EXCEPTION(scope, { });
         if (!thisObject->isDetached()) {
-            for (unsigned i = 0; i < length; i++) {
+            for (size_t i = 0; i < length; i++) {
                 JSValue value;
                 if constexpr (ViewClass::Adaptor::canConvertToJSQuickly)
                     value = thisObject->getIndexQuickly(i);
                 else {
                     auto nativeValue = thisObject->getIndexQuicklyAsNativeValue(i);
+#if CPU(BIG_ENDIAN)
+                    if constexpr (TypeFloat32 != ViewClass::Adaptor::typeValue && TypeFloat64 != ViewClass::Adaptor::typeValue) {
+                        nativeValue = flipBytes(nativeValue);
+                    }
+#endif
                     value = ViewClass::Adaptor::toJSValue(globalObject, nativeValue);
                     RETURN_IF_EXCEPTION(scope, { });
                 }
@@ -314,7 +322,7 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncJoin(VM& vm, JSGlobal
                 RETURN_IF_EXCEPTION(scope, { });
             }
         } else {
-            for (unsigned i = 0; i < length; i++)
+            for (size_t i = 0; i < length; i++)
                 joiner.appendEmptyString();
         }
         RELEASE_AND_RETURN(scope, JSValue::encode(joiner.join(globalObject)));
@@ -344,19 +352,19 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncFill(VM& vm, JSGlobal
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    unsigned length = thisObject->length();
+    size_t length = thisObject->length();
     auto nativeValue = ViewClass::toAdaptorNativeFromValue(globalObject, callFrame->argument(0));
     RETURN_IF_EXCEPTION(scope, { });
 
-    unsigned start = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length, 0);
+    size_t start = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), length, 0);
     RETURN_IF_EXCEPTION(scope, { });
-    unsigned end = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(2), length, length);
+    size_t end = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(2), length, length);
     RETURN_IF_EXCEPTION(scope, { });
 
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    for (unsigned index = start; index < end; ++index)
+    for (size_t index = start; index < end; ++index)
         thisObject->setIndexQuicklyToNativeValue(index, nativeValue);
 
     return JSValue::encode(thisObject);
@@ -372,14 +380,14 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncLastIndexOf(VM& vm, J
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    unsigned length = thisObject->length();
+    size_t length = thisObject->length();
 
     if (!length)
         return JSValue::encode(jsNumber(-1));
 
     JSValue valueToFind = callFrame->argument(0);
 
-    int index = length - 1;
+    size_t index = length - 1;
     if (callFrame->argumentCount() >= 2) {
         JSValue fromValue = callFrame->uncheckedArgument(1);
         double fromDouble = fromValue.toIntegerOrInfinity(globalObject);
@@ -390,7 +398,7 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncLastIndexOf(VM& vm, J
                 return JSValue::encode(jsNumber(-1));
         }
         if (fromDouble < length)
-            index = static_cast<unsigned>(fromDouble);
+            index = static_cast<size_t>(fromDouble);
     }
 
     if (thisObject->isDetached())
@@ -404,10 +412,14 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncLastIndexOf(VM& vm, J
     scope.assertNoExceptionExceptTermination();
     RELEASE_ASSERT(!thisObject->isDetached());
 
-    for (; index >= 0; --index) {
+    // We always have at least one iteration, since we checked that length is different from 0 earlier.
+    do {
         if (array[index] == targetOption)
             return JSValue::encode(jsNumber(index));
-    }
+        if (!index)
+            break;
+        --index;
+    } while (true);
 
     return JSValue::encode(jsNumber(-1));
 }
@@ -490,11 +502,11 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncSlice(VM& vm, JSGloba
     if (thisObject->isDetached())
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
-    unsigned thisLength = thisObject->length();
+    size_t thisLength = thisObject->length();
 
-    unsigned begin = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(0), thisLength);
+    size_t begin = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(0), thisLength);
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
-    unsigned end = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), thisLength, thisLength);
+    size_t end = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), thisLength, thisLength);
     RETURN_IF_EXCEPTION(scope, encodedJSValue());
 
     if (thisObject->isDetached())
@@ -504,7 +516,7 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncSlice(VM& vm, JSGloba
     end = std::max(begin, end);
 
     ASSERT(end >= begin);
-    unsigned length = end - begin;
+    size_t length = end - begin;
 
     MarkedArgumentBuffer args;
     args.append(jsNumber(length));
@@ -596,16 +608,16 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewPrivateFuncSubarrayCreate(VM& 
         return throwVMTypeError(globalObject, scope, typedArrayBufferHasBeenDetachedErrorMessage);
 
     // Get the length here; later assert that the length didn't change.
-    unsigned thisLength = thisObject->length();
+    size_t thisLength = thisObject->length();
 
     // I would assert that the arguments are integers here but that's not true since
     // https://tc39.github.io/ecma262/#sec-tointeger allows the result of the operation
     // to be +/- Infinity and -0.
     ASSERT(callFrame->argument(0).isNumber());
     ASSERT(callFrame->argument(1).isUndefined() || callFrame->argument(1).isNumber());
-    unsigned begin = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(0), thisLength);
+    size_t begin = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(0), thisLength);
     scope.assertNoException();
-    unsigned end = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), thisLength, thisLength);
+    size_t end = argumentClampedIndexFromStartOrEnd(globalObject, callFrame->argument(1), thisLength, thisLength);
     scope.assertNoException();
 
     RELEASE_ASSERT(!thisObject->isDetached());
@@ -614,8 +626,8 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewPrivateFuncSubarrayCreate(VM& 
     end = std::max(begin, end);
 
     ASSERT(end >= begin);
-    unsigned offset = begin;
-    unsigned length = end - begin;
+    size_t offset = begin;
+    size_t length = end - begin;
 
     RefPtr<ArrayBuffer> arrayBuffer = thisObject->possiblySharedBuffer();
     if (UNLIKELY(!arrayBuffer)) {
@@ -624,7 +636,7 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewPrivateFuncSubarrayCreate(VM& 
     }
     RELEASE_ASSERT(thisLength == thisObject->length());
 
-    unsigned newByteOffset = thisObject->byteOffset() + offset * ViewClass::elementSize;
+    size_t newByteOffset = thisObject->byteOffset() + offset * ViewClass::elementSize;
 
     JSObject* defaultConstructor = globalObject->typedArrayConstructor(ViewClass::TypedArrayStorageType);
     JSValue species = callFrame->uncheckedArgument(2);

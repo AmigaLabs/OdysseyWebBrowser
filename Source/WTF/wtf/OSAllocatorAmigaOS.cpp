@@ -62,4 +62,14 @@ void OSAllocator::releaseDecommitted(void* address, size_t bytes)
 	fastFree(address);
 }
 
+void* OSAllocator::tryReserveUncommitted(size_t bytes, Usage usage, bool writable, bool executable, bool jitCageEnabled, bool includesGuardPages)
+{
+    return reserveUncommitted(bytes, usage, writable, executable, jitCageEnabled, includesGuardPages);
+}
+
+void* OSAllocator::tryReserveAndCommit(size_t bytes, Usage usage, bool writable, bool executable, bool jitCageEnabled, bool includesGuardPages)
+{
+    return reserveAndCommit(bytes, usage, writable, executable, jitCageEnabled, includesGuardPages);
+}
+
 } // namespace WTF

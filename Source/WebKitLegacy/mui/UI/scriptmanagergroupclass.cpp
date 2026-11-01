@@ -36,7 +36,6 @@
 #include <WebCore/UserScript.h>
 #include "WebScriptWorld.h"
 #include "WebView.h"
-#include <WebCore/JSDOMWindow.h>
 
 #include <stdio.h>
 #include <string.h>

@@ -109,7 +109,7 @@ class Timer : public TimerBase {
     WTF_MAKE_FAST_ALLOCATED;
 public:
 #ifndef __MORPHOS_DISABLE
-    static void schedule(Seconds delay, WTF::Function<void()>&& function)
+    static void schedule(Seconds delay, Function<void()>&& function)
     {
         auto* timer = new Timer([] { });
         timer->m_function = [timer, function = WTFMove(function)] {
@@ -125,7 +125,8 @@ public:
     {
     }
 #endif
-    Timer(WTF::Function<void ()>&& function)
+
+    Timer(Function<void()>&& function)
         : m_function(WTFMove(function))
     {
     }
@@ -136,7 +137,7 @@ private:
         m_function();
     }
     
-    WTF::Function<void ()> m_function;
+    Function<void()> m_function;
 };
 
 inline bool TimerBase::isActive() const
@@ -159,7 +160,7 @@ public:
     {
     }
 
-    DeferrableOneShotTimer(WTF::Function<void()>&& function, Seconds delay)
+    DeferrableOneShotTimer(Function<void()>&& function, Seconds delay)
         : m_function(WTFMove(function))
         , m_delay(delay)
         , m_shouldRestartWhenTimerFires(false)
@@ -199,7 +200,7 @@ private:
         m_function();
     }
 
-    WTF::Function<void ()> m_function;
+    Function<void()> m_function;
 
     Seconds m_delay;
     bool m_shouldRestartWhenTimerFires;

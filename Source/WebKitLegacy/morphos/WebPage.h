@@ -9,6 +9,7 @@
 #include <WebCore/LengthBox.h>
 #include <WebCore/SelectionData.h>
 #include <WebCore/DragImage.h>
+#include <WebCore/InspectorOverlay.h>
 #include "WebViewDelegate.h"
 #include "WebFrame.h"
 #include <intuition/classusr.h>
@@ -127,8 +128,8 @@ public:
 
 	void onContextMenuItemSelected(ULONG action, const char *title);
 
-    void addResourceRequest(unsigned long, const WebCore::ResourceRequest&);
-    void removeResourceRequest(unsigned long);
+    void addResourceRequest(WebCore::ResourceLoaderIdentifier, const WebCore::ResourceRequest&);
+    void removeResourceRequest(WebCore::ResourceLoaderIdentifier);
 
     void didStartPageTransition();
     void didCompletePageTransition();
@@ -196,6 +197,9 @@ public:
 	
 	bool offlineCacheEnabled();
 	void setOfflineCacheEnabled(bool enabled);
+
+	bool developerToolsEnabled();
+	void setDeveloperToolsEnabled(bool enabled);
 
 	void startLiveResize();
 	void endLiveResize();
@@ -282,6 +286,8 @@ public:
 	bool isDragging(void) const { return m_dragging; };
 	void drawDragImage(struct RastPort *rp, const int x, const int y, const int width, const int height);
 
+    void inspectorHighlightUpdated();
+
 protected:
 	WebPage(WebCore::PageIdentifier, WebPageCreationParameters&&);
 
@@ -320,7 +326,7 @@ private:
     WebCore::AutofillElements *m_autofillElements { nullptr };
     WebCore::InterpolationQuality m_interpolation = WebCore::InterpolationQuality::Default;
     WebCore::InterpolationQuality m_imageInterpolation = WebCore::InterpolationQuality::Default;
-    WTF::HashSet<unsigned long> m_trackedNetworkResourceRequestIdentifiers;
+    WTF::HashSet<WebCore::ResourceLoaderIdentifier> m_trackedNetworkResourceRequestIdentifiers;
     uint64_t m_pendingNavigationID { 0 };
 	uint32_t m_lastQualifier { 0 };
 	int  m_clickCount { 0 };

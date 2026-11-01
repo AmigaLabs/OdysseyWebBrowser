@@ -64,6 +64,7 @@ void webkitWebViewBaseUpdateTextInputState(WebKitWebViewBase*);
 void webkitWebViewBaseSetContentsSize(WebKitWebViewBase*, const WebCore::IntSize&);
 
 void webkitWebViewBaseSetFocus(WebKitWebViewBase*, bool focused);
+void webkitWebViewBaseSetEditable(WebKitWebViewBase*, bool editable);
 WebCore::IntSize webkitWebViewBaseGetViewSize(WebKitWebViewBase*);
 bool webkitWebViewBaseIsInWindowActive(WebKitWebViewBase*);
 bool webkitWebViewBaseIsFocused(WebKitWebViewBase*);
@@ -94,6 +95,8 @@ WebKit::ViewGestureController* webkitWebViewBaseViewGestureController(WebKitWebV
 
 bool webkitWebViewBaseBeginBackSwipeForTesting(WebKitWebViewBase*);
 bool webkitWebViewBaseCompleteBackSwipeForTesting(WebKitWebViewBase*);
+
+GVariant* webkitWebViewBaseContentsOfUserInterfaceItem(WebKitWebViewBase*, const char* userInterfaceItem);
 
 void webkitWebViewBaseDidStartProvisionalLoadForMainFrame(WebKitWebViewBase*);
 void webkitWebViewBaseDidFirstVisuallyNonEmptyLayoutForMainFrame(WebKitWebViewBase*);

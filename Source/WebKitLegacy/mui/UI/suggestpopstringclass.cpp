@@ -30,6 +30,7 @@
 #include <WebCore/ResourceHandle.h>
 #include <WebCore/ResourceRequest.h>
 #include <WebCore/ResourceHandleClient.h>
+#include <WebCore/SharedBuffer.h>
 #include "SuggestEntry.h"
 #include "NetworkStorageSessionMap.h"
 
@@ -117,17 +118,17 @@ public:
     {
     }
 
-    virtual void didReceiveData(ResourceHandle*, const char* data, unsigned length, int lengthReceived)
+    virtual void didReceiveData(ResourceHandle*, const SharedBuffer& buffer, int)
     {
 #if !OS(AROS)
         if(m_parser)
         {
-            XML_Parse(m_parser, data, length, 0);
+            XML_Parse(m_parser, reinterpret_cast<const char*>(buffer.data()), buffer.size(), 0);
         }
 #endif
     }
 
-    virtual void didFinishLoading(ResourceHandle*, double)
+    virtual void didFinishLoading(ResourceHandle*, const NetworkLoadMetrics&)
     {
 #if !OS(AROS)
         if(m_parser)
