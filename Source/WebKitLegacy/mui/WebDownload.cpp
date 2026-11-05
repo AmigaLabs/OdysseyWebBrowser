@@ -58,6 +58,9 @@
 
 #include "gui.h"
 #include <clib/debug_protos.h>
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#endif
 
 using namespace WebCore;
 using namespace WTF::StringLiterals;
@@ -149,7 +152,8 @@ void DownloadClient::didReceiveResponseAsync(ResourceHandle*, WebCore::ResourceR
 
     // Can we resume and do we want to resume?
 
-    if(priv->resourceHandle->getInternal()->m_curlRequest->resumeOffset() != 0) /* isResuming */
+    // m_curlRequest can be null when the main resource handle has no transfer attached (crash seen on AmigaOS)
+    if(priv->resourceHandle->getInternal()->m_curlRequest && priv->resourceHandle->getInternal()->m_curlRequest->resumeOffset() != 0) /* isResuming */
     {
         if (1) /* canResume */
         {
@@ -320,14 +324,14 @@ void DownloadClient::didFail(ResourceHandle*, const ResourceError& resourceError
     m_download->downloadDelegate()->didFailWithError(m_download, error);
 }
 
-void DownloadClient::wasBlocked(ResourceHandle*)
+void DownloadClient::wasBlocked(ResourceHandle* handle)
 {
-    notImplemented();
+    didFail(handle, ResourceError(String(WebKitErrorDomain), WebURLErrorCannotCreateFile, URL(), String("Download blocked")));
 }
 
-void DownloadClient::cannotShowURL(ResourceHandle*)
+void DownloadClient::cannotShowURL(ResourceHandle* handle)
 {
-    notImplemented();
+    didFail(handle, ResourceError(String(WebKitErrorDomain), WebURLErrorCannotCreateFile, URL(), String("Cannot show URL")));
 }
 
 /*********************************************************************************************/
@@ -492,7 +496,8 @@ void WebDownload::start(bool quiet)
 
     //kprintf("quiet %d\n", m_priv->quiet);
 
-    if (m_priv->resourceHandle)
+    // Reuse the main resource handle only if it has a transfer; otherwise start a new download request.
+    if (m_priv->resourceHandle && m_priv->resourceHandle->getInternal()->m_curlRequest)
     {
         ResourceResponse response(m_response->resourceResponse());
         // HACK to disable on-the-fly gzip decoding
@@ -505,13 +510,8 @@ void WebDownload::start(bool quiet)
     {
         m_priv->downloadClient->didStart();
         m_priv->resourceHandle = ResourceHandle::create(new WebDownloadNetworkingContext(), m_request->resourceRequest(), m_priv->downloadClient, false, false, ContentEncodingSniffingPolicy::Disable, nullptr, false);
-        if(m_priv->resourceHandle)
-        {
-            // HACK to disable on-the-fly gzip decoding
-            if (m_priv->requestUri.endsWith(".gz"_s) || m_priv->requestUri.endsWith(".tgz"_s))
-                m_priv->resourceHandle->getInternal()->m_curlRequest->disableAcceptEncoding(true);
-            m_priv->resourceHandle->getInternal()->m_curlRequest->start();
-        }
+        // ResourceHandle::create() already starts the transfer (2.34 uses create2() and starts it here instead).
+        // Calling start() again on the request dereferenced a null CurlRequest on AmigaOS.
     }
 }
 
