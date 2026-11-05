@@ -89,7 +89,7 @@ WebChromeClient::WebChromeClient(WebView* webView)
 
 void WebChromeClient::chromeDestroyed()
 {
-    delete this;
+    // 2.48: Chrome owns the client (UniqueRef) and deletes it; "delete this" here freed it twice.
 }
 
 void WebChromeClient::setWindowRect(const FloatRect& r)

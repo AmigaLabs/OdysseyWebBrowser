@@ -723,13 +723,20 @@ void WebView::close()
     if (m_preferences && m_preferences->usesPageCache())
         m_page->settings().setUsesBackForwardCache(false);
 
-    if (m_page)
-        downcast<LocalFrame>(m_page->mainFrame()).loader().detachFromParent(); 
+    if (m_page) {
+        // Stop loads and detach the document tree before dropping our reference, so no
+        // Element/hover state (or pending load) keeps pointing at memory freed on close.
+        auto& mainFrame = downcast<LocalFrame>(m_page->mainFrame());
+        mainFrame.loader().stopAllLoaders();
+        mainFrame.loader().closeURL();
+        mainFrame.loader().detachFromParent();
+    }
 
     m_inspectorClient = 0;
 
-    m_page->deref();
+    WebCore::Page* page = m_page;
     m_page = 0;
+    page->deref(); // drops our reference; the page is destroyed here if this was the last one
 
 #if 0
 // broken 2.18

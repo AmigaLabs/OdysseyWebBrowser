@@ -60,7 +60,7 @@ WebContextMenuClient::WebContextMenuClient(WebView* webView)
 
 void WebContextMenuClient::contextMenuDestroyed()
 {
-    delete this;
+    // 2.48: ContextMenuController owns the client (UniqueRef) and deletes it; no "delete this".
 }
 
 #if 0

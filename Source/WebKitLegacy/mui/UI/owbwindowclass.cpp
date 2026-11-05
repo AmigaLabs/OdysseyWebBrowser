@@ -2116,7 +2116,7 @@ DEFSMETHOD(OWBWindow_RemoveBrowser)
         DoMethod(_parent(data->pagegroup), MUIM_Group_ExitChange);
     }
 
-    // Keep tab close responsive: only prune dead cache entries, not the full process-wide release.
+    // Keep tab close responsive: only prune dead cache entries (no clients or loaders), not the full release.
     MemoryCache::singleton().pruneDeadResourcesToSize(0);
 
     return 0;
