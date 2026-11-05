@@ -135,12 +135,12 @@ void WebEditorUndoTarget::clear()
     m_actionName.clear();
 }
 
-bool WebEditorClient::canCopyCut(Frame*, bool defaultValue) const 
+bool WebEditorClient::canCopyCut(LocalFrame*, bool defaultValue) const 
 {
     return defaultValue;
 }
 
-bool WebEditorClient::canPaste(Frame*, bool defaultValue) const 
+bool WebEditorClient::canPaste(LocalFrame*, bool defaultValue) const 
 {
     return defaultValue;
 }
@@ -273,7 +273,7 @@ void WebEditorClient::respondToChangedContents()
         editing->webViewDidChange();
 }
 
-void WebEditorClient::respondToChangedSelection(Frame*)
+void WebEditorClient::respondToChangedSelection(LocalFrame*)
 {
     m_webView->selectionChanged();
     SharedPtr<WebEditingDelegate> editing = m_webView->webEditingDelegate();
@@ -281,7 +281,7 @@ void WebEditorClient::respondToChangedSelection(Frame*)
         editing->webViewDidChangeSelection();
 }
 
-void WebEditorClient::discardedComposition(Frame*)
+void WebEditorClient::discardedComposition(const Document&)
 {
     notImplemented();
 }
@@ -304,7 +304,7 @@ void WebEditorClient::willWriteSelectionToPasteboard(const std::optional<WebCore
     notImplemented();
 }
 
-void WebEditorClient::getClientPasteboardData(const std::optional<WebCore::SimpleRange>&, Vector<String>&, Vector<RefPtr<WebCore::SharedBuffer> >&)
+void WebEditorClient::getClientPasteboardData(const std::optional<WebCore::SimpleRange>&, Vector<std::pair<String, RefPtr<WebCore::SharedBuffer>>>&)
 {
     notImplemented();
 }
@@ -405,7 +405,7 @@ bool WebEditorClient::shouldChangeSelectedRange(const std::optional<WebCore::Sim
     return true; 
 }
 
-void WebEditorClient::textFieldDidBeginEditing(Element* e)
+void WebEditorClient::textFieldDidBeginEditing(Element&)
 {
     /*IWebFormDelegate* formDelegate;
     if (SUCCEEDED(m_webView->formDelegate(&formDelegate)) && formDelegate) {
@@ -422,26 +422,26 @@ void WebEditorClient::textFieldDidBeginEditing(Element* e)
     }*/
 }
 
-void WebEditorClient::textFieldDidEndEditing(Element* element)
+void WebEditorClient::textFieldDidEndEditing(Element&)
 {
     DoMethod(m_webView->viewWindow()->browser, MM_OWBBrowser_Autofill_HidePopup);
 }
 
-void WebEditorClient::textDidChangeInTextField(Element* element)
+void WebEditorClient::textDidChangeInTextField(Element& element)
 {
-    if (HTMLInputElement* inputElement = downcast<HTMLInputElement>(element))
+    if (HTMLInputElement* inputElement = downcast<HTMLInputElement>(&element))
     {
         DoMethod(m_webView->viewWindow()->browser, MM_OWBBrowser_Autofill_DidChangeInTextField, inputElement);
     }
 }
 
-bool WebEditorClient::doTextFieldCommandFromEvent(Element* e, KeyboardEvent* ke)
+bool WebEditorClient::doTextFieldCommandFromEvent(Element&, KeyboardEvent* ke)
 {
     // XXX: any better place to catch the event?
     return DoMethod(m_webView->viewWindow()->browser, MM_OWBBrowser_Autofill_HandleNavigationEvent, ke);
 }
 
-void WebEditorClient::textWillBeDeletedInTextField(Element* e)
+void WebEditorClient::textWillBeDeletedInTextField(Element&)
 {
     // We're using the deleteBackward command for all deletion operations since the autofill code treats all deletions the same way.
     /*IWebFormDelegate* formDelegate;
@@ -460,7 +460,7 @@ void WebEditorClient::textWillBeDeletedInTextField(Element* e)
     }*/
 }
 
-void WebEditorClient::textDidChangeInTextArea(Element* e)
+void WebEditorClient::textDidChangeInTextArea(Element&)
 {
     /*IWebFormDelegate* formDelegate;
     if (SUCCEEDED(m_webView->formDelegate(&formDelegate)) && formDelegate) {
@@ -797,14 +797,6 @@ void WebEditorClient::checkGrammarOfString(StringView, Vector<GrammarDetail>&, i
     *badGrammarLength = 0;
 }
 
-String WebEditorClient::getAutoCorrectSuggestionForMisspelledWord(const String& inputWord)
-{
-    // This method can be implemented using customized algorithms for the particular browser.
-    // Currently, it computes an empty string.
-    return String();
-}
-
-
 void WebEditorClient::updateSpellingUIWithGrammarString(const String& string, const WebCore::GrammarDetail& detail)
 {
     SharedPtr<WebEditingDelegate> editing = m_webView->webEditingDelegate();
@@ -878,7 +870,7 @@ void WebEditorClient::getGuessesForWord(const String& word, const String& contex
 
     if(start > 0 || len > 0)
     {
-        isolatedWord = String(text + start, len);
+        isolatedWord = String(std::span<const UChar>(text + start, len));
     }
     else
     {
@@ -943,10 +935,6 @@ void WebEditorClient::getGuessesForWord(const String& word, const String& contex
         guesses.append(String(guess, SysStringLen(guess)));
         SysFreeString(guess);
     }*/
-}
-
-void WebEditorClient::willSetInputMethodState()
-{
 }
 
 void WebEditorClient::setInputMethodState(WebCore::Element* element)

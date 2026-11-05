@@ -32,6 +32,7 @@
 #include "PlatformScreen.h"
 #include <wtf/Assertions.h>
 #include "Logging.h"
+#include "BALBase.h"
 #include "HostWindow.h"
 #include "ScrollView.h"
 #include "Widget.h"
@@ -69,7 +70,7 @@ int screenDepth(Widget* widget)
     #warning "screenDepth disabled"
 #if 0
     if (widget->root()->hostWindow()->platformPageClient()) {
-        Object *window = widget->root()->hostWindow()->platformPageClient()->window;
+        Object *window = static_cast<BalWidget*>(widget->root()->hostWindow()->platformPageClient())->window;
         if (window)
          {
        struct Window* win;
@@ -95,7 +96,7 @@ int screenDepthPerComponent(Widget* widget)
         unsigned long id = INVALID_ID;
         struct DisplayInfo displayInfo;
 
-        Object *window = widget->root()->hostWindow()->platformPageClient()->window;
+        Object *window = static_cast<BalWidget*>(widget->root()->hostWindow()->platformPageClient())->window;
         if (window)
       {
         struct Window* win;
@@ -125,7 +126,7 @@ FloatRect screenRect(Widget* widget)
 
     if (widget->root()->hostWindow()->platformPageClient())
     {
-        Object* window = widget->root()->hostWindow()->platformPageClient()->window;
+        Object* window = static_cast<BalWidget*>(widget->root()->hostWindow()->platformPageClient())->window;
         if (window)
         {
             struct Window* win;

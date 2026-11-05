@@ -25,13 +25,23 @@
 
 #include "LegacySocketProvider.h"
 
+#if !PLATFORM(MUI)
 #include "WebSocketChannel.h"
+#endif
+#include <WebCore/ThreadableWebSocketChannel.h>
 #include <WebCore/WebTransportSession.h>
 #include <wtf/CompletionHandler.h>
 
 RefPtr<WebCore::ThreadableWebSocketChannel> LegacySocketProvider::createWebSocketChannel(WebCore::Document& document, WebCore::WebSocketChannelClient& client)
 {
+#if PLATFORM(MUI)
+    // shortcut: WebSocket unsupported on MUI (needs non-CoreFoundation SocketStreamHandle), upgrade when ported
+    UNUSED_PARAM(document);
+    UNUSED_PARAM(client);
+    return nullptr;
+#else
     return WebCore::WebSocketChannel::create(document, client, *this);
+#endif
 }
 
 Ref<WebCore::WebTransportSessionPromise> LegacySocketProvider::initializeWebTransportSession(WebCore::ScriptExecutionContext&, WebCore::WebTransportSessionClient&, const URL&)

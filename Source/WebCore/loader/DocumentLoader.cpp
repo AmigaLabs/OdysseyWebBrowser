@@ -106,6 +106,9 @@
 #include <wtf/Scope.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/MakeString.h>
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#endif
 #include <wtf/text/WTFString.h>
 
 #if ENABLE(APPLICATION_MANIFEST)

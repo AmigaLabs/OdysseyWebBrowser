@@ -210,7 +210,7 @@ bool WebBackForwardList::containsItem(WebHistoryItem* item)
     if (!item)
         return false;
 
-    return d->m_backForwardList->containsItem(item->getPrivateItem()->m_historyItem.get());
+    return d->m_backForwardList->containsItem(*item->getPrivateItem()->m_historyItem);
 }
 
 WebHistoryItem* WebBackForwardList::itemAtIndex(int index)

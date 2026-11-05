@@ -29,6 +29,7 @@
 #include <WebCore/GraphicsContext.h>
 #include "WebIconDatabase.h"
 #include <WebCore/BitmapImage.h>
+#include <WebCore/ImageAdapter.h>
 #include <wtf/text/CString.h>
 #include <wtf/URL.h>
 
@@ -48,6 +49,12 @@
 
 #include "gui.h"
 
+#if OS(AMIGAOS)
+// Implemented in aos4funcs.cpp
+extern "C" APTR ARGB2BGRA(APTR src, uint32_t stride, uint32_t height);
+extern "C" VOID ARGB2BGRAFREE(APTR dst);
+#endif
+
 #define D(x)
 
 #define FAVICON_WIDTH 16
@@ -63,7 +70,7 @@ struct Data
     ULONG isfolder;
     STRPTR url;
     cairo_surface_t *surface;
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     APTR bgra;
 #endif
     cairo_t *cr;
@@ -134,7 +141,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
                     if(data->surface)
                     {
                         cairo_surface_destroy(data->surface);
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
                         if (data->bgra)
                         {
                             ARGB2BGRAFREE(data->bgra);
@@ -153,31 +160,31 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
                     {
                         WebCore::BitmapImage* icon = 0;
 
-                        static RefPtr<WebCore::Image> defaultIcon = 0;
+                        static RefPtr<WebCore::Image> defaultIcon = nullptr;
                         if (!defaultIcon)
-                            defaultIcon = WebCore::Image::loadPlatformResource("urlIcon");
+                            defaultIcon = WebCore::ImageAdapter::loadPlatformResource("urlIcon");
 
-                        static RefPtr<WebCore::Image> defaultFolderIcon = 0;
+                        static RefPtr<WebCore::Image> defaultFolderIcon = nullptr;
                         if (!defaultFolderIcon)
-                            defaultFolderIcon = WebCore::Image::loadPlatformResource("folderIcon");
+                            defaultFolderIcon = WebCore::ImageAdapter::loadPlatformResource("folderIcon");
 
-                        static RefPtr<WebCore::Image> defaultScriptIcon = 0;
+                        static RefPtr<WebCore::Image> defaultScriptIcon = nullptr;
                         if (!defaultScriptIcon)
-                            defaultScriptIcon = WebCore::Image::loadPlatformResource("scriptIcon");
+                            defaultScriptIcon = WebCore::ImageAdapter::loadPlatformResource("scriptIcon");
 
-                        static RefPtr<WebCore::Image> topsitesIcon = 0;
+                        static RefPtr<WebCore::Image> topsitesIcon = nullptr;
                         if (!topsitesIcon)
-                            topsitesIcon = WebCore::Image::loadPlatformResource("topsitesIcon");
+                            topsitesIcon = WebCore::ImageAdapter::loadPlatformResource("topsitesIcon");
 
-                        static RefPtr<WebCore::Image> aboutIcon = 0;
+                        static RefPtr<WebCore::Image> aboutIcon = nullptr;
                         if (!aboutIcon)
-                            aboutIcon = WebCore::Image::loadPlatformResource("aboutIcon");
+                            aboutIcon = WebCore::ImageAdapter::loadPlatformResource("aboutIcon");
 
                         if(data->isfolder)
                         {
                             icon = (WebCore::BitmapImage *) defaultFolderIcon.get();
                         }
-                        else if(URL({ }, data->url).protocolIs("javascript"))
+                        else if(URL({ }, data->url).protocolIs("javascript"_s))
                         {
                             icon = (WebCore::BitmapImage *) defaultScriptIcon.get();
                         }
@@ -185,7 +192,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
                         {
                             icon = (WebCore::BitmapImage *) topsitesIcon.get();
                         }
-                        else if(URL({ }, data->url).protocolIs("about"))
+                        else if(URL({ }, data->url).protocolIs("about"_s))
                         {
                             icon = (WebCore::BitmapImage *) aboutIcon.get();
                         }
@@ -203,7 +210,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                         if(icon)
                         {
-                                cairo_surface_t * icon_surface = icon->nativeImageForCurrentFrame()->platformImage().get();
+                                cairo_surface_t * icon_surface = icon->nativeImage()->platformImage().get();
 
                             if(!icon_surface)
                             {
@@ -211,7 +218,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                                 if(icon)
                                 {
-                                  icon_surface = icon->nativeImageForCurrentFrame()->platformImage().get();
+                                  icon_surface = icon->nativeImage()->platformImage().get();
                                 }
                             }
                                     
@@ -231,7 +238,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                                 cairo_restore(data->cr);
 
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
                                 data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
                                         cairo_image_surface_get_stride(data->surface),
                                         cairo_image_surface_get_height(data->surface));
@@ -302,7 +309,7 @@ DEFDISP
         data->url = NULL;
     }
 
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
     if(data->bgra)
     {
         ARGB2BGRAFREE(data->bgra);
@@ -370,7 +377,7 @@ DEFMMETHOD(Draw)
         if(data->url && cairo_surface_status(data->surface) == CAIRO_STATUS_SUCCESS)
         {
             stride = cairo_image_surface_get_stride(data->surface);
-#if OS(AROS)
+#if OS(AROS) || OS(AMIGAOS)
             src = (unsigned char *)data->bgra;
 #else
             src    = cairo_image_surface_get_data(data->surface);

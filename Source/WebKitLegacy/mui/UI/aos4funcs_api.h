@@ -27,6 +27,8 @@ Object * VARARGS68K DoSuperNew(struct IClass *cl, Object *obj, ...);
 // size_t stccpy(char *p, const char *q, size_t n);
 ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, struct RastPort *rp, UWORD destx, UWORD desty, UWORD width, UWORD height, ULONG globalalpha);
 #define WritePixelArrayAlpha _WritePixelArrayAlpha
+APTR ARGB2BGRA(APTR src, uint32_t stride, uint32_t height);
+VOID ARGB2BGRAFREE(APTR dst);
 
 #ifdef __cplusplus
 }

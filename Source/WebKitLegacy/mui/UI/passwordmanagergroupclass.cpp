@@ -138,12 +138,12 @@ DEFTMETHOD(PasswordManagerGroup_Load)
 
         if(type == CREDENTIAL_TYPE_AUTH)
         {
-            ExtCredential credential(user, password, CredentialPersistencePermanent, realm, flags);
+            ExtCredential credential(user, password, CredentialPersistence::Permanent, realm, flags);
             DoMethod(obj, MM_PasswordManagerGroup_Insert, &host, &credential);
         }
         else if(type == CREDENTIAL_TYPE_FORM)
         {
-            ExtCredential credential(user, password, CredentialPersistencePermanent, userField, passwordField, flags);
+            ExtCredential credential(user, password, CredentialPersistence::Permanent, userField, passwordField, flags);
             DoMethod(obj, MM_PasswordManagerGroup_Insert, &host, &credential);
         }
     }
@@ -198,7 +198,7 @@ DEFSMETHOD(PasswordManagerGroup_Insert)
     ExtCredential *credential = (ExtCredential *) msg->credential;
 
     /* Insertion in map and list */
-    if(credential->persistence() == CredentialPersistencePermanent)
+    if(credential->persistence() == CredentialPersistence::Permanent)
     {
         ExtCredential *newCredential = NULL;
 

@@ -58,7 +58,7 @@ void SelectionData::setURIList(const String& uriListString)
     // will get an empty string. This is in line with the HTML5 spec (see
     // "The DragEvent and DataTransfer interfaces"). Also extract all filenames
     // from the URI list.
-    bool setURL = hasURL();
+    bool setURL = false;
     for (auto& line : uriListString.split('\n')) {
         line = line.trim(deprecatedIsSpaceOrNewline);
         if (line.isEmpty())

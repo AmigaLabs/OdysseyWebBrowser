@@ -28,6 +28,9 @@
 #include "FloatPoint.h"
 #include "IntPoint.h"
 #include "PlatformEvent.h"
+#if PLATFORM(MUI)
+#include "BALBase.h"
+#endif
 #include <wtf/WindowsExtras.h>
 
 namespace WTF {
@@ -80,6 +83,10 @@ const float cScrollbarPixelsPerLine = 100.0f / 3.0f;
 
 class PlatformWheelEvent : public PlatformEvent {
 public:
+#if PLATFORM(MUI)
+    PlatformWheelEvent(BalEventScroll*);
+#endif
+
     PlatformWheelEvent()
         : PlatformEvent(Type::Wheel)
     {

@@ -33,7 +33,7 @@
 
 #undef accept
 
-#include "FrameView.h"
+#include "LocalFrameView.h"
 #include "HostWindow.h"
 #include "ObserverServiceData.h"
 #include <wtf/text/WTFString.h>
@@ -52,7 +52,7 @@ PopupMenuMorphOS::~PopupMenuMorphOS()
 {
 }
 
-void PopupMenuMorphOS::show(const IntRect& r, FrameView* v, int index)
+void PopupMenuMorphOS::show(const IntRect& r, LocalFrameView& v, int index)
 {
     ASSERT(client());
     UNUSED_PARAM(index);
@@ -63,7 +63,7 @@ void PopupMenuMorphOS::show(const IntRect& r, FrameView* v, int index)
     if (clientRect().isEmpty())
         return;
 
-    m_frameView = v;
+    m_frameView = &v;
 
     WebCore::ObserverServiceData::createObserverService()->notifyObserver("PopupMenuShow", "", this);
 }
@@ -83,9 +83,9 @@ void PopupMenuMorphOS::disconnectClient()
     m_popupClient = 0;
 }
 
-void PopupMenuMorphOS::calculatePositionAndSize(const IntRect& r, FrameView* v)
+void PopupMenuMorphOS::calculatePositionAndSize(const IntRect& r, LocalFrameView& v)
 {
-    IntRect rScreenCoords(v->contentsToWindow(r.location()), r.size());
+    IntRect rScreenCoords(v.contentsToWindow(r.location()), r.size());
     rScreenCoords.setY(rScreenCoords.y() + rScreenCoords.height());
 
     m_itemHeight = rScreenCoords.height();
@@ -103,7 +103,7 @@ void PopupMenuMorphOS::calculatePositionAndSize(const IntRect& r, FrameView* v)
         if (client()->itemIsLabel(i)) {
             FontCascadeDescription d = itemFont.fontDescription();
             d.setWeight(d.bolderWeight());
-            itemFont = FontCascade(WTFMove(d), itemFont.letterSpacing(), itemFont.wordSpacing());
+            itemFont = FontCascade(WTFMove(d));
             itemFont.update(m_popupClient->fontSelector());
         }
 

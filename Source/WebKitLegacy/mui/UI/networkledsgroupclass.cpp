@@ -36,7 +36,7 @@
 #include <WebCore/Editor.h>
 #include <WebCore/FocusController.h>
 #include <WebCore/Frame.h>
-#include <WebCore/FrameView.h>
+#include <WebCore/LocalFrameView.h>
 #include <WebCore/Timer.h>
 #include <wtf/MainThread.h>
 #include <WebCore/ResourceHandle.h>

@@ -83,11 +83,11 @@ DEFNEW
             data->coloradjust = coloradjust;
             data->controller = controller;
             data->source = source;
-            auto components = color->toSRGBALossy<uint8_t>();
+            auto components = asColorComponents(color->toColorTypeLossy<SRGBA<uint8_t>>().unresolved());
 
-            SetAttrs(data->coloradjust, MUIA_Coloradjust_Red,   components.red << 24,
-                                        MUIA_Coloradjust_Green, components.green << 24,
-                                        MUIA_Coloradjust_Blue,  components.blue << 24,
+            SetAttrs(data->coloradjust, MUIA_Coloradjust_Red,   components[0] << 24,
+                                        MUIA_Coloradjust_Green, components[1] << 24,
+                                        MUIA_Coloradjust_Blue,  components[2] << 24,
                                         TAG_DONE);
 
             DoMethod(data->coloradjust, MUIM_Notify, MUIA_Coloradjust_RGB, MUIV_EveryTime, obj, 3, MM_ColorChooserPopup_DidSelect, FALSE);

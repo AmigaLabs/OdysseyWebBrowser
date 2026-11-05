@@ -29,6 +29,7 @@
 #include <wtf/text/WTFString.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringView.h>
+#include <wtf/text/MakeString.h>
 #include "WebHistory.h"
 
 #include "WebHistoryItem.h"
@@ -123,22 +124,19 @@ bool WebHistory::loadHistoryFromDatabase(int sortCriterium, bool desc, std::vect
             break;
 
         case HISTORY_SORT_BY_URL:
-                request.append(" ORDER BY length(url), url");
-            request.append(direction);
+            request = makeString(request, " ORDER BY length(url), url"_s, direction);
             break;
 
         case HISTORY_SORT_BY_TITLE:
-                request.append(" ORDER BY title");
-            request.append(direction);
+            request = makeString(request, " ORDER BY title"_s, direction);
             break;
 
         case HISTORY_SORT_BY_ACCESSTIME:
-                request.append(" ORDER BY lastAccessed");
-            request.append(direction);
+            request = makeString(request, " ORDER BY lastAccessed"_s, direction);
             break;
     }
 
-    request.append(end);
+    request = makeString(request, end);
 
     // Problem if the database is not connected
     auto select = m_historyDB.prepareStatement(ASCIILiteral::fromLiteralUnsafe(request.latin1().data()));
@@ -261,6 +259,12 @@ WebHistory* WebHistory::createInstance()
 {
     WebHistory* instance = new WebHistory();
     return instance;
+}
+
+void WebHistory::closeDatabase()
+{
+    if (m_historyDB.isOpen())
+        m_historyDB.close();
 }
 
 WebHistory* WebHistory::sharedHistory()

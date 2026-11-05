@@ -27,6 +27,7 @@
 #include "DeleteSelectionCommand.h"
 
 #include "Document.h"
+#include "DocumentInlines.h"
 #include "DocumentMarkerController.h"
 #include "Editing.h"
 #include "Editor.h"

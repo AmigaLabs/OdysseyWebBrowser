@@ -89,6 +89,7 @@ namespace WebCore {
     class Application;
     class Element;
     class FrameView;
+    class LocalFrameView;
     class Image;
     class IntPoint;
     class IntRect;
@@ -1559,12 +1560,12 @@ protected:
     /**
      *  scrollBackingStore 
      */
-    void scrollBackingStore(WebCore::FrameView*, int dx, int dy, const BalRectangle& scrollViewRect, const BalRectangle& clipRect);
+    void scrollBackingStore(WebCore::LocalFrameView*, int dx, int dy, const BalRectangle& scrollViewRect, const BalRectangle& clipRect);
 
     /**
      *  updateBackingStore 
      */
-    void updateBackingStore(WebCore::FrameView*, bool backingStoreCompletelyDirty = false);
+    void updateBackingStore(WebCore::LocalFrameView*, bool backingStoreCompletelyDirty = false);
 
     /**
      *  deleteBackingStore 

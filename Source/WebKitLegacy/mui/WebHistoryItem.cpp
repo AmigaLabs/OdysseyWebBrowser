@@ -29,6 +29,7 @@
 #include "WebHistoryItem_p.h"
 #include "BackForwardList.h"
 
+#include <wtf/NeverDestroyed.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
 #include <WebCore/HistoryItem.h>
@@ -36,6 +37,18 @@
 #include <clib/debug_protos.h>
 
 using namespace WebCore;
+
+// shortcut: no-op client, MUI does not observe history item changes; upgrade if a frontend needs them
+class MuiHistoryItemClient final : public HistoryItemClient {
+    void historyItemChanged(const HistoryItem&) final { }
+    void clearChildren(const HistoryItem&) const final { }
+};
+
+static HistoryItemClient& historyItemClient()
+{
+    static NeverDestroyed<Ref<MuiHistoryItemClient>> client { adoptRef(*new MuiHistoryItemClient) };
+    return client.get().get();
+}
 
 static HashMap<HistoryItem*, WebHistoryItem*>& historyItemWrappers()
 {
@@ -59,7 +72,7 @@ WebHistoryItem::~WebHistoryItem()
 
 WebHistoryItem* WebHistoryItem::createInstance()
 {
-    WebHistoryItemPrivate *priv = new WebHistoryItemPrivate(HistoryItem::create());
+    WebHistoryItemPrivate *priv = new WebHistoryItemPrivate(HistoryItem::create(historyItemClient()));
     WebHistoryItem* instance = new WebHistoryItem(priv);
     return instance;
 }
@@ -109,7 +122,7 @@ void WebHistoryItem::setHasPageCache(bool /*hasCache*/)
 
 const char* WebHistoryItem::target()
 {
-    return strdup(d->m_historyItem->target().utf8().data());
+    return strdup(d->m_historyItem->target().string().utf8().data());
 }
 
 bool WebHistoryItem::isTargetItem()
@@ -137,14 +150,14 @@ std::vector<WebHistoryItem*> WebHistoryItem::children()
 void WebHistoryItem::initWithURLString(const char* urlString, const char* title, double lastVisited)
 {
     historyItemWrappers().remove(d->m_historyItem.get());
-    d->m_historyItem = HistoryItem::create(urlString, title);
+    d->m_historyItem = HistoryItem::create(historyItemClient(), String(urlString), String(title));
     historyItemWrappers().set(d->m_historyItem.get(), this);
 }
 
 void WebHistoryItem::initWithURLString(const String & urlString, const String & title, double lastVisited)
 {
     historyItemWrappers().remove(d->m_historyItem.get());
-    d->m_historyItem = HistoryItem::create(urlString, title);
+    d->m_historyItem = HistoryItem::create(historyItemClient(), String(urlString), String(title));
     historyItemWrappers().set(d->m_historyItem.get(), this);
 }
 

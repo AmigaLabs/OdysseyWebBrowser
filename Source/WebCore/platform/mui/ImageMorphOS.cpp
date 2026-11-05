@@ -25,17 +25,15 @@
 
 #include "config.h"
 #include "owb-config.h"
+#include <wtf/text/MakeString.h>
 #include "BitmapImage.h"
+#include "ImageAdapter.h"
 #include "SharedBuffer.h"
 #include <wtf/text/WTFString.h>
 #include <wtf/text/CString.h>
 #include <clib/debug_protos.h>
 
 namespace WebCore {
-
-void BitmapImage::invalidatePlatformData()
-{
-}
 
 static RefPtr<SharedBuffer> loadResourceSharedBufferFallback()
 {
@@ -47,11 +45,9 @@ static RefPtr<SharedBuffer> loadResourceSharedBuffer(const char* name)
     String fullPath = "";
     String fname = String(name);
 
-    if(fname.find(':') == notFound || !fname.endsWith(".info"))
+    if(fname.find(':') == notFound || !fname.endsWith(String(".info")))
     {
-    fullPath = RESOURCE_PATH;
-    fullPath.append(name);
-    fullPath.append(".png");
+    fullPath = WTF::makeString(String::fromLatin1(RESOURCE_PATH), String::fromLatin1(name), ".png"_s);
     }
     else
     {
@@ -64,7 +60,7 @@ static RefPtr<SharedBuffer> loadResourceSharedBuffer(const char* name)
     return loadResourceSharedBufferFallback();
 }
 
-Ref<Image> Image::loadPlatformResource(const char* name)
+Ref<Image> ImageAdapter::loadPlatformResource(const char* name)
 {
     Ref<BitmapImage> img = BitmapImage::create();
     RefPtr<SharedBuffer> buffer = loadResourceSharedBuffer(name);

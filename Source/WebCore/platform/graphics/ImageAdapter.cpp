@@ -34,11 +34,13 @@ namespace WebCore {
 WTF_MAKE_TZONE_ALLOCATED_IMPL(ImageAdapter);
 
 #if !PLATFORM(COCOA) && !PLATFORM(GTK) && !PLATFORM(WIN) && !OS(MORPHOS)
+#if !PLATFORM(MUI) // MUI has its own loadPlatformResource in ImageMorphOS.cpp
 Ref<Image> ImageAdapter::loadPlatformResource(const char* resource)
 {
     WTFLogAlways("WARNING: trying to load platform resource '%s'", resource);
     return BitmapImage::create();
 }
+#endif
 
 void ImageAdapter::invalidate()
 {

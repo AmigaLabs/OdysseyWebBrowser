@@ -205,6 +205,24 @@ unsigned BackForwardList::forwardListCount() const
     return m_current == NoCurrentItemIndex ? 0 : m_entries.size() - m_current - 1;
 }
 
+// shortcut: frame-specific history items are not tracked, one list for all frames, upgrade when per-frame history is needed
+void BackForwardList::setChildItem(BackForwardFrameItemIdentifier, Ref<HistoryItem>&&)
+{
+}
+
+void BackForwardList::goToProvisionalItem(const HistoryItem&)
+{
+}
+
+void BackForwardList::clearProvisionalItem(const HistoryItem&)
+{
+}
+
+RefPtr<HistoryItem> BackForwardList::itemAtIndex(int index, FrameIdentifier)
+{
+    return itemAtIndex(index);
+}
+
 RefPtr<HistoryItem> BackForwardList::itemAtIndex(int index)
 {
     // Do range checks without doing math on index to avoid overflow.
@@ -257,7 +275,7 @@ void BackForwardList::removeItem(HistoryItem* item)
     }
 }
 
-bool BackForwardList::containsItem(HistoryItem* entry)
+bool BackForwardList::containsItem(const HistoryItem& entry) const
 {
-    return m_entryHash.contains(entry);
+    return m_entryHash.contains(const_cast<HistoryItem*>(&entry));
 }

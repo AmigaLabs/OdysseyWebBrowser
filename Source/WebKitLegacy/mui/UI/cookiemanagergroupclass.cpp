@@ -274,7 +274,7 @@ DEFTMETHOD(CookieManagerGroup_Clear)
 
     /* Remove from database */
     NetworkStorageSession& storageSession = NetworkStorageSessionMap::defaultStorageSession();
-    storageSession.deleteAllCookies();
+    storageSession.deleteAllCookies([] { });
 
     return 0;
 }
@@ -430,13 +430,12 @@ DEFTMETHOD(CookieManagerGroup_Remove)
         {
             String cookieURL = String(entry->protocol);
             String domain = String(entry->domain);
-            cookieURL.append("://");
+            cookieURL = makeString(cookieURL, "://"_s);
             if(domain.startsWith("."))
                 domain = domain.substring(1);
-            cookieURL.append(domain);
-            cookieURL.append(entry->path);
+            cookieURL = makeString(cookieURL, domain, String(entry->path));
             URL url({ }, cookieURL);
-            storageSession.deleteCookie(url, entry->name);
+            storageSession.deleteCookie(url, url, String(entry->name), [] { });
             DoMethod(data->lt_cookies, MUIM_Listtree_Remove, NULL, MUIV_Listtree_Remove_TreeNode_Active, 0);
         }
         else if(entry && entry->flags == COOKIEFLAG_DOMAIN)

@@ -11,10 +11,9 @@ set(OdysseyWebBrowser_INCLUDE_DIRECTORIES
 
 if (AmigaOS4)
 set(OdysseyWebBrowser_LIBRARIES
-    JavaScriptCore
-    WebKitLegacy
+    # TEMP: one group so static-library cycles (WebKitLegacy <-> WTF/WebCore) resolve on AmigaOS
+    -Wl,--start-group JavaScriptCore WebKitLegacy WebCore PAL WTF -Wl,--end-group
     -mcrt=clib4
-    -Wl,--start-group WebCore -Wl,--end-group
     -lfreetype
     -lcairo
     -lwebp 
@@ -37,18 +36,13 @@ set(OdysseyWebBrowser_LIBRARIES
     -lxslt
     -lxml2
     -lexpat
-    -lavformat
+    # TEMP: FFmpeg (video off) and nghttp2 (not in SDK) removed from link; re-add when enabled
     -lbz2
-    -lavcodec
     -lz
-    -lavutil
-    -lswresample
-    -lswscale
     -lpsl
     -latomic
     -lpixman-1
     -lfontconfig
-    -lnghttp2
     -lpthread
     -lunistring
     ${ZLIB_LIBRARIES}    
@@ -79,14 +73,9 @@ set(OdysseyWebBrowser_LIBRARIES
     -ldebug
     -lopenurl
     -lrexxsyslib
-    -lavformat
     -lbz2
-    -lavcodec
     -liconv
     -lz
-    -lavutil
-    -lswresample
-    -lswscale
     -lpsl
     -latomic
     ${ZLIB_LIBRARIES}

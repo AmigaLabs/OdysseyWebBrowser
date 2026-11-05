@@ -28,7 +28,6 @@
 #include "Editor.h"
 
 #include "CachedImage.h"
-#include "DataObjectMorphOS.h"
 #include "DocumentFragment.h"
 #include "Frame.h"
 #include "HTMLImageElement.h"
@@ -43,25 +42,24 @@
 
 namespace WebCore {
 
-static RefPtr<DocumentFragment> createFragmentFromPasteboardData(Pasteboard& pasteboard, Frame& frame, const SimpleRange& range, bool allowPlainText, bool& chosePlainText)
+static RefPtr<DocumentFragment> createFragmentFromPasteboardData(Pasteboard& pasteboard, Document& document, const SimpleRange& range, bool allowPlainText, bool& chosePlainText)
 {
     chosePlainText = false;
 
     if (!pasteboard.hasData())
         return nullptr;
 
-    RefPtr<DataObjectMorphOS> dataObject = pasteboard.dataObject();
-    if (dataObject->hasMarkup() && frame.document()) {
-        if (RefPtr<DocumentFragment> fragment = createFragmentFromMarkup(*frame.document(), dataObject->markup(), emptyString(), DisallowScriptingAndPluginContent))
+    if (String markup = pasteboard.readString("text/html"_s); !markup.isEmpty()) {
+        if (RefPtr<DocumentFragment> fragment = createFragmentFromMarkup(document, markup, emptyString(), disallowScriptingContent(DefaultParserContentPolicy)))
             return fragment;
     }
 
     if (!allowPlainText)
         return nullptr;
 
-    if (dataObject->hasText()) {
+    if (String text = pasteboard.readString("text/plain"_s); !text.isEmpty()) {
         chosePlainText = true;
-        if (RefPtr<DocumentFragment> fragment = createFragmentFromText(range, dataObject->text()))
+        if (RefPtr<DocumentFragment> fragment = createFragmentFromText(range, text))
             return fragment;
     }
 
@@ -75,7 +73,7 @@ void Editor::pasteWithPasteboard(Pasteboard* pasteboard, OptionSet<PasteOption> 
         return;
 
     bool chosePlainText;
-    RefPtr<DocumentFragment> fragment = createFragmentFromPasteboardData(*pasteboard, *m_document.frame(), *range,
+    RefPtr<DocumentFragment> fragment = createFragmentFromPasteboardData(*pasteboard, document(), *range,
         options.contains(PasteOption::AllowPlainText), chosePlainText);
     if (fragment && shouldInsertFragment(*fragment.get(), range, EditorInsertAction::Pasted))
         pasteAsFragment(fragment.releaseNonNull(), canSmartReplaceWithPasteboard(*pasteboard), chosePlainText,
@@ -84,7 +82,7 @@ void Editor::pasteWithPasteboard(Pasteboard* pasteboard, OptionSet<PasteOption> 
 
 RefPtr<DocumentFragment> Editor::webContentFromPasteboard(Pasteboard& pasteboard, const SimpleRange& context, bool allowPlainText, bool& chosePlainText)
 {
-    return createFragmentFromPasteboardData(pasteboard, *m_document.frame(), context, allowPlainText, chosePlainText);
+    return createFragmentFromPasteboardData(pasteboard, document(), context, allowPlainText, chosePlainText);
 }
 
 void Editor::writeImageToPasteboard(Pasteboard&, Element&, const URL&, const String&)
@@ -92,6 +90,15 @@ void Editor::writeImageToPasteboard(Pasteboard&, Element&, const URL&, const Str
 }
 
 void Editor::writeSelectionToPasteboard(Pasteboard& pasteboard)
+{
+}
+
+// shortcut: font copy/paste not supported on MUI, add when font pasteboard exists
+void Editor::platformCopyFont()
+{
+}
+
+void Editor::platformPasteFont()
 {
 }
 

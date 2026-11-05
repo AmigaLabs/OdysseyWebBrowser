@@ -46,7 +46,6 @@ PlatformWheelEvent::PlatformWheelEvent(BalEventScroll* event)
 
     m_deltaX = 0;
     m_deltaY = 0;
-    m_useLatchedEventNode = false;
 
     m_modifiers = OptionSet<PlatformEvent::Modifier>();
 
@@ -124,7 +123,7 @@ PlatformWheelEvent::PlatformWheelEvent(BalEventScroll* event)
     m_deltaX = deltax;
     m_deltaY = deltay;
 
-    m_type = PlatformEvent::Wheel;
+    m_type = PlatformEvent::Type::Wheel;
     
     m_timestamp = WallTime::fromRawSeconds(MonotonicTime::now().secondsSinceEpoch().value());
     m_position = IntPoint((int)event->MouseX, (int)event->MouseY);

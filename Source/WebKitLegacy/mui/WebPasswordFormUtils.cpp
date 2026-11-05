@@ -61,11 +61,11 @@ void findPasswordFormFields(HTMLFormElement* form, PasswordFormFields* fields)
 
     int firstPasswordIndex = 0;
     // First, find the password fields and activated submit button
-    const Vector<Ref<FormAssociatedElement>> formElements = form->copyAssociatedElementsVector();
+    const auto formElements = form->copyListedElementsVector();
     for (size_t i = 0; i < formElements.size(); i++) {
-        if (!formElements[i]->isFormControlElement())
+        auto* formElement = dynamicDowncast<HTMLFormControlElement>(&formElements[i]->asHTMLElement());
+        if (!formElement)
             continue;
-        HTMLFormControlElement* formElement = static_cast<HTMLFormControlElement*>(formElements[i].ptr());
         if (formElement->isActivatedSubmit())
             fields->submit = formElement;
 
@@ -88,9 +88,9 @@ void findPasswordFormFields(HTMLFormElement* form, PasswordFormFields* fields)
     if (!fields->passwords.isEmpty()) {
         // Then, search backwards for the username field
         for (int i = firstPasswordIndex - 1; i >= 0; i--) {
-            if (!formElements[i]->isFormControlElement())
+            auto* formElement = dynamicDowncast<HTMLFormControlElement>(&formElements[i]->asHTMLElement());
+            if (!formElement)
                 continue;
-            HTMLFormControlElement* formElement = static_cast<HTMLFormControlElement*>(formElements[i].ptr());
             if (!formElement->hasTagName(HTMLNames::inputTag))
                 continue;
 

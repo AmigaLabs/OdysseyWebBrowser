@@ -27,6 +27,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <wtf/text/MakeString.h>
 #include <wtf/text/WTFString.h>
 #include <wtf/text/CString.h>
 #include <wtf/URL.h>
@@ -826,9 +827,9 @@ DEFSMETHOD(Bookmarkgroup_AddLink)
     String address = "";
     char *ctitle, *calias, *caddress;
 
-    if(msg->title)   title = String(msg->title).replace("\"", "");
-    if(msg->alias)   alias =  String(msg->alias).replace("\"", "");
-    if(msg->address) address = String(msg->address).replace("\"", ""); //encodeWithURLEscapeSequences(msg->address);
+    if(msg->title)   title = makeStringByReplacingAll(String(msg->title), "\""_s, ""_s);
+    if(msg->alias)   alias =  makeStringByReplacingAll(String(msg->alias), "\""_s, ""_s);
+    if(msg->address) address = makeStringByReplacingAll(String(msg->address), "\""_s, ""_s); //encodeWithURLEscapeSequences(msg->address);
 
     newnode.flags    = NODEFLAG_LINK;
     newnode.title    = (char*) strdup(title.latin1().data());
@@ -1383,25 +1384,25 @@ static void save_list(BPTR html, Object *lt, struct MUIS_Listtree_TreeNode *list
                 if(node->title)
                 {
                     wtitle = String(title);
-                    wtitle.replace("\"", "");
-                    wtitle.replace("<", "");
-                    wtitle.replace(">", "");
+                    wtitle = makeStringByReplacingAll(wtitle, "\""_s, ""_s);
+                    wtitle = makeStringByReplacingAll(wtitle, "<"_s, ""_s);
+                    wtitle = makeStringByReplacingAll(wtitle, ">"_s, ""_s);
                 }
                 
                 if(node->alias)
                 {
                     walias = String(alias);
-                    walias.replace("\"", "");
-                    walias.replace("<", "");
-                    walias.replace(">", "");
+                    walias = makeStringByReplacingAll(walias, "\""_s, ""_s);
+                    walias = makeStringByReplacingAll(walias, "<"_s, ""_s);
+                    walias = makeStringByReplacingAll(walias, ">"_s, ""_s);
                 }
 
                 if(node->address)
                 {
                     waddress = String(address);
-                    waddress.replace("\"", "");
-                    waddress.replace("<", "");
-                    waddress.replace(">", "");
+                    waddress = makeStringByReplacingAll(waddress, "\""_s, ""_s);
+                    waddress = makeStringByReplacingAll(waddress, "<"_s, ""_s);
+                    waddress = makeStringByReplacingAll(waddress, ">"_s, ""_s);
                 }
 
                 title   = strdup(wtitle.latin1().data());
@@ -1658,8 +1659,8 @@ static void build_menu(Object *menu, Object *lt, struct MUIS_Listtree_TreeNode *
                             truncatedTitle = title;
                             if(truncatedTitle.length() > 64)
                             {
-                                truncatedTitle.truncate(64);
-                                truncatedTitle.append("...");
+                                truncatedTitle = truncatedTitle.left(64);
+                                truncatedTitle = makeString(truncatedTitle, "..."_s);
                             }
 
                             menu_entry = (struct menu_entry *) malloc(sizeof(*menu_entry) + strlen(address) + 1);

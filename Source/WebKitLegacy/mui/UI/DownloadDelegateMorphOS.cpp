@@ -30,6 +30,7 @@
 #define NO_INLINE_STDARG
 #endif
 
+#include <wtf/text/MakeString.h>
 #include <WebCore/ResourceResponse.h>
 #include "WebDownload.h"
 #include "WebDownloadPrivate.h"
@@ -274,7 +275,7 @@ void DownloadDelegateMorphOS::didFinish(WebDownload* download)
     free(ptr);
 
     URL url = URL({ }, priv->requestUri);
-    url.setPassword("");
+    url.setPassword(""_s);
     ptr = strdup(url.string().utf8().data());
     stccpy(ccomment, ptr, sizeof(ccomment));
     free(ptr);
@@ -309,7 +310,7 @@ void DownloadDelegateMorphOS::didFailWithError(WebDownload* download, WebError* 
     {
         char cpath[1024];
         char ccomment[80];
-        String comment = String("FAILED ") + priv->requestUri ;
+        String comment = makeString("FAILED "_s, priv->requestUri);
         char *ptr;
 
         ptr = strdup(priv->destinationPath.latin1().data());
@@ -317,8 +318,8 @@ void DownloadDelegateMorphOS::didFailWithError(WebDownload* download, WebError* 
         free(ptr);
 
         URL url = URL({ }, priv->requestUri);
-        url.setPassword("");
-        comment = String("FAILED ") + url.string();
+        url.setPassword(""_s);
+        comment = makeString("FAILED "_s, url.string());
         ptr = strdup(comment.utf8().data());
         stccpy(ccomment, ptr, sizeof(ccomment));
         free(ptr);

@@ -25,6 +25,8 @@
 
 #include "ColorChooserController.h"
 
+#include <WebCore/DataListSuggestionPicker.h>
+
 #include "WebView.h"
 #include "WebChromeClient.h"
 #include <WebCore/ColorChooserClient.h>
@@ -49,16 +51,12 @@ void ColorChooserController::openUI()
     openColorChooser();
 }
 
-void ColorChooserController::setSelectedColor(const Color& color)
+void ColorChooserController::setSelectedColor(const Color&)
 {
-    ASSERT(m_chooser);
-    m_chooser->setSelectedColor(color);
 }
 
 void ColorChooserController::endChooser()
 {
-    if (m_chooser)
-        m_chooser->endChooser();
 }
 
 void ColorChooserController::didChooseColor(const Color& color)
@@ -70,7 +68,6 @@ void ColorChooserController::didChooseColor(const Color& color)
 void ColorChooserController::didEndChooser()
 {
     ASSERT(m_client);
-    m_chooser.reset();
     m_client->didEndChooser();
 }
 
@@ -82,9 +79,6 @@ IntRect ColorChooserController::elementRectRelativeToRootView() const
 
 void ColorChooserController::openColorChooser()
 {
-    ASSERT(!m_chooser);
-    m_chooser = std::make_unique<ColorChooser>();
-
     BalWidget *widget = m_chromeClient->webView()->viewWindow();
 
     if(widget)

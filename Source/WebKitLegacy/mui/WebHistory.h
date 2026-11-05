@@ -165,6 +165,9 @@ public:
      */
     static WebHistory* sharedHistory();
 
+    /** @brief close the history database (called at shutdown on AmigaOS) */
+    static void closeDatabase();
+
     /**
      * @brief add a visited URL to the history.
      * @param url the URL

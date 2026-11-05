@@ -77,11 +77,13 @@ void Widget::removeFromParent()
         parent()->removeChild(*this);
 }
 
+#if !PLATFORM(MUI)
 void Widget::setCursor(const Cursor& cursor)
 {
     if (auto* view = root())
         view->hostWindow()->setCursor(cursor);
 }
+#endif
 
 IntRect Widget::convertFromRootView(const IntRect& rootRect) const
 {
@@ -251,7 +253,7 @@ FloatPoint Widget::convertFromContainingView(const FloatPoint& parentPoint) cons
     return convertFromContainingView(IntPoint(parentPoint));
 }
 
-#if !PLATFORM(COCOA)
+#if !PLATFORM(COCOA) && !PLATFORM(MUI) // MUI has its own Widget (platform/mui/WidgetMorphOS.cpp)
 
 Widget::Widget(PlatformWidget widget)
 {
@@ -313,6 +315,6 @@ IntPoint Widget::convertFromContainingWindowToRoot(const Widget*, const IntPoint
     return point;
 }
 
-#endif // !PLATFORM(COCOA)
+#endif // !PLATFORM(COCOA) && !PLATFORM(MUI)
 
 } // namespace WebCore

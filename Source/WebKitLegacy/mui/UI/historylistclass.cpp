@@ -26,6 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <wtf/text/MakeString.h>
 #include <WebCore/GraphicsContext.h>
 #include "WebHistory.h"
 #include "WebHistoryItem.h"
@@ -335,7 +336,7 @@ DEFMMETHOD(List_Display)
         {
             String fragment = witem->fragment();
             String decoratedURL = url;
-            decoratedURL.replace(fragment, "\033b\033u\33P[ff------]" + fragment + "\033n\33P[80------]");
+            decoratedURL = makeStringByReplacingAll(decoratedURL, fragment, makeString("\033b\033u\33P[ff------]"_s, fragment, "\033n\33P[80------]"_s));
             stccpy(surl, decoratedURL.latin1().data(), sizeof(surl));
         }
         else

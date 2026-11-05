@@ -26,12 +26,15 @@
 #include "config.h"
 #include "VP9Utilities.h"
 
-#include "BitReader.h"
 #include <JavaScriptCore/DataView.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/IntegerToStringConversion.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/StringToIntegerConversion.h>
+
+// TEMP: VP9 off with video (BitReader.h not in SDK). Only GStreamer/libwebrtc/Cocoa use it.
+#if ENABLE(VIDEO)
+#include "BitReader.h"
 
 namespace WebCore {
 
@@ -706,3 +709,4 @@ PlatformVideoColorSpace colorSpaceFromVPCodecConfigurationRecord(const VPCodecCo
 }
 
 } // namespace WebCore
+#endif

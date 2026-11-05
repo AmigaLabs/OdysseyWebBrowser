@@ -19,10 +19,8 @@
 #include "AutofillManager.h"
 
 #include "AutofillBackingStore.h"
-#include <WebCore/HTMLCollection.h>
 #include <WebCore/HTMLFormElement.h>
 #include <WebCore/HTMLInputElement.h>
-#include "HTMLFormControlsCollection.h"
 
 #include "gui.h"
 #include <clib/debug_protos.h>
@@ -32,7 +30,7 @@ namespace WebCore {
 static bool isAutofillable(HTMLInputElement* element)
 {
     return element && element->isTextField() && !element->isPasswordField()
-        && !element->isAutoFilled() && element->shouldAutocomplete();
+        && !element->autofilled() && element->shouldAutocomplete();
 }
 
 RefPtr<AutofillManager> AutofillManager::create(void *browser)
@@ -59,20 +57,16 @@ void AutofillManager::autofillTextField(const String& value)
         return;
 
     m_element->setValue(value);
-    m_element->setAutoFilled();
+    m_element->setAutofilled();
 }
 
 void AutofillManager::saveTextFields(HTMLFormElement* form)
 {
-    RefPtr<HTMLCollection> elements = form->elements();
-    size_t itemCount = elements->length();
-    for (size_t i = 0; i < itemCount; ++i) {
-        if (is<HTMLInputElement>(form->item(i))) {
-            HTMLInputElement* element = downcast<HTMLInputElement>(form->item(i));
-            if (!isAutofillable(element))
-                continue;
-            autofillBackingStore().add(element->getAttribute(HTMLNames::nameAttr).string(), element->value());
-        }
+    for (auto& listed : form->copyListedElementsVector()) {
+        auto* element = dynamicDowncast<HTMLInputElement>(listed->asHTMLElement());
+        if (!element || !isAutofillable(element))
+            continue;
+        autofillBackingStore().add(element->getAttribute(HTMLNames::nameAttr).string(), element->value());
     }
 }
 

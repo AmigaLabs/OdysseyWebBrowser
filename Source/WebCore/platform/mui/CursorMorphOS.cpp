@@ -107,11 +107,5 @@ void Cursor::ensurePlatformCursor() const
 #endif
 }
 
-Cursor& Cursor::operator=(const Cursor& other)
-{
-    //fprintf(stderr, "%s\n", __PRETTY_FUNCTION__);
-    m_platformCursor = other.m_platformCursor;
-    return *this;
-}
 
 }

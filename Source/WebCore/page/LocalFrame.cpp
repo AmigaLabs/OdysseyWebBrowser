@@ -41,6 +41,7 @@
 #include "CachedResourceLoader.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
+#include "DocumentInlines.h"
 #include "DocumentLoader.h"
 #include "DocumentType.h"
 #include "Editing.h"

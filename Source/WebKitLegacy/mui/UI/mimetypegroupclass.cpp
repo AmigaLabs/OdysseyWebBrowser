@@ -27,6 +27,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <wtf/text/MakeString.h>
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/MIMETypeRegistry.h>
 #include <WebCore/PluginData.h>
@@ -394,8 +395,8 @@ DEFTMETHOD(MimeTypeGroup_Change)
 
         free(mn->mimetype);
         mimetype = (char *) getv(data->st_mimefamily, MUIA_String_Contents);
-        mimetype.append("/");
-        mimetype.append((char *) getv(data->st_mimetype, MUIA_String_Contents));
+        mimetype = makeString(mimetype, "/"_s);
+        mimetype = makeString(mimetype, String((char *) getv(data->st_mimetype, MUIA_String_Contents)));
         mn->mimetype = strdup(mimetype.latin1().data());
 
         free(mn->extensions);
@@ -514,10 +515,10 @@ DEFMMETHOD(Import)
 
             for(unsigned int i = 0; i < extensions.size(); i++)
             {
-                    extension.append(extensions[i]);
+                    extension = makeString(extension, String(extensions[i]));
                 if(i < extensions.size() - 1)
                 {
-                    extension.append(" ");
+                    extension = makeString(extension, " "_s);
                 }
             }
 
@@ -590,7 +591,7 @@ DEFMMETHOD(Export)
 
             //if(!mn->builtin)
             {
-              output.append(createWithFormatAndArguments("%s\1%s\1%d\1%s\1%s\1%d\n", mn->mimetype, mn->extensions, mn->action, mn->viewer, mn->parameters, mn->builtin));
+              output = makeString(output, createWithFormatAndArguments("%s\1%s\1%d\1%s\1%s\1%d\n", mn->mimetype, mn->extensions, mn->action, mn->viewer, mn->parameters, mn->builtin));
             }
         }
 

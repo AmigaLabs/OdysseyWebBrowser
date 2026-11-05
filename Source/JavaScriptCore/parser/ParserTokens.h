@@ -39,6 +39,8 @@ class Identifier;
 #define BINARY_OP_PRECEDENCE(prec) (((prec) << BinaryOpTokenPrecedenceShift) | ((prec) << (BinaryOpTokenPrecedenceShift + BinaryOpTokenAllowsInPrecedenceAdditionalShift)))
 #define IN_OP_PRECEDENCE(prec) ((prec) << (BinaryOpTokenPrecedenceShift + BinaryOpTokenAllowsInPrecedenceAdditionalShift))
 
+#pragma push_macro("IMPORT") // AmigaOS exec/types.h defines IMPORT as extern
+#undef IMPORT
 enum JSTokenType {
     // Token Bitfield: 0b000000000RTE00IIIIPPPPKUXXXXXXXX
     // R = right-associative bit
@@ -200,6 +202,7 @@ enum JSTokenType {
     INVALID_UNICODE_ENCODING_ERRORTOK = 17 | CanBeErrorTokenFlag,
     INVALID_IDENTIFIER_UNICODE_ERRORTOK = 18 | CanBeErrorTokenFlag,
 };
+#pragma pop_macro("IMPORT")
 static_assert(static_cast<unsigned>(POW) <= 0x00ffffffU, "JSTokenType must be 24bits.");
 
 struct JSTextPosition {

@@ -43,6 +43,7 @@ public:
     typedef enum { TEMPLATE_GRID, TEMPLATE_3D } displaymode_t;
 
     static TopSitesManager& getInstance();
+    void close();
 
     TopSitesManager();   
     virtual ~TopSitesManager();

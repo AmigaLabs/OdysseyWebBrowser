@@ -39,6 +39,8 @@
 #include <WebCore/HTMLNames.h>
 #include <wtf/URL.h>
 
+using namespace WTF::StringLiterals;
+
 #include "DOMUtilitiesPrivate.h"
 #include "WebPasswordFormUtils.h"
 
@@ -128,7 +130,7 @@ void assemblePasswordFormResult(const URL& fullOrigin,
     // the page where the form was seen), and the "origin" components of the url
     // (scheme, host, and port).
     URL signonRealmURL = stripURL(fullOrigin);
-    signonRealmURL.setPath("");
+    signonRealmURL.setPath(""_s);
     result->signonRealm = signonRealmURL.string();
 
     if (submit)

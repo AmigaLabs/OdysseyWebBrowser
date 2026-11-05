@@ -46,6 +46,7 @@ public:
     
     // DateTimeChooser functions:
     virtual void endChooser();
+    virtual void showChooser(const WebCore::DateTimeChooserParameters&) { openUI(); }
     const WebCore::DateTimeChooserParameters& parameters();    
 
     // WebDateTimeChooserClient functions:
@@ -55,7 +56,6 @@ public:
 
 protected:
     void openDateTimeChooser();
-    DateTimeChooser* m_chooser;
 
 private:
 

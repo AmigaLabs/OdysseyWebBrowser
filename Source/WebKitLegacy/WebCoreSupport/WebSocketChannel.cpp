@@ -29,6 +29,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// TEMP: WebSocket off on MUI (SocketStreamHandleImpl needs CoreFoundation, Apple-only).
+#if !PLATFORM(MUI)
 #include "WebKit.h"
 #include "WebSocketChannel.h"
 
@@ -47,7 +49,7 @@
 #include <WebCore/FileReaderLoader.h>
 #include <WebCore/FrameDestructionObserverInlines.h>
 #include <WebCore/FrameLoader.h>
-#include <WebCore/LegacyWebSocketInspectorInstrumentation.h>
+#include "../../WebCore/inspector/LegacyWebSocketInspectorInstrumentation.h"
 #include <WebCore/LocalFrame.h>
 #include <WebCore/Logging.h>
 #include <WebCore/NetworkingContext.h>
@@ -856,3 +858,4 @@ const ResourceResponse& WebSocketChannel::serverHandshakeResponse() const
 }
 
 } // namespace WebCore
+#endif // !PLATFORM(MUI)

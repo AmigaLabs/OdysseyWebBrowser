@@ -48,18 +48,6 @@
    macros, policy decision macros, and top-level port definitions. */
 #include <wtf/PlatformLegacy.h>
 
-#ifdef __MORPHOS__
-#define WTF_OS_MORPHOS 1
-#endif
-
-#if defined(__AROS__)
-#define WTF_OS_AROS 1
-#endif
-
-#if defined(__amigaos4__)
-#define WTF_OS_AMIGAOS 1
-#endif
-
 /* HAVE() - specific system features (headers, functions or similar) that are present or not */
 #include <wtf/PlatformHave.h>
 
@@ -133,6 +121,11 @@
 #endif
 #if PLATFORM(COCOA)
 #define U_DISABLE_RENAMING 1
+#endif
+
+#if OS(AMIGAOS) || defined(__amigaos4__)
+/* The AmigaOS 4 SDK has no kprintf(); send it to the exec interface. Needs <proto/exec.h>. */
+#define kprintf(...) DebugPrintF(__VA_ARGS__)
 #endif
 
 #if OS(MORPHOS) || OS(AROS) || OS(AMIGAOS)

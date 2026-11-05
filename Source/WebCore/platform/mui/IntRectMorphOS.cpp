@@ -26,20 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "config.h"
-#include "IntRect.h"
+
 namespace WebCore {
-
-  IntRect::IntRect(const BalRectangle& r)
-    : m_location(IntPoint(r.x, r.y))
-      , m_size(r.w, r.h)
-  {
-  }
-
-  IntRect::operator BalRectangle() const
-  {
-    BalRectangle r = { x(), y(), width(), height() };
-    return r;
-  }
 
 }
 

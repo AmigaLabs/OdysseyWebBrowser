@@ -25,6 +25,8 @@
 
 #include "DateTimeChooserController.h"
 
+#include <WebCore/DataListSuggestionPicker.h>
+
 #include "WebView.h"
 #include "WebChromeClient.h"
 #include "DateTimeChooserClient.h"
@@ -54,8 +56,6 @@ void DateTimeChooserController::openUI()
 
 void DateTimeChooserController::endChooser()
 {
-    if (m_chooser)
-        m_chooser->endChooser();
 }
 
 void DateTimeChooserController::didChooseValue(const String& value)
@@ -67,8 +67,6 @@ void DateTimeChooserController::didChooseValue(const String& value)
 void DateTimeChooserController::didEndChooser()
 {
     ASSERT(m_client);
-    delete m_chooser;
-    m_chooser = nullptr;
     m_client->didEndChooser();
 }
 
@@ -79,9 +77,6 @@ const DateTimeChooserParameters & DateTimeChooserController::parameters()
 
 void DateTimeChooserController::openDateTimeChooser()
 {
-    ASSERT(!m_chooser);
-    m_chooser = new DateTimeChooser;
-    
     BalWidget *widget = m_chromeClient->webView()->viewWindow();
 
     if(widget)

@@ -26,6 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <wtf/text/MakeString.h>
 #include <wtf/FileSystem.h>
 
 #include "utils.h"
@@ -66,7 +67,7 @@ String truncate(const String& url, unsigned int size)
 {
     if (url.length() < size)
         return url;
-    return url.substring(0, size) + "...";
+    return makeString(url.substring(0, size), "..."_s);
 }
 
 ULONG strescape(CONST_STRPTR s, STRPTR out)
@@ -605,13 +606,11 @@ char *utf8_to_local(const char *in)
 #endif
 #if OS(AMIGAOS)
     {
-        struct codeset *utfCodeset = CodesetsFindA("UTF-8", NULL);
         ULONG dataConvertedLength;
-        STRPTR dataConverted = CodesetsConvertStr(
+        // Convert UTF-8 page titles/text to the system local charset for MUI widgets.
+        STRPTR dataConverted = CodesetsUTF8ToStr(
                             CSA_Source, (IPTR) in,
-                            CSA_SourceLen, (IPTR) strlen(in),
                             CSA_DestLenPtr, (IPTR) &dataConvertedLength,
-                            CSA_DestCodeset, (IPTR) utfCodeset,
                             TAG_END);
 
         if(dataConverted)
@@ -818,7 +817,7 @@ STRPTR get_accepted_languages(STRPTR code, ULONG len)
 
     return ret;
 }
-#error
+
 STRPTR get_language(STRPTR code, ULONG len)
 {
     struct Locale *l = OpenLocale(NULL);
@@ -922,7 +921,8 @@ bool rexx_send(char *hostname, char *cmd)
                     {
                         if (answer->rm_Result2)
                         {
-                            strncpy (RESULT,(char *)answer->rm_Result2, RESULT_LEN);
+                            strncpy (RESULT,(char *)answer->rm_Result2, RESULT_LEN - 1);
+                            RESULT[RESULT_LEN - 1] = '\0';
                             DeleteArgstring ((char *)answer->rm_Result2);
                         }
                         else

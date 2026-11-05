@@ -985,7 +985,7 @@ static bool tryFastParsingHTMLFragmentImpl(std::span<const CharacterType> source
     return parser.parse(contextElement);
 }
 
-#if !OS(MORPHOS)
+#if !OS(MORPHOS) && !OS(AMIGAOS)
 bool tryFastParsingHTMLFragment(StringView source, Document& document, ContainerNode& destinationParent, Element& contextElement, OptionSet<ParserContentPolicy> policy)
 {
     if (!canUseFastPath(contextElement, policy))

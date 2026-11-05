@@ -34,14 +34,14 @@ public:
     virtual String extraMediaControlsStyleSheet() override;
     virtual String formatMediaControlsRemainingTime(float currentTime, float duration) const override;
 #endif
-    virtual bool supportsHover(const RenderStyle*) const { return true; }
+    virtual bool supportsHover() const override { return true; }
 
-    virtual Seconds caretBlinkInterval() const override;
+    virtual std::optional<Seconds> caretBlinkInterval() const override;
 
     virtual bool paintCheckbox(const RenderObject&, const PaintInfo&, const FloatRect&) override;
-    virtual void setCheckboxSize(RenderStyle&) const override;
+    virtual void setCheckboxSize(RenderStyle&) const;
     virtual bool paintRadio(const RenderObject&, const PaintInfo&, const FloatRect&) override;
-    virtual void setRadioSize(RenderStyle&) const override;
+    virtual void setRadioSize(RenderStyle&) const;
     virtual bool paintButton(const RenderObject&, const PaintInfo&, const IntRect&) override;
     virtual void adjustMenuListStyle(RenderStyle&, const Element*) const override;
     virtual void adjustSliderThumbSize(RenderStyle&, const Element*) const override;
@@ -54,7 +54,7 @@ public:
     virtual LayoutUnit sliderTickSnappingThreshold() const override;
 #endif
 
-    virtual bool supportsDataListUI(const AtomString&) const override;
+    virtual bool supportsDataListUI(const AtomString&) const;
 
 #if ENABLE(PROGRESS_ELEMENT)
     virtual void adjustProgressBarStyle(RenderStyle&, const Element*) const override;
@@ -67,8 +67,8 @@ public:
     virtual Color platformTapHighlightColor() const override;
 #endif
 
-    virtual Color platformFocusRingColor(OptionSet<StyleColor::Options>) const override;
-    virtual bool supportsFocusRing(const RenderStyle& style) const  override;
+    virtual Color platformFocusRingColor(OptionSet<StyleColorOptions>) const override;
+    virtual bool supportsFocusRing(const RenderObject&, const RenderStyle& style) const override;
 
     virtual void adjustButtonStyle(RenderStyle&, const Element*) const override;
     virtual void adjustTextFieldStyle(RenderStyle&, const Element*) const override;
@@ -79,7 +79,7 @@ public:
 
     virtual void adjustSearchFieldStyle(RenderStyle&, const Element*) const override;
     virtual void adjustSearchFieldCancelButtonStyle(RenderStyle&, const Element*) const override;
-    virtual bool paintSearchField(const RenderObject&, const PaintInfo&, const IntRect&) override;
+    virtual bool paintSearchField(const RenderObject&, const PaintInfo&, const FloatRect&) override;
     virtual bool paintSearchFieldCancelButton(const RenderBox&, const PaintInfo&, const IntRect&) override;
 
     virtual void adjustMenuListButtonStyle(RenderStyle&, const Element*) const override;
@@ -88,39 +88,37 @@ public:
     virtual void adjustRadioStyle(RenderStyle&, const Element*) const override;
     virtual bool paintMenuList(const RenderObject&, const PaintInfo&, const FloatRect&) override;
 
-    virtual void adjustMediaControlStyle(RenderStyle&, const Element*) const override;
+    virtual void adjustMediaControlStyle(RenderStyle&, const Element*) const;
     virtual void adjustSliderTrackStyle(RenderStyle&, const Element*) const override;
-    virtual bool paintMediaFullscreenButton(const RenderObject&, const PaintInfo&, const IntRect&) override;
-    virtual bool paintMediaSliderTrack(const RenderObject&, const PaintInfo&, const IntRect&) override;
-    virtual bool paintMediaVolumeSliderTrack(const RenderObject&, const PaintInfo&, const IntRect&) override;
-    virtual bool paintMediaSliderThumb(const RenderObject&, const PaintInfo&, const IntRect&) override;
-    virtual bool paintMediaVolumeSliderThumb(const RenderObject&, const PaintInfo&, const IntRect&) override;
-    virtual bool paintMediaPlayButton(const RenderObject&, const PaintInfo&, const IntRect&) override;
-    virtual bool paintMediaMuteButton(const RenderObject&, const PaintInfo&, const IntRect&) override;
+    virtual bool paintMediaFullscreenButton(const RenderObject&, const PaintInfo&, const IntRect&);
+    virtual bool paintMediaSliderTrack(const RenderObject&, const PaintInfo&, const IntRect&);
+    virtual bool paintMediaVolumeSliderTrack(const RenderObject&, const PaintInfo&, const IntRect&);
+    virtual bool paintMediaSliderThumb(const RenderObject&, const PaintInfo&, const IntRect&);
+    virtual bool paintMediaVolumeSliderThumb(const RenderObject&, const PaintInfo&, const IntRect&);
+    virtual bool paintMediaPlayButton(const RenderObject&, const PaintInfo&, const IntRect&);
+    virtual bool paintMediaMuteButton(const RenderObject&, const PaintInfo&, const IntRect&);
 
     // The platform selection color.
-    virtual Color platformActiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const override;
-    virtual Color platformInactiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const override;
-    virtual Color platformActiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const override;
-    virtual Color platformInactiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const override;
+    virtual Color platformActiveSelectionBackgroundColor(OptionSet<StyleColorOptions>) const override;
+    virtual Color platformInactiveSelectionBackgroundColor(OptionSet<StyleColorOptions>) const override;
+    virtual Color platformActiveSelectionForegroundColor(OptionSet<StyleColorOptions>) const override;
+    virtual Color platformInactiveSelectionForegroundColor(OptionSet<StyleColorOptions>) const override;
 
     // List Box selection color
-    virtual Color platformActiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const override;
-    virtual Color platformActiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const override;
-    virtual Color platformInactiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const override;
-    virtual Color platformInactiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const override;
+    virtual Color platformActiveListBoxSelectionBackgroundColor(OptionSet<StyleColorOptions>) const override;
+    virtual Color platformActiveListBoxSelectionForegroundColor(OptionSet<StyleColorOptions>) const override;
+    virtual Color platformInactiveListBoxSelectionBackgroundColor(OptionSet<StyleColorOptions>) const override;
+    virtual Color platformInactiveListBoxSelectionForegroundColor(OptionSet<StyleColorOptions>) const override;
 
     // Highlighting colors for TextMatches.
-    virtual Color platformTextSearchHighlightColor(OptionSet<StyleColor::Options>) const override;
+    virtual Color platformTextSearchHighlightColor(OptionSet<StyleColorOptions>) const override;
 
     WTF::String fileListNameForWidth(const Vector<String>&, const WebCore::Font&, int) const;
 
 protected:
-    virtual void updateCachedSystemFontDescription(CSSValueID systemFontID, FontCascadeDescription&) const override;
+    virtual void updateCachedSystemFontDescription(CSSValueID systemFontID, FontCascadeDescription&) const;
 
 private:
-    bool canPaint(const PaintInfo&, const Settings&) const final { return true; }
-
     static const String& defaultGUIFont();
 
     // The default variable-width font size. We use this as the default font

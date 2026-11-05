@@ -33,8 +33,10 @@
 #include "Logging.h"
 #include "KeyboardCodes.h"
 #include "BALBase.h"
-#include "TextEncoding.h"
+#include <pal/text/TextEncoding.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/MakeString.h>
+#include <wtf/text/StringConcatenate.h>
 #include <wtf/text/WTFString.h>
 #include <wtf/ASCIICType.h>
 #include <wtf/HexNumber.h>
@@ -368,7 +370,7 @@ static String keyIdentifierForAmigaKeyCode(struct IntuiMessage *im)
                     else if(c == 0xA4) // Euro
                         return "U+20AC";
                     else
-                        return makeString("U+", hex(toASCIIUpper(c), 4));
+                        return WTF::makeString("U+"_s, hex(toASCIIUpper(c), 4));
                 }     
             }
         }
@@ -383,7 +385,7 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(BalEventKey* event)
     , m_isKeypad(event->Qualifier & IEQUALIFIER_NUMERICPAD)
     , m_balEventKey(event)
 {
-    m_type = PlatformEvent::KeyDown;
+    m_type = PlatformEvent::Type::KeyDown;
 
     m_modifiers = OptionSet<PlatformEvent::Modifier>();
 
@@ -407,7 +409,7 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(BalEventKey* event)
     if (IDCMP_RAWKEY == event->Class)
     {
         if (event->Code & IECODE_UP_PREFIX)
-            m_type = PlatformEvent::KeyUp;
+            m_type = PlatformEvent::Type::KeyUp;
 
         switch (event->Code & ~IECODE_UP_PREFIX)
         {
@@ -563,7 +565,7 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(BalEventKey* event)
     if (IDCMP_RAWKEY == event->Class)
     {
         if (event->Code & IECODE_UP_PREFIX)
-            m_type = PlatformEvent::KeyUp;
+            m_type = PlatformEvent::Type::KeyUp;
 
         switch (event->Code & ~IECODE_UP_PREFIX)
         {
@@ -659,13 +661,13 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(BalEventKey* event)
 void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type, bool backwardCompatibilityMode)
 {
     // Can only change type from KeyDown to RawKeyDown or Char, as we lack information for other conversions.
-    ASSERT(m_type == PlatformEvent::KeyDown);
+    ASSERT(m_type == PlatformEvent::Type::KeyDown);
     m_type = type;
 
     if (backwardCompatibilityMode)
         return;
 
-    if (type == PlatformEvent::RawKeyDown)
+    if (type == PlatformEvent::Type::RawKeyDown)
     {
         m_text = String();
         m_unmodifiedText = String();
@@ -673,7 +675,7 @@ void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type, bool backwardCom
     else
     {
         if (m_text.isEmpty() && m_windowsVirtualKeyCode && m_balEventKey->Code < RAWKEY_ESCAPE)
-            m_text.append(UChar(m_windowsVirtualKeyCode));
+            m_text = WTF::makeString(m_text, UChar(m_windowsVirtualKeyCode));
 
         D(kprintf("DisambiguateKeyDownEvent <%s>\n", m_text.latin1().data()));
         m_keyIdentifier = String();
@@ -681,25 +683,23 @@ void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type, bool backwardCom
     }
 }
 
-bool PlatformKeyboardEvent::currentCapsLockState()
-{
-    D(kprintf("currentCapsLockState\n"));
-    return false;
-}
-
 BalEventKey* PlatformKeyboardEvent::balEventKey() const
 {
     return m_balEventKey;
 }
 
-void PlatformKeyboardEvent::getCurrentModifierState(bool& shiftKey, bool& ctrlKey, bool& altKey, bool& metaKey)
+OptionSet<PlatformEvent::Modifier> PlatformKeyboardEvent::currentStateOfModifierKeys()
 {
-    shiftKey = prev_ShiftKey;
-    ctrlKey  = prev_CtrlKey;
-    altKey   = prev_AltKey;
-    metaKey  = prev_MetaKey;
-
-    D(kprintf("getCurrentModifierState Shift %d Alt %d Ctrl %d Meta %d\n", shiftKey, altKey, ctrlKey, metaKey));
+    OptionSet<PlatformEvent::Modifier> modifiers;
+    if (prev_ShiftKey)
+        modifiers.add(PlatformEvent::Modifier::ShiftKey);
+    if (prev_CtrlKey)
+        modifiers.add(PlatformEvent::Modifier::ControlKey);
+    if (prev_AltKey)
+        modifiers.add(PlatformEvent::Modifier::AltKey);
+    if (prev_MetaKey)
+        modifiers.add(PlatformEvent::Modifier::MetaKey);
+    return modifiers;
 }
 
 }

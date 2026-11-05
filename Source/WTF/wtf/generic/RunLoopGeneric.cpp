@@ -236,7 +236,7 @@ void RunLoop::run()
     RunLoop::current().runImpl(RunMode::Drain);
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 void RunLoop::iterate()
 {
     RunLoop::current().runImpl(RunMode::Iterate);

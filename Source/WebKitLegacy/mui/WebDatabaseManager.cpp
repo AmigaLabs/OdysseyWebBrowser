@@ -41,6 +41,7 @@
 
 using namespace WebCore;
 using namespace std;
+using namespace WTF::StringLiterals;
 
 
 class WebDatabaseTracker : public WebCore::DatabaseManagerClient {
@@ -267,7 +268,7 @@ void WebKitInitializeWebDatabasesIfNecessary()
     if (initialized)
         return;
 
-    WTF::String databasesDirectory = FileSystem::pathByAppendingComponent("PROGDIR:", "Databases");
+    WTF::String databasesDirectory = FileSystem::pathByAppendingComponent("PROGDIR:"_s, "Databases"_s);
     WebCore::DatabaseManager::singleton().initialize(databasesDirectory);
 
     initialized = true;

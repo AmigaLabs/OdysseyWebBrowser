@@ -38,10 +38,10 @@
 #if PLATFORM(MUI)
 #include <dos/dos.h>
 #include <proto/dos.h>
+#include <proto/exec.h>
 #if !OS(AROS) && !OS(AMIGAOS)
 #include <proto/asyncio.h>
 #endif
-#include <clib/debug_protos.h>
 #define D(x)
 #endif
 

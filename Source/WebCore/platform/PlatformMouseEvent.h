@@ -32,6 +32,9 @@
 #include "PointerID.h"
 #include <wtf/UUID.h>
 #include <wtf/WindowsExtras.h>
+#if PLATFORM(MUI)
+#include "BALBase.h"
+#endif
 
 namespace WebCore {
 
@@ -83,6 +86,10 @@ public:
     WEBCORE_EXPORT PlatformMouseEvent(HWND, UINT, WPARAM, LPARAM, bool didActivateWebView = false);
     void setClickCount(int count) { m_clickCount = count; }
     bool didActivateWebView() const { return m_didActivateWebView; }
+#endif
+
+#if PLATFORM(MUI)
+    PlatformMouseEvent(BalEventButton*);
 #endif
 
 #if PLATFORM(GTK)

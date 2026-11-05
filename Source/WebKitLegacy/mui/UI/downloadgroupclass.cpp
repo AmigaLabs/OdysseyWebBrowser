@@ -139,25 +139,25 @@ void restore_download_state(Object *obj, struct Data *data)
                 dl->iconimg   = NULL;
                 dl->iconobj   = NULL;
 
-                if(downloadAttributes[0] == "D")
+                if(downloadAttributes[0] == "D"_s)
                 {
                     dl->state = WEBKIT_WEB_DOWNLOAD_STATE_STARTED;
                     stccpy(dl->status, GSI(MSG_DOWNLOADGROUP_INTERRUPTED), sizeof(dl->status)); // Translate
                     DoMethod(data->lv_failed, MUIM_List_InsertSingle, dl, MUIV_List_Insert_Bottom);
                 }
-                else if(downloadAttributes[0] == "E")
+                else if(downloadAttributes[0] == "E"_s)
                 {
                     dl->state = WEBKIT_WEB_DOWNLOAD_STATE_ERROR;
                     stccpy(dl->status, downloadAttributes[1].latin1().data(), sizeof(dl->status));
                     DoMethod(data->lv_failed, MUIM_List_InsertSingle, dl, MUIV_List_Insert_Bottom);
                 }
-                else if(downloadAttributes[0] == "C")
+                else if(downloadAttributes[0] == "C"_s)
                 {
                     dl->state = WEBKIT_WEB_DOWNLOAD_STATE_CANCELLED;
                     stccpy(dl->status, GSI(MSG_DOWNLOADGROUP_CANCELLED_BY_USER), sizeof(dl->status));
                     DoMethod(data->lv_failed, MUIM_List_InsertSingle, dl, MUIV_List_Insert_Bottom);
                 }
-                else if(downloadAttributes[0] == "F")
+                else if(downloadAttributes[0] == "F"_s)
                 {
                     dl->state = WEBKIT_WEB_DOWNLOAD_STATE_FINISHED;
                     *dl->status = '\0';
@@ -216,10 +216,10 @@ void save_download_state()
         String status = dl->status;
         if(url.startsWith("http") || url.startsWith("ftp"))
         {
-            url.replace("\n", "\0");
-            url.replace("\r", "\0");
-            status.replace("\n", "\0");
-            status.replace("\r", "\0");
+            url = makeStringByReplacingAll(url, "\n"_s, ""_s);
+            url = makeStringByReplacingAll(url, "\r"_s, ""_s);
+            status = makeStringByReplacingAll(status, "\n"_s, ""_s);
+            status = makeStringByReplacingAll(status, "\r"_s, ""_s);
             downloadFile->write(createWithFormatAndArguments("%s\1%s\1%s\1%s\1%s\1%s\n", state, status.latin1().data(), url.latin1().data(), dl->path, dl->filename, dl->originurl));
         }
     }

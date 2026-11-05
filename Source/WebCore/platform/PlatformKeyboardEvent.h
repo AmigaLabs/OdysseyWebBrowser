@@ -46,6 +46,10 @@ OBJC_CLASS WebEvent;
 struct IntuiMessage;
 #endif
 
+#if PLATFORM(MUI)
+#include "BALBase.h"
+#endif
+
 namespace WebCore {
 
     class PlatformKeyboardEvent : public PlatformEvent {
@@ -137,6 +141,11 @@ namespace WebCore {
 		PlatformKeyboardEvent(struct IntuiMessage *imsg);
 #endif
 
+#if PLATFORM(MUI)
+        PlatformKeyboardEvent(BalEventKey*);
+        BalEventKey* balEventKey() const;
+#endif
+
 #if PLATFORM(GTK)
         // Used by WebKit2
         static String keyValueForGdkKeyCode(unsigned);
@@ -183,6 +192,10 @@ namespace WebCore {
 
 #if OS(MORPHOS)
 	struct IntuiMessage *m_intuiMessage;
+#endif
+
+#if PLATFORM(MUI)
+        BalEventKey* m_balEventKey { nullptr };
 #endif
 
 #if PLATFORM(COCOA)

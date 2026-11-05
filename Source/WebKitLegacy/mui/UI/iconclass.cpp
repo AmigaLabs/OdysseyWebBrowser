@@ -29,6 +29,7 @@
 #include <WebCore/GraphicsContext.h>
 #include "WebIconDatabase.h"
 #include <WebCore/BitmapImage.h>
+#include <WebCore/ImageAdapter.h>
 #include <wtf/text/CString.h>
 
 #include <cairo.h>
@@ -109,16 +110,16 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                 if(data->cr)
                 {
-                    static RefPtr<WebCore::Image> defaultIcon = 0;
+                    static RefPtr<WebCore::Image> defaultIcon = nullptr;
                     if (!defaultIcon)
-                        defaultIcon = WebCore::Image::loadPlatformResource("defaultIcon");
+                        defaultIcon = WebCore::ImageAdapter::loadPlatformResource("defaultIcon");
                                             
-                    RefPtr<WebCore::Image> image = WebCore::Image::loadPlatformResource(data->path);
+                    RefPtr<WebCore::Image> image = WebCore::ImageAdapter::loadPlatformResource(data->path);
                     WebCore::BitmapImage* icon = (WebCore::BitmapImage*) image.get();
 
                     if(icon)
                     {
-                        cairo_surface_t * icon_surface = icon->nativeImageForCurrentFrame()->platformImage().get();
+                        cairo_surface_t * icon_surface = icon->nativeImage()->platformImage().get();
 
                         if(!icon_surface)
                         {
@@ -126,7 +127,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                             if(icon)
                             {
-                              icon_surface = icon->nativeImageForCurrentFrame()->platformImage().get();
+                              icon_surface = icon->nativeImage()->platformImage().get();
                             }
                         }
                                 

@@ -30,6 +30,7 @@ public:
 
     AutofillBackingStore();
     ~AutofillBackingStore();
+    void close();
     bool open(const String& dbPath);
     bool add(const String& name, const String& value);
     Vector<String> get(const String& name, const String& valueHint);

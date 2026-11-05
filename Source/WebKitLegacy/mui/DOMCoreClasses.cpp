@@ -42,6 +42,7 @@
 #include <WebCore/Event.h>
 #include <WebCore/HTMLCollection.h>
 #include <WebCore/HTMLFormElement.h>
+#include <WebCore/LocalDOMWindow.h>
 #include <WebCore/HTMLInputElement.h>
 #include <WebCore/HTMLCollection.h>
 #include <WebCore/HTMLNames.h>
@@ -356,7 +357,7 @@ DOMElement* DOMDocument::createElement(const char* tagName)
     if (!m_document)
         return 0;
 
-    return DOMElement::createInstance(m_document->createElementForBindings(tagName).releaseReturnValue().ptr());
+    return DOMElement::createInstance(m_document->createElementForBindings(AtomString(String(tagName))).releaseReturnValue().ptr());
 }
 
 /*DOMDocumentFragment* DOMDocument::createDocumentFragment()
@@ -402,7 +403,7 @@ DOMNodeList* DOMDocument::getElementsByTagName(const char* tagName)
     String tagNameString(tagName);
     RefPtr<WebCore::NodeList> elements;
     if (!tagNameString.isNull())
-        elements = m_document->getElementsByTagName(tagNameString);
+        elements = m_document->getElementsByTagName(AtomString(tagNameString));
 
     return DOMNodeList::createInstance(elements.get());
 }
@@ -431,7 +432,7 @@ DOMNodeList* DOMDocument::getElementsByTagNameNS(const char* namespaceURI, const
     String localNameString(localName);
     RefPtr<WebCore::NodeList> elements;
     if (!localNameString.isNull())
-        elements = m_document->getElementsByTagNameNS(namespaceURIString, localNameString);
+        elements = m_document->getElementsByTagNameNS(AtomString(namespaceURIString), AtomString(localNameString));
     return DOMNodeList::createInstance(elements.get());
 }
 
@@ -440,7 +441,7 @@ DOMElement* DOMDocument::getElementById(const char* elementId)
     if (!m_document)
         return 0;
 
-    return DOMElement::createInstance(m_document->getElementById(String(elementId)));
+    return DOMElement::createInstance(m_document->getElementById(String(elementId)).get());
 }
 
 // DOMDocument - DOMViewCSS --------------------------------------------------
@@ -452,7 +453,7 @@ DOMCSSStyleDeclaration* DOMDocument::getComputedStyle(DOMElement* elt, const cha
 
     Element* element = elt->element();
 
-    WebCore::DOMWindow* dv = m_document->domWindow();
+    WebCore::LocalDOMWindow* dv = m_document->domWindow();
     
     if (!dv)
         return 0;
@@ -504,7 +505,8 @@ BalRectangle DOMElement::boundingBox()
 
     WebCore::RenderObject *renderer = m_element->renderer();
     if (renderer) {
-        return renderer->absoluteBoundingBoxRect();
+        auto r = renderer->absoluteBoundingBoxRect();
+        return BalRectangle { r.x(), r.y(), r.width(), r.height() };
     }
 
     return BalRectangle();
@@ -528,7 +530,7 @@ const char* DOMElement::getAttribute(const char* name)
 {
     if (!m_element)
         return "";
-    return strdup(m_element->getAttribute(name).string().utf8().data());
+    return strdup(m_element->getAttribute(AtomString(String(name))).string().utf8().data());
 }
     
 void DOMElement::setAttribute(const char* name, const char* value)
@@ -536,7 +538,7 @@ void DOMElement::setAttribute(const char* name, const char* value)
     if (!m_element)
         return;
 
-    m_element->setAttribute(name, value);
+    m_element->setAttribute(AtomString(String(name)), AtomString(String(value)));
 }
     
 void DOMElement::removeAttribute(const char* /*name*/)
@@ -678,7 +680,7 @@ const char * DOMElement::shadowPseudoId()
     if (!m_element)
         return "";
 
-    return strdup(m_element->shadowPseudoId().string().utf8().data());
+    return strdup(""); // shortcut: 2.48 removed Element::shadowPseudoId, no equivalent, return empty until a caller needs it
 }
 
 // DOMElementCSSInlineStyle --------------------------------------------------

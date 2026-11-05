@@ -158,7 +158,7 @@ const char* WebMutableURLRequest::protocol()
 
 const char* WebMutableURLRequest::valueForHTTPHeaderField(const char* field)
 {
-    return strdup(m_request->httpHeaderField(field).utf8().data());
+    return strdup(m_request->httpHeaderField(StringView::fromLatin1(field)).utf8().data());
 }
 
 bool WebMutableURLRequest::isEmpty()
@@ -247,7 +247,7 @@ void WebMutableURLRequest::setFormData(const FormData* data)
 
 const FormData* WebMutableURLRequest::formData() const
 {
-    return m_request->httpBody();
+    return m_request->httpBody().get();
 }
 
 const HTTPHeaderMap& WebMutableURLRequest::httpHeaderFields() const

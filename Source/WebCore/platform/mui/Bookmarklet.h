@@ -26,28 +26,42 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "SSLKeyGenerator.h"
+/**
+ * @file  BCBookmarklet.h
+ *
+ * Header file for BCBookmarklet.
+ *
+ * Repository informations :
+ * - $URL$
+ * - $Rev$
+ * - $Date: 2013/03/06 00:36:45 $
+ */
 
-#include "NotImplemented.h"
+#ifndef BOOKMARKLET_H
+#define BOOKMARKLET_H
+
+#include "config.h"
+#include "BALBase.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
-Vector<String> supportedKeySizes()
-{ 
-    notImplemented();
-    return Vector<String>();
+/**
+ * The BIBookmarklet implementation for Linux
+ */
+
+    class Bookmarklet {
+        public:
+            Bookmarklet(String);
+            virtual ~Bookmarklet();
+
+            virtual void replacePattern(String, String);
+            virtual String data() { return m_bookmarkletData; }
+            virtual void run();
+        private:
+            String m_bookmarkletData;
+    };
+
 }
 
-String signedPublicKeyAndChallengeString(unsigned , const String &, const URL &)
-{
-    return String();
-}
-
-void getSupportedKeySizes(Vector<String>&)
-{
-    notImplemented();
-}
-
-}
-
+#endif //BOOKMARKLET_H

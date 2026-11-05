@@ -37,6 +37,7 @@
 #include "DataTransfer.h"
 #include "Document.h"
 #include "DocumentFragment.h"
+#include "DocumentInlines.h"
 #include "DragActions.h"
 #include "DragClient.h"
 #include "DragData.h"

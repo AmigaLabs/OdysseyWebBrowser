@@ -60,6 +60,25 @@ void dprintf(const char *fmt, ... );
 };
 #define CURL_TRACES 0
 #define CURL_DUMPDATA 0
+#elif OS(AMIGAOS)
+#include <proto/exec.h>
+// libcurl verbose trace goes to the serial port (DebugPrintF). Set CURL_TRACES to 1 to enable.
+#define dprintf DebugPrintF
+#define CURL_TRACES 0
+#define CURL_DUMPDATA 0
+#endif
+
+#if PLATFORM(MUI)
+#include <sys/socket.h>
+static int curlLimitSockOptCallback(void* /*clientp*/, curl_socket_t curlfd, curlsocktype purpose)
+{
+    if (purpose == CURLSOCKTYPE_IPCXN) {
+        // Cap receive buffer at 512 KB to avoid the 2MB DMA cache-flush kernel bug.
+        int rcvbuf = 512 * 1024;
+        setsockopt((int)curlfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    }
+    return CURL_SOCKOPT_OK;
+}
 #endif
 
 namespace WebCore {
@@ -155,7 +174,7 @@ CurlContext::~CurlContext()
 #endif
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 void CurlContext::stopThread()
 {
 	m_scheduler->stopCurlThread();
@@ -427,6 +446,10 @@ CurlHandle::CurlHandle()
 
 #if OS(MORPHOS)
     curl_easy_setopt(m_handle, CURLOPT_BUFFERSIZE, 64 * 1024);
+#endif
+
+#if PLATFORM(MUI)
+    curl_easy_setopt(m_handle, CURLOPT_SOCKOPTFUNCTION, curlLimitSockOptCallback);
 #endif
 
 #if CURL_TRACES

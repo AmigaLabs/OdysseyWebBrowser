@@ -42,6 +42,9 @@
 #include <wtf/text/AtomStringHash.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/MakeString.h>
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#endif
 
 namespace WebCore {
 
@@ -102,8 +105,9 @@ RefPtr<ResourceHandle> ResourceHandle::create(NetworkingContext* context, const 
 
     auto newHandle = adoptRef(*new ResourceHandle(context, request, client, defersLoading, shouldContentSniff, contentEncodingSniffingPolicy, WTFMove(sourceOrigin), isMainFrameNavigation));
 
-    if (newHandle->d->m_scheduledFailureType != NoFailure)
+    if (newHandle->d->m_scheduledFailureType != NoFailure) {
         return newHandle;
+    }
 
     if (newHandle->start())
         return newHandle;
@@ -304,7 +308,7 @@ void ResourceHandle::setDefersLoading(bool defers)
     platformSetDefersLoading(defers);
 }
 
-#if USE(SOUP) || (USE(CURL) && !OS(MORPHOS))
+#if USE(SOUP) || (USE(CURL) && !OS(MORPHOS) && !OS(AMIGAOS)) // AmigaOS uses ResourceHandleCurl.cpp, like MorphOS
 ResourceHandleInternal::~ResourceHandleInternal() = default;
 
 ResourceHandle::~ResourceHandle()

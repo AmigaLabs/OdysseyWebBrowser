@@ -29,6 +29,7 @@
 #include "WebDataSource.h"
 
 #include "WebDocumentLoader.h"
+#include <WebCore/DocumentInlines.h>
 #include "WebError.h"
 #include "WebFrame.h"
 #include "WebFrameLoaderClient.h"
@@ -96,7 +97,7 @@ void WebDataSource::initWithRequest(WebMutableURLRequest* /*request*/)
 RefPtr<SharedBuffer> WebDataSource::data()
 {
     if (!m_loader)
-        return 0;
+        return nullptr;
 
     return m_loader->mainResourceData();
 }

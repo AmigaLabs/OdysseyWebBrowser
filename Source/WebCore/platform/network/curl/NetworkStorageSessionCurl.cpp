@@ -52,6 +52,9 @@ static String defaultCookieJarPath()
 {
 #if OS(MORPHOS)
 	return _cookieJarPath;
+#elif OS(AMIGAOS)
+    // Absolute path: a relative name depends on the current directory.
+    return "PROGDIR:Conf/cookies.db"_s;
 #else
     static constexpr auto defaultFileName = "cookie.jar.db"_s;
     char* cookieJarPath = getenv("CURL_COOKIE_JAR_PATH");

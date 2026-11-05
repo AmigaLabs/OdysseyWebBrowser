@@ -28,6 +28,12 @@
 #include "config.h"
 #include "CurlRequestScheduler.h"
 #include <wtf/TZoneMallocInlines.h>
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#if PLATFORM(MUI)
+#include <unistd.h>
+#endif
+#endif
 
 #if USE(CURL)
 
@@ -128,7 +134,7 @@ void CurlRequestScheduler::stopThreadIfNoMoreJobRunning()
 #endif
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 void CurlRequestScheduler::stopCurlThread()
 {
 	m_stopped = true;
@@ -187,11 +193,18 @@ void CurlRequestScheduler::workerThread()
         executeTasks();
 
 #if 1
+        CURLMcode mc = CURLM_OK;
+#if PLATFORM(MUI)
+        // curl_multi_poll() is unreliable on MUI and can stall request completion (and spin the CPU).
+        // Use a fixed 10 ms tick instead (as in 2.34).
+        usleep(10 * 1000);
+#else
         const int selectTimeoutMS = 500;
-        CURLMcode mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
+        mc = m_curlMultiHandle->poll({ }, selectTimeoutMS);
         if (mc != CURLM_OK && mc != CURLM_UNRECOVERABLE_POLL) {
             break;
         }
+#endif
         int activeCount = 0;
         mc = m_curlMultiHandle->perform(activeCount);
         if (mc != CURLM_OK) {
@@ -242,7 +255,11 @@ void CurlRequestScheduler::startTransfer(CurlRequestSchedulerClient* client)
             return;
         }
 
-        m_curlMultiHandle->addHandle(handle);
+        auto addResult = m_curlMultiHandle->addHandle(handle);
+        if (addResult != CURLM_OK) {
+            completeTransfer(client, CURLE_FAILED_INIT);
+            return;
+        }
 
         ASSERT(!m_clientMaps.contains(handle));
         m_clientMaps.set(handle, client);
@@ -278,9 +295,10 @@ void CurlRequestScheduler::finalizeTransfer(CurlRequestSchedulerClient* client, 
 
     auto task = [this, client, completionHandler = WTFMove(completionHandler)]() {
         if (client->handle()) {
-            ASSERT(m_clientMaps.contains(client->handle()));
-            m_clientMaps.remove(client->handle());
-            m_curlMultiHandle->removeHandle(client->handle());
+            if (m_clientMaps.contains(client->handle())) {
+                m_clientMaps.remove(client->handle());
+                m_curlMultiHandle->removeHandle(client->handle());
+            }
         }
 
         completionHandler();

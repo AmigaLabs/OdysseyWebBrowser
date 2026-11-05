@@ -32,6 +32,7 @@
 #include "WebFrameLoaderClient.h"
 
 #include <WebCore/Frame.h>
+#include <WebCore/LocalFrame.h>
 #include <WebCore/FrameLoader.h>
 #include <WebCore/FrameLoaderClient.h>
 
@@ -76,7 +77,7 @@ void WebFramePolicyListener::continueSubmit(void)
 
 void WebFramePolicyListener::receivedPolicyDecision(PolicyAction action)
 {
-    Frame* coreFrame = core(m_frame);
+    LocalFrame* coreFrame = core(m_frame);
     if (coreFrame)
         static_cast<WebFrameLoaderClient&>(coreFrame->loader().client()).receivedPolicyDecision(action);
 }

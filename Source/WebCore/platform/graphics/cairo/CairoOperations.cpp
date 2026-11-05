@@ -965,12 +965,32 @@ void drawSurface(GraphicsContextCairo& platformContext, cairo_surface_t* surface
         IntRect subsurfaceRect = calculateSubsurfaceRect(destRect, srcRect, surfaceSize, padding);
         // We use a subsurface here so that we don't end up sampling outside the originalSrcRect rectangle.
         // See https://bugs.webkit.org/show_bug.cgi?id=58309
+#if OS(AMIGAOS)
+        // On AmigaOS4 (big-endian PPC), cairo_surface_create_for_rectangle() creates a subsurface
+        // with a device offset that Cairo 1.14.x's bilinear filter mishandles, causing R/B channel
+        // swaps in scaled images. Copy the pixels into a standalone surface instead (as in 2.34).
+        patternSurface = adoptRef(cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+            subsurfaceRect.width(), subsurfaceRect.height()));
+        {
+            auto copyCtx = adoptRef(cairo_create(patternSurface.get()));
+            cairo_set_source_surface(copyCtx.get(), surface, -subsurfaceRect.x(), -subsurfaceRect.y());
+            cairo_set_operator(copyCtx.get(), CAIRO_OPERATOR_SOURCE);
+            cairo_paint(copyCtx.get());
+        }
+#else
         patternSurface = adoptRef(cairo_surface_create_for_rectangle(surface, subsurfaceRect.x(),
             subsurfaceRect.y(), subsurfaceRect.width(), subsurfaceRect.height()));
+#endif
     }
 
     RefPtr<cairo_pattern_t> pattern = adoptRef(cairo_pattern_create_for_surface(patternSurface.get()));
 
+#if OS(AMIGAOS)
+    // Cairo 1.14.x's bilinear filter has a big-endian byte-order bug that swaps R/B channels
+    // in scaled images on PPC. Use nearest-neighbor for every quality (as in 2.34).
+    // shortcut: no smooth scaling, upgrade when Cairo/pixman is fixed on AmigaOS.
+    cairo_pattern_set_filter(pattern.get(), CAIRO_FILTER_NEAREST);
+#else
     switch (imageInterpolationQuality) {
     case InterpolationQuality::DoNotInterpolate:
         cairo_pattern_set_filter(pattern.get(), CAIRO_FILTER_FAST);
@@ -986,6 +1006,7 @@ void drawSurface(GraphicsContextCairo& platformContext, cairo_surface_t* surface
         cairo_pattern_set_filter(pattern.get(), CAIRO_FILTER_BEST);
         break;
     }
+#endif
     cairo_pattern_set_extend(pattern.get(), CAIRO_EXTEND_PAD);
 
     // The pattern transformation properly scales the pattern for when the source rectangle is a

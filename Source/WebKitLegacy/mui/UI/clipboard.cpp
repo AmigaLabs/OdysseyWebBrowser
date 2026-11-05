@@ -114,7 +114,7 @@ static void copycollection(String &str, CollectionItem* ci, uint32 codeSet)
 
     if (CODESET_UTF8 == codeSet)
     {
-        str = String::fromUTF8((const char *)ci->ci_Data, ci->ci_Size);
+        str = String::fromUTF8(std::span<const char> { (const char *)ci->ci_Data, (size_t)ci->ci_Size });
     }
     else if (CODESET_LOCAL == codeSet)
     {
@@ -664,7 +664,7 @@ static struct IOClipReq *clipReq;
 
 ULONG clipHook (struct Hook * h, VOID * o, struct ClipHookMsg * msg)
 {
-        Pasteboard::createForGlobalSelection()->clear();
+        Pasteboard::createForCopyAndPaste(nullptr)->clear();
     //Pasteboard::generalPasteboard()->clear();
     return (0);
 }

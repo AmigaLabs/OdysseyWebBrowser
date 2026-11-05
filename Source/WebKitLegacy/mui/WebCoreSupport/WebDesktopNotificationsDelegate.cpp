@@ -30,7 +30,7 @@
 #include "WebDesktopNotificationsDelegate.h"
 #include "WebSecurityOrigin.h"
 #include "WebView.h"
-#include <WebCore/NotificationPermissionCallback.h>
+#include <WebCore/NotificationData.h>
 #include <wtf/text/CString.h>
 
 #include <clib/debug_protos.h>
@@ -45,22 +45,23 @@ WebDesktopNotificationsDelegate::WebDesktopNotificationsDelegate(WebView* webVie
 {
 }
 
-bool WebDesktopNotificationsDelegate::show(Notification* object)
+bool WebDesktopNotificationsDelegate::show(ScriptExecutionContext& context, NotificationData&& data, RefPtr<NotificationResources>&&, CompletionHandler<void()>&& completionHandler)
 {
-    if (object->scriptExecutionContext()->isWorkerGlobalScope())
+    if (context.isWorkerGlobalScope())
     return false;
 
-    kprintf("show [%s]\n%s\n", object->title().latin1().data(), object->body().latin1().data());
+    kprintf("show [%s]\n%s\n", data.title.latin1().data(), data.body.latin1().data());
+    completionHandler();
 
     return true;
 }
 
-void WebDesktopNotificationsDelegate::cancel(Notification* object)
+void WebDesktopNotificationsDelegate::cancel(NotificationData&&)
 {
   D(kprintf("cancel\n"));
 }
 
-void WebDesktopNotificationsDelegate::notificationObjectDestroyed(Notification*)
+void WebDesktopNotificationsDelegate::notificationObjectDestroyed(NotificationData&&)
 {
   D(kprintf("objectdestroyed\n"));
 }

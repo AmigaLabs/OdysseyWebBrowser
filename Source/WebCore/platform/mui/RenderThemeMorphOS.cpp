@@ -26,14 +26,15 @@
 #include "Gradient.h"
 #include "HTMLMediaElement.h"
 #include "HostWindow.h"
+#include "ImageAdapter.h"
 #include "InputType.h"
 #include "InputTypeNames.h"
 //#include "MediaControlElements.h"
 #include "Page.h"
 #include "PaintInfo.h"
-#include "RenderFullScreen.h"
 #include "RenderProgress.h"
 #include "RenderSlider.h"
+#include "RenderStyleSetters.h"
 #include "RenderView.h"
 #include "UserAgentStyleSheets.h"
 #include "LocalizedStrings.h"
@@ -149,7 +150,7 @@ const String& RenderThemeBal::defaultGUIFont()
 
 static Ref<Gradient> createLinearGradient(SRGBA<uint8_t> top, SRGBA<uint8_t> bottom, const IntPoint& a, const IntPoint& b)
 {
-    Ref<Gradient> gradient = Gradient::create(Gradient::LinearData { a, b });
+    Ref<Gradient> gradient = Gradient::create(Gradient::LinearData { a, b }, { ColorInterpolationMethod::SRGB { } });
     gradient.get().addColorStop({ 0.0, Color(top) });
     gradient.get().addColorStop({ 1.0, Color(bottom) });
     return gradient;
@@ -170,9 +171,7 @@ static Path roundedRectForBorder(const RenderObject& object, const FloatRect& re
 
 static RenderSlider* determineRenderSlider(RenderObject* object)
 {
-    ASSERT(object->isSliderThumb());
-    // The RenderSlider is an ancestor of the slider thumb.
-    while (object && !object->isSlider())
+    while (object && !object->isRenderSlider())
         object = object->parent();
     return downcast<RenderSlider>(object);
 }
@@ -252,14 +251,14 @@ String RenderThemeBal::formatMediaControlsRemainingTime(float, float duration) c
 }
 #endif
 
-Seconds RenderThemeBal::caretBlinkInterval() const
+std::optional<Seconds> RenderThemeBal::caretBlinkInterval() const
 {
     return Seconds(1.0);
 }
 
 void RenderThemeBal::setButtonStyle(RenderStyle& style) const
 {
-    int vertPadding = (style.computedFontPixelSize() / paddingDivisor);
+    int vertPadding = (style.computedFontSize() / paddingDivisor);
     style.setPaddingTop(Length(vertPadding, LengthType::Fixed));
     style.setPaddingBottom(Length(vertPadding, LengthType::Fixed));
 }
@@ -291,7 +290,7 @@ bool RenderThemeBal::paintTextFieldOrTextAreaOrSearchField(const RenderObject& o
     GraphicsContext& context = info.context();
 
     context.save();
-    context.setStrokeStyle(SolidStroke);
+    context.setStrokeStyle(StrokeStyle::SolidStroke);
     context.setStrokeThickness(lineWidth);
     if (!isEnabled(object))
         context.setStrokeColor(disabledOutline);
@@ -303,7 +302,7 @@ bool RenderThemeBal::paintTextFieldOrTextAreaOrSearchField(const RenderObject& o
         context.setStrokeGradient(createLinearGradient(regularTopOutline, regularBottomOutline, rect.maxXMinYCorner(), rect.maxXMaxYCorner()));
 
     Path textFieldRoundedRectangle = roundedRectForBorder(object, rect);
-    if (object.style().appearance() == SearchFieldPart) {
+    if (object.style().appearance() == StyleAppearance::SearchField) {
         // We force the fill color to White so as to match the background color of the search cancel button graphic.
         context.setFillColor(Color::white);
         context.fillPath(textFieldRoundedRectangle);
@@ -332,21 +331,22 @@ void RenderThemeBal::adjustSearchFieldCancelButtonStyle(RenderStyle& style, cons
     static const float maxCancelButtonSize = 21;
 
     // Scale the button size based on the font size
-    float fontScale = style.computedFontPixelSize() / defaultControlFontPixelSize;
+    float fontScale = style.computedFontSize() / defaultControlFontPixelSize;
     int cancelButtonSize = lroundf(std::min(std::max(minCancelButtonSize, defaultCancelButtonSize * fontScale), maxCancelButtonSize));
     style.setWidth(Length(cancelButtonSize, LengthType::Fixed));
     style.setHeight(Length(cancelButtonSize, LengthType::Fixed));
 }
 
-bool RenderThemeBal::paintSearchField(const RenderObject& object, const PaintInfo& info, const IntRect& rect)
+bool RenderThemeBal::paintSearchField(const RenderObject& object, const PaintInfo& info, const FloatRect& r)
 {
+    IntRect rect(r.x(), r.y(), r.width(), r.height());
     return paintTextFieldOrTextAreaOrSearchField(object, info, rect);
 }
 
 bool RenderThemeBal::paintSearchFieldCancelButton(const RenderBox& object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    ASSERT(object->parent());
-    if (!object.parent() || !object.parent()->isBox())
+    ASSERT(object.parent());
+    if (!object.parent() || !object.parent()->isRenderBox())
         return false;
 
     RenderBox* parentRenderBox = downcast<RenderBox>(object.parent());
@@ -362,8 +362,8 @@ bool RenderThemeBal::paintSearchFieldCancelButton(const RenderBox& object, const
     // to the bottom of the field. This would look better with the text.
     bounds.setY(parentBox.y() + (parentBox.height() - bounds.height() + 1) / 2);
 
-    static Image& cancelImage = Image::loadPlatformResource("SearchCancel").leakRef();
-    static Image& cancelPressedImage = Image::loadPlatformResource("SearchCancelPressed").leakRef();
+    static Image& cancelImage = ImageAdapter::loadPlatformResource("SearchCancel").leakRef();
+    static Image& cancelPressedImage = ImageAdapter::loadPlatformResource("SearchCancelPressed").leakRef();
     paintInfo.context().drawImage(isPressed(object) ? cancelPressedImage : cancelImage, bounds);
     return false;
 }
@@ -374,7 +374,7 @@ void RenderThemeBal::adjustMenuListButtonStyle(RenderStyle& style, const Element
     const int paddingLeft = 8;
     const int paddingRight = 4;
 
-    const int minHeight = style.computedFontPixelSize() * 2;
+    const int minHeight = style.computedFontSize() * 2;
 
     style.resetPadding();
     style.setHeight(Length(LengthType::Auto));
@@ -386,8 +386,8 @@ void RenderThemeBal::adjustMenuListButtonStyle(RenderStyle& style, const Element
 
 void RenderThemeBal::calculateButtonSize(RenderStyle& style) const
 {
-    int size = style.computedFontPixelSize();
-    if (style.appearance() == CheckboxPart || style.appearance() == RadioPart) {
+    int size = style.computedFontSize();
+    if (style.appearance() == StyleAppearance::Checkbox || style.appearance() == StyleAppearance::Radio) {
         style.setWidth(Length(size, LengthType::Fixed));
         style.setHeight(Length(size, LengthType::Fixed));
         return;
@@ -444,7 +444,7 @@ bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& in
     ASSERT(info.context);
     info.context().save();
 
-    info.context().setStrokeStyle(SolidStroke);
+    info.context().setStrokeStyle(StrokeStyle::SolidStroke);
     info.context().setStrokeThickness(lineWidth);
 
     Color check(blackPen);
@@ -459,9 +459,9 @@ bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& in
         info.context().setStrokeGradient(createLinearGradient(regularTopOutline, regularBottomOutline, rect.maxXMinYCorner(), rect.maxXMaxYCorner()));
     }
 
-    ControlPart part = object.style().appearance();
+    StyleAppearance part = object.style().appearance();
     switch (part) {
-    case CheckboxPart: {
+    case StyleAppearance::Checkbox: {
         FloatSize smallCorner(smallRadius, smallRadius);
         Path path;
         path.addRoundedRect(rect, smallCorner);
@@ -475,7 +475,7 @@ bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& in
             checkPath.moveTo(FloatPoint(rect2.x() + rect2.width() * checkboxLeftX, rect2.y() + rect2.height() * checkboxLeftY));
             checkPath.addLineTo(FloatPoint(rect2.x() + rect2.width() * checkboxMiddleX, rect2.maxY() - rect2.height() * checkboxMiddleY));
             checkPath.addLineTo(FloatPoint(rect2.x() + rect2.width() * checkboxRightX, rect2.y() + rect2.height() * checkboxRightY));
-            info.context().setLineCap(RoundCap);
+            info.context().setLineCap(LineCap::Round);
             info.context().setStrokeColor(blackPen);
             info.context().setStrokeThickness(rect2.width() / checkboxStrokeThickness);
             info.context().fillPath(checkPath);
@@ -483,9 +483,9 @@ bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& in
         }
         break;
     }
-    case RadioPart: {
+    case StyleAppearance::Radio: {
         Path path;
-        path.addEllipse(rect);
+        path.addEllipseInRect(FloatRect(rect));
         info.context().fillPath(path);
         info.context().strokePath(path);
 
@@ -498,8 +498,8 @@ bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& in
         }
         break;
     }
-    case ButtonPart:
-    case PushButtonPart: {
+    case StyleAppearance::Button:
+    case StyleAppearance::PushButton: {
         FloatSize largeCorner(largeRadius, largeRadius);
         Path path;
         path.addRoundedRect(rect, largeCorner);
@@ -507,7 +507,7 @@ bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& in
         info.context().strokePath(path);
         break;
     }
-    case SquareButtonPart: {
+    case StyleAppearance::SquareButton: {
         Path path;
         path.addRect(rect);
         info.context().fillPath(path);
@@ -570,20 +570,20 @@ const int styledPopupPaddingBottom = 2;
 static void drawArrowsAndSeparator(const RenderObject& o, const PaintInfo& paintInfo, IntRect& bounds)
 {
     // Since we actually know the size of the control here, we restrict the font scale to make sure the arrows will fit vertically in the bounds
-    float fontScale = std::min(o.style().computedFontPixelSize() / baseFontSize, bounds.height() / (baseArrowHeight * 2 + baseSpaceBetweenArrows));
+    float fontScale = std::min(o.style().computedFontSize() / baseFontSize, bounds.height() / (baseArrowHeight * 2 + baseSpaceBetweenArrows));
     float centerY = bounds.y() + bounds.height() / 2.0f;
     float arrowHeight = baseArrowHeight * fontScale;
     float arrowWidth = baseArrowWidth * fontScale;
-    float leftEdge = bounds.maxX() - arrowPaddingRight * o.style().effectiveZoom() - arrowWidth;
+    float leftEdge = bounds.maxX() - arrowPaddingRight * o.style().usedZoom() - arrowWidth;
     float spaceBetweenArrows = baseSpaceBetweenArrows * fontScale;
 
-    if (bounds.width() < arrowWidth + arrowPaddingLeft * o.style().effectiveZoom())
+    if (bounds.width() < arrowWidth + arrowPaddingLeft * o.style().usedZoom())
         return;
 
     GraphicsContextStateSaver stateSaver(paintInfo.context());
 
     paintInfo.context().setFillColor(o.style().visitedDependentColor(CSSPropertyColor));
-    paintInfo.context().setStrokeStyle(NoStroke);
+    paintInfo.context().setStrokeStyle(StrokeStyle::NoStroke);
 
     FloatPoint arrow1[3];
     arrow1[0] = FloatPoint(leftEdge, centerY - spaceBetweenArrows / 2.0f);
@@ -605,11 +605,11 @@ static void drawArrowsAndSeparator(const RenderObject& o, const PaintInfo& paint
     Color rightSeparatorColor(SRGBA<uint8_t>{ 255, 255, 255, 40});
 
     int separatorSpace = 2; // Deliberately ignores zoom since it looks nicer if it stays thin.
-    int leftEdgeOfSeparator = static_cast<int>(leftEdge - arrowPaddingLeft * o.style().effectiveZoom()); // FIXME: Round?
+    int leftEdgeOfSeparator = static_cast<int>(leftEdge - arrowPaddingLeft * o.style().usedZoom()); // FIXME: Round?
 
     // Draw the separator to the left of the arrows
     paintInfo.context().setStrokeThickness(1.0f); // Deliberately ignores zoom since it looks nicer if it stays thin.
-    paintInfo.context().setStrokeStyle(SolidStroke);
+    paintInfo.context().setStrokeStyle(StrokeStyle::SolidStroke);
     paintInfo.context().setStrokeColor(leftSeparatorColor);
     paintInfo.context().drawLine(IntPoint(leftEdgeOfSeparator, bounds.y()),
                                 IntPoint(leftEdgeOfSeparator, bounds.maxY()));
@@ -646,7 +646,7 @@ bool RenderThemeBal::paintMenuList(const RenderObject& o, const PaintInfo& paint
     drawArrowsAndSeparator(o, paintInfo, bounds);
 
     // Stroke an outline around the entire control.
-    paintInfo.context().setStrokeStyle(SolidStroke);
+    paintInfo.context().setStrokeStyle(StrokeStyle::SolidStroke);
     paintInfo.context().setStrokeThickness(lineWidth);
     if (!isEnabled(o))
         paintInfo.context().setStrokeColor(disabledOutline);
@@ -686,26 +686,13 @@ void RenderThemeBal::paintMenuListButtonDecorations(const RenderBox& o, const Pa
     drawArrowsAndSeparator(o, paintInfo, bounds);
 }
 
-void RenderThemeBal::adjustSliderThumbSize(RenderStyle& style, const Element* element) const
+void RenderThemeBal::adjustSliderThumbSize(RenderStyle& style, const Element*) const
 {
-    float fullScreenMultiplier = 1;
-    ControlPart part = style.appearance();
-
-    if (part == MediaSliderThumbPart || part == MediaVolumeSliderThumbPart) {
-        RenderSlider* slider = determineRenderSlider(element->renderer());
-        if (slider)
-            fullScreenMultiplier = determineFullScreenMultiplier(element /* slider->element() */);
-    }
-
-    if (part == SliderThumbHorizontalPart || part == SliderThumbVerticalPart) {
-        style.setWidth(Length((part == SliderThumbVerticalPart ? sliderThumbHeight : sliderThumbWidth) * fullScreenMultiplier, LengthType::Fixed));
-        style.setHeight(Length((part == SliderThumbVerticalPart ? sliderThumbWidth : sliderThumbHeight) * fullScreenMultiplier, LengthType::Fixed));
-    } else if (part == MediaVolumeSliderThumbPart) {
-        style.setWidth(Length(mediaVolumeSliderThumbWidth * fullScreenMultiplier, LengthType::Fixed));
-        style.setHeight(Length(mediaVolumeSliderThumbHeight * fullScreenMultiplier, LengthType::Fixed));
-    } else if (part == MediaSliderThumbPart) {
-        style.setWidth(Length(mediaSliderThumbWidth * fullScreenMultiplier, LengthType::Fixed));
-        style.setHeight(Length(mediaSliderThumbHeight * fullScreenMultiplier, LengthType::Fixed));
+    // Media thumb sizes dropped: 2.48 has no media appearances.
+    StyleAppearance part = style.appearance();
+    if (part == StyleAppearance::SliderThumbHorizontal || part == StyleAppearance::SliderThumbVertical) {
+        style.setWidth(Length(part == StyleAppearance::SliderThumbVertical ? sliderThumbHeight : sliderThumbWidth, LengthType::Fixed));
+        style.setHeight(Length(part == StyleAppearance::SliderThumbVertical ? sliderThumbWidth : sliderThumbHeight, LengthType::Fixed));
     }
 }
 
@@ -713,7 +700,7 @@ bool RenderThemeBal::paintSliderTrack(const RenderObject& object, const PaintInf
 {
     const static int SliderTrackHeight = 5;
     IntRect rect2;
-    if (object.style().appearance() == SliderHorizontalPart) {
+    if (object.style().appearance() == StyleAppearance::SliderHorizontal) {
         rect2.setHeight(SliderTrackHeight);
         rect2.setWidth(rect.width());
         rect2.setX(rect.x());
@@ -741,7 +728,7 @@ bool RenderThemeBal::paintSliderTrackRect(const RenderObject& object, const Pain
     FloatSize smallCorner(smallRadius, smallRadius);
 
     info.context().save();
-    info.context().setStrokeStyle(SolidStroke);
+    info.context().setStrokeStyle(StrokeStyle::SolidStroke);
     info.context().setStrokeThickness(lineWidth);
 
     info.context().setStrokeGradient(createLinearGradient(strokeColorStart, strokeColorEnd, rect.maxXMinYCorner(), rect. maxXMaxYCorner()));
@@ -764,7 +751,7 @@ bool RenderThemeBal::paintSliderThumb(const RenderObject& object, const PaintInf
     FloatSize largeCorner(largeRadius, largeRadius);
 
     info.context().save();
-    info.context().setStrokeStyle(SolidStroke);
+    info.context().setStrokeStyle(StrokeStyle::SolidStroke);
     info.context().setStrokeThickness(lineWidth);
 
     if (isPressed(object) || isHovered(object)) {
@@ -872,6 +859,7 @@ void RenderThemeBal::adjustMediaControlStyle(RenderStyle& style, const Element* 
     // We use multiples of mediaControlsHeight to make all objects scale evenly
     float fontSize = mediaControlsHeight / 2 * fullScreenMultiplier;
 
+#if 0 // shortcut: 2.48 has no media appearances (media controls are CSS-styled), dead code kept for reference
     switch (style.appearance()) {
     case MediaPlayButtonPart:
     case MediaEnterFullscreenButtonPart:
@@ -897,12 +885,14 @@ void RenderThemeBal::adjustMediaControlStyle(RenderStyle& style, const Element* 
     default:
         break;
     }
+#endif
 
     if (!std::isfinite(mediaElement->duration())) {
         // Live streams have infinite duration with no timeline. Force the mute
         // and fullscreen buttons to the right. This is needed when webkit does
         // not render the timeline container because it has a webkit-box-flex
         // of 1 and normally allows those buttons to be on the right.
+#if 0
         switch (style.appearance()) {
         case MediaEnterFullscreenButtonPart:
         case MediaExitFullscreenButtonPart:
@@ -918,6 +908,7 @@ void RenderThemeBal::adjustMediaControlStyle(RenderStyle& style, const Element* 
         default:
             break;
         }
+#endif
     }
 #else
     UNUSED_PARAM(style);
@@ -930,6 +921,7 @@ void RenderThemeBal::adjustSliderTrackStyle(RenderStyle& style, const Element* e
     float fullScreenMultiplier = determineFullScreenMultiplier(element);
 
     // We use multiples of mediaControlsHeight to make all objects scale evenly
+#if 0
     switch (style.appearance()) {
     case MediaSliderPart:
         style.setHeight(Length(19, LengthType::Fixed));
@@ -942,6 +934,7 @@ void RenderThemeBal::adjustSliderTrackStyle(RenderStyle& style, const Element* e
     default:
         break;
     }
+#endif
 }
 
 static bool paintMediaButton(GraphicsContext& context, const IntRect& rect, Image* image)
@@ -958,12 +951,12 @@ bool RenderThemeBal::paintMediaPlayButton(const RenderObject& object, const Pain
     if (!mediaElement)
         return false;
 
-    static Image& mediaPlay = Image::loadPlatformResource("MediaTheme/Play").leakRef();
-    static Image& mediaPause = Image::loadPlatformResource("MediaTheme/Pause").leakRef();
-    static Image& mediaPlayHovered = Image::loadPlatformResource("MediaTheme/PlayHovered").leakRef();
-    static Image& mediaPauseHovered = Image::loadPlatformResource("MediaTheme/PauseHovered").leakRef();
-    static Image& mediaPlayPressed = Image::loadPlatformResource("MediaTheme/PlayPressed").leakRef();
-    static Image& mediaPausePressed = Image::loadPlatformResource("MediaTheme/PausePressed").leakRef();
+    static Image& mediaPlay = ImageAdapter::loadPlatformResource("MediaTheme/Play").leakRef();
+    static Image& mediaPause = ImageAdapter::loadPlatformResource("MediaTheme/Pause").leakRef();
+    static Image& mediaPlayHovered = ImageAdapter::loadPlatformResource("MediaTheme/PlayHovered").leakRef();
+    static Image& mediaPauseHovered = ImageAdapter::loadPlatformResource("MediaTheme/PauseHovered").leakRef();
+    static Image& mediaPlayPressed = ImageAdapter::loadPlatformResource("MediaTheme/PlayPressed").leakRef();
+    static Image& mediaPausePressed = ImageAdapter::loadPlatformResource("MediaTheme/PausePressed").leakRef();
 
     if (isPressed(object))
         return paintMediaButton(paintInfo.context(), rect, mediaElement->canPlay() ? &mediaPlayPressed : &mediaPausePressed);
@@ -987,12 +980,12 @@ bool RenderThemeBal::paintMediaMuteButton(const RenderObject& object, const Pain
     if (!mediaElement)
         return false;
 
-    static Image& mediaMute = Image::loadPlatformResource("MediaTheme/SoundMute").leakRef();
-    static Image& mediaUnmute = Image::loadPlatformResource("MediaTheme/SoundUnmute").leakRef();
-    static Image& mediaMuteHovered = Image::loadPlatformResource("MediaTheme/SoundMuteHovered").leakRef();
-    static Image& mediaUnmuteHovered = Image::loadPlatformResource("MediaTheme/SoundUnmuteHovered").leakRef();
-    static Image& mediaMutePressed = Image::loadPlatformResource("MediaTheme/SoundMutePressed").leakRef();
-    static Image& mediaUnmutePressed = Image::loadPlatformResource("MediaTheme/SoundUnmutePressed").leakRef();
+    static Image& mediaMute = ImageAdapter::loadPlatformResource("MediaTheme/SoundMute").leakRef();
+    static Image& mediaUnmute = ImageAdapter::loadPlatformResource("MediaTheme/SoundUnmute").leakRef();
+    static Image& mediaMuteHovered = ImageAdapter::loadPlatformResource("MediaTheme/SoundMuteHovered").leakRef();
+    static Image& mediaUnmuteHovered = ImageAdapter::loadPlatformResource("MediaTheme/SoundUnmuteHovered").leakRef();
+    static Image& mediaMutePressed = ImageAdapter::loadPlatformResource("MediaTheme/SoundMutePressed").leakRef();
+    static Image& mediaUnmutePressed = ImageAdapter::loadPlatformResource("MediaTheme/SoundUnmutePressed").leakRef();
 
     if (isPressed(object))
         return paintMediaButton(paintInfo.context(), rect, mediaElement->muted() || !mediaElement->volume() ? &mediaUnmutePressed : &mediaMutePressed);
@@ -1015,9 +1008,9 @@ bool RenderThemeBal::paintMediaFullscreenButton(const RenderObject& object, cons
     if (!mediaElement)
         return false;
 
-    static Image& mediaEnterFullscreen = Image::loadPlatformResource("MediaTheme/FullScreen").leakRef();
-    static Image& mediaEnterFullscreenHovered = Image::loadPlatformResource("MediaTheme/FullScreenHovered").leakRef();
-    static Image& mediaEnterFullscreenPressed = Image::loadPlatformResource("MediaTheme/FullScreenPressed").leakRef();
+    static Image& mediaEnterFullscreen = ImageAdapter::loadPlatformResource("MediaTheme/FullScreen").leakRef();
+    static Image& mediaEnterFullscreenHovered = ImageAdapter::loadPlatformResource("MediaTheme/FullScreenHovered").leakRef();
+    static Image& mediaEnterFullscreenPressed = ImageAdapter::loadPlatformResource("MediaTheme/FullScreenPressed").leakRef();
 
     Image* buttonImage;
     if (isPressed(object))
@@ -1027,7 +1020,7 @@ bool RenderThemeBal::paintMediaFullscreenButton(const RenderObject& object, cons
     else
         buttonImage = &mediaEnterFullscreen;
 #if 0//ENABLE(FULLSCREEN_API)
-    static Image* mediaExitFullscreen = Image::loadPlatformResource("MediaTheme/FullScreen").leakRef();
+    static Image* mediaExitFullscreen = ImageAdapter::loadPlatformResource("MediaTheme/FullScreen").leakRef();
 
     if (mediaElement->document()->webkitIsFullScreen() && mediaElement->document()->webkitCurrentFullScreenElement() == mediaElement)
         buttonImage = mediaExitFullscreen;
@@ -1102,7 +1095,7 @@ bool RenderThemeBal::paintMediaSliderThumb(RenderObject* object, const PaintInfo
     paintInfo.context().save();
     Path mediaThumbRoundedRectangle;
     mediaThumbRoundedRectangle.addRoundedRect(rect, FloatSize(mediaSliderThumbRadius * fullScreenMultiplier, mediaSliderThumbRadius * fullScreenMultiplier));
-    paintInfo.context().setStrokeStyle(SolidStroke);
+    paintInfo.context().setStrokeStyle(StrokeStyle::SolidStroke);
     paintInfo.context().setStrokeThickness(0.5);
     paintInfo.context().setStrokeColor(Color::black);
 
@@ -1135,7 +1128,7 @@ static Image* platformResource(const char* name)
         gMediaControlImageMap = new MediaControlImageMap();
     if (Image* image = gMediaControlImageMap->get(name))
         return image;
-    if (Image* image = Image::loadPlatformResource(name).ptr()) {
+    if (Image* image = ImageAdapter::loadPlatformResource(name).ptr()) {
         gMediaControlImageMap->set(name, image);
         return image;
     }
@@ -1167,7 +1160,7 @@ bool RenderThemeBal::paintMediaSliderTrack(const RenderObject& object, const Pai
     // https://bugs.webkit.org/show_bug.cgi?id=30143
     context.save();
     context.setShouldAntialias(true);
-    context.setStrokeStyle(SolidStroke);
+    context.setStrokeStyle(StrokeStyle::SolidStroke);
     context.setStrokeColor(style.visitedDependentColor(CSSPropertyBorderLeftColor));
     context.setStrokeThickness(style.borderLeftWidth());
     context.setFillColor(style.visitedDependentColor(CSSPropertyBackgroundColor));
@@ -1200,7 +1193,7 @@ bool RenderThemeBal::paintMediaSliderTrack(const RenderObject& object, const Pai
         Color startColor = object.style().visitedDependentColor(CSSPropertyColor);
 
         context.save();
-        context.setStrokeStyle(NoStroke);
+        context.setStrokeStyle(StrokeStyle::NoStroke);
 //        context.setFillGradient(createLinearGradient(startColor.darkened().rgb(),
 //                Color(startColor.red() / 2, startColor.green() / 2, startColor.blue() / 2, startColor.alpha()).dark().rgb(),
 //                sliderTopLeft, sliderTopRight));
@@ -1221,7 +1214,7 @@ bool RenderThemeBal::paintMediaSliderThumb(const RenderObject& object, const Pai
 {
     UNUSED_PARAM(object);
 
-    static Image& mediaSliderThumb = Image::loadPlatformResource("MediaTheme/SliderThumb").leakRef();
+    static Image& mediaSliderThumb = ImageAdapter::loadPlatformResource("MediaTheme/SliderThumb").leakRef();
     return paintMediaButton(paintInfo.context(), rect, &mediaSliderThumb);
 }
 
@@ -1248,7 +1241,7 @@ bool RenderThemeBal::paintMediaVolumeSliderTrack(const RenderObject& object, con
 bool RenderThemeBal::paintMediaVolumeSliderThumb(const RenderObject& object, const PaintInfo& paintInfo, const IntRect& rect)
 {
 #if ENABLE(VIDEO)
-    static Image& mediaVolumeThumb = Image::loadPlatformResource("MediaTheme/VolumeSliderThumb").leakRef();
+    static Image& mediaVolumeThumb = ImageAdapter::loadPlatformResource("MediaTheme/VolumeSliderThumb").leakRef();
     UNUSED_PARAM(object);
 
     return paintMediaButton(paintInfo.context(), rect, &mediaVolumeThumb);
@@ -1260,7 +1253,7 @@ bool RenderThemeBal::paintMediaVolumeSliderThumb(const RenderObject& object, con
 #endif
 }
 
-Color RenderThemeBal::platformFocusRingColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformFocusRingColor(OptionSet<StyleColorOptions>) const
 {
     return focusRingPen;
 }
@@ -1272,55 +1265,55 @@ Color RenderThemeBal::platformTapHighlightColor() const
 }
 #endif
 
-Color RenderThemeBal::platformActiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF618ECE)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFFCFCFCF)));
     return c;
 }
 
-Color RenderThemeBal::platformActiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF000000)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF3F3F3F)));
     return c;
 }
 
-Color RenderThemeBal::platformActiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveListBoxSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF618ECE)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveListBoxSelectionBackgroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFFCFCFCF)));
     return c;
 }
 
-Color RenderThemeBal::platformActiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformActiveListBoxSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF000000)));
     return c;
 }
 
-Color RenderThemeBal::platformInactiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformInactiveListBoxSelectionForegroundColor(OptionSet<StyleColorOptions>) const
 {
     Color c(SRGBA<uint8_t>(makeSRGBA(0xFF3F3F3F)));
     return c;
 }
 
-Color RenderThemeBal::platformTextSearchHighlightColor(OptionSet<StyleColor::Options>) const
+Color RenderThemeBal::platformTextSearchHighlightColor(OptionSet<StyleColorOptions>) const
 {
     return Color::yellow;
 }
@@ -1329,14 +1322,14 @@ void RenderThemeBal::updateCachedSystemFontDescription(CSSValueID, FontCascadeDe
 {
     // It was called by RenderEmbeddedObject::paintReplaced to render alternative string.
     // To avoid cairo_error while rendering, fontDescription should be passed.
-    fontDescription.setOneFamily("Sans");
+    fontDescription.setOneFamily(AtomString("Sans"_s));
     fontDescription.setSpecifiedSize(defaultFontSize);
     fontDescription.setIsAbsoluteSize(true);
     fontDescription.setWeight(boldWeightValue());
     fontDescription.setItalic(normalItalicValue());
 }
 
-bool RenderThemeBal::supportsFocusRing(const RenderStyle& style) const
+bool RenderThemeBal::supportsFocusRing(const RenderObject&, const RenderStyle& style) const
 {
     return style.hasAppearance();
 }
@@ -1370,7 +1363,7 @@ bool RenderThemeBal::paintProgressBar(const RenderObject& object, const PaintInf
     FloatSize smallCorner(smallRadius, smallRadius);
 
     info.context().save();
-    info.context().setStrokeStyle(SolidStroke);
+    info.context().setStrokeStyle(StrokeStyle::SolidStroke);
     info.context().setStrokeThickness(lineWidth);
 
     info.context().setStrokeGradient(createLinearGradient(rangeSliderRegularTopOutline, rangeSliderRegularBottomOutline, rect.maxXMinYCorner(), rect.maxXMaxYCorner()));
@@ -1384,7 +1377,7 @@ bool RenderThemeBal::paintProgressBar(const RenderObject& object, const PaintInf
     rect2.setX(rect2.x() + 1);
     rect2.setHeight(rect2.height() - 2);
     rect2.setY(rect2.y() + 1);
-    info.context().setStrokeStyle(NoStroke);
+    info.context().setStrokeStyle(StrokeStyle::NoStroke);
     info.context().setStrokeThickness(0);
     if (renderProgress->isDeterminate()) {
         rect2.setWidth(rect2.width() * renderProgress->position() - 2);

@@ -39,11 +39,11 @@ public:
     virtual void contextMenuDestroyed();
 
     virtual void downloadURL(const URL&);
-    virtual void searchWithGoogle(const WebCore::Frame*);
-    virtual void lookUpInDictionary(WebCore::Frame*);
+    virtual void searchWithGoogle(const WebCore::LocalFrame*);
+    virtual void lookUpInDictionary(WebCore::LocalFrame*);
     virtual void speak(const WTF::String&);
     virtual void stopSpeaking();
-    virtual bool isSpeaking();
+    virtual bool isSpeaking() const;
 
 private:
     WebView* m_webView;

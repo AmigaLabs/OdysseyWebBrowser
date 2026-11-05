@@ -748,6 +748,26 @@ bool ThreadCondition::timedWait(Mutex& mutex, WallTime absoluteTime)
         return true;
     }
 
+#if OS(AMIGAOS)
+    // On this port WallTime::now() adds the locale offsets on top of gettimeofday(), while clib4's
+    // pthread_cond_timedwait uses its own CLOCK_REALTIME: rebase the relative duration onto that clock.
+    double relativeSeconds = (absoluteTime - WallTime::now()).value();
+    if (relativeSeconds < 0)
+        relativeSeconds = 0;
+
+    timespec targetTime;
+    clock_gettime(CLOCK_REALTIME, &targetTime);
+
+    time_t timeSeconds = static_cast<time_t>(relativeSeconds);
+    long timeNanoseconds = static_cast<long>((relativeSeconds - timeSeconds) * 1E9);
+
+    targetTime.tv_sec += timeSeconds;
+    targetTime.tv_nsec += timeNanoseconds;
+    if (targetTime.tv_nsec >= 1000000000L) {
+        targetTime.tv_sec++;
+        targetTime.tv_nsec -= 1000000000L;
+    }
+#else
     double rawSeconds = absoluteTime.secondsSinceEpoch().value();
 
     time_t timeSeconds = static_cast<time_t>(rawSeconds);
@@ -756,6 +776,7 @@ bool ThreadCondition::timedWait(Mutex& mutex, WallTime absoluteTime)
     timespec targetTime;
     targetTime.tv_sec = timeSeconds;
     targetTime.tv_nsec = timeNanoseconds;
+#endif
 
     return pthread_cond_timedwait(&m_condition, &mutex.impl(), &targetTime) == 0;
 }

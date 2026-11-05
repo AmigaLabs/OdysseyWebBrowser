@@ -43,9 +43,9 @@ public:
     WebDesktopNotificationsDelegate(WebView* view);
 
     /* WebCore::NotificationClient interface */
-    virtual bool show(WebCore::Notification* object) override;
-    virtual void cancel(WebCore::Notification* object) override;
-    virtual void notificationObjectDestroyed(WebCore::Notification* object) override;
+    virtual bool show(WebCore::ScriptExecutionContext&, WebCore::NotificationData&&, RefPtr<WebCore::NotificationResources>&&, CompletionHandler<void()>&&) override;
+    virtual void cancel(WebCore::NotificationData&&) override;
+    virtual void notificationObjectDestroyed(WebCore::NotificationData&&) override;
     virtual void notificationControllerDestroyed() override;
     virtual void requestPermission(WebCore::ScriptExecutionContext&, PermissionHandler&&) override;
     virtual void cancelRequestsForPermission(WebCore::ScriptExecutionContext*);

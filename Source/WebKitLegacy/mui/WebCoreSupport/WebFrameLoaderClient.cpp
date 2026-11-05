@@ -32,6 +32,7 @@
 #include "DefaultPolicyDelegate.h"
 #include "DOMCoreClasses.h"
 #include "FileIOLinux.h"
+#include <WebCore/HistoryController.h>
 #include <WebCore/NotImplemented.h>
 #include "NetworkStorageSessionMap.h"
 #include "WebNavigationAction.h"
@@ -64,6 +65,7 @@
 #include <WebCore/DocumentLoader.h>
 #include <WebCore/FormState.h>
 #include <WebCore/Frame.h>
+#include <WebCore/LocalFrame.h>
 #include <WebCore/FrameLoader.h>
 #include <WebCore/FrameTree.h>
 #include <WebCore/FrameView.h>
@@ -99,6 +101,11 @@
 using namespace WebCore;
 using namespace HTMLNames;
 
+static LocalFrame* localCore(WebFrame* webFrame)
+{
+    return core(webFrame);
+}
+
 static WebDataSource* getWebDataSource(DocumentLoader* loader)
 {
     return loader ? static_cast<WebDocumentLoader*>(loader)->dataSource() : 0;
@@ -113,13 +120,13 @@ public:
 
     ~WebFramePolicyListenerPrivate() { }
 
-    PolicyCheckIdentifier m_policyCheckIdentifier;
     FramePolicyFunction m_policyFunction;
     WebFramePolicyListener* m_policyListener;
 };
 
-WebFrameLoaderClient::WebFrameLoaderClient(WebFrame* webFrame)
-    : m_webFrame(webFrame)
+WebFrameLoaderClient::WebFrameLoaderClient(FrameLoader& frameLoader, WebFrame* webFrame)
+    : LocalFrameLoaderClient(frameLoader)
+    , m_webFrame(webFrame)
     , m_policyListenerPrivate(std::make_unique<WebFramePolicyListenerPrivate>())
 {
     ASSERT_ARG(webFrame, webFrame);
@@ -140,7 +147,7 @@ bool WebFrameLoaderClient::hasWebView() const
     return m_webFrame->webView();
 }
 
-void WebFrameLoaderClient::assignIdentifierToInitialRequest(unsigned long identifier, DocumentLoader* loader, const ResourceRequest& request)
+void WebFrameLoaderClient::assignIdentifierToInitialRequest(ResourceLoaderIdentifier identifier, IsMainResourceLoad, DocumentLoader* loader, const ResourceRequest& request)
 {
     WebView* webView = m_webFrame->webView();
     SharedPtr<WebResourceLoadDelegate> resourceLoadDelegate = webView->webResourceLoadDelegate();
@@ -148,11 +155,11 @@ void WebFrameLoaderClient::assignIdentifierToInitialRequest(unsigned long identi
         return;
 
     WebMutableURLRequest* webURLRequest = WebMutableURLRequest::createInstance(request);
-    resourceLoadDelegate->identifierForInitialRequest(webView, webURLRequest, getWebDataSource(loader), identifier);
+    resourceLoadDelegate->identifierForInitialRequest(webView, webURLRequest, getWebDataSource(loader), identifier.toUInt64());
     delete webURLRequest;
 }
 
-void WebFrameLoaderClient::dispatchDidReceiveAuthenticationChallenge(DocumentLoader* loader, unsigned long identifier, const AuthenticationChallenge& challenge)
+void WebFrameLoaderClient::dispatchDidReceiveAuthenticationChallenge(DocumentLoader* loader, ResourceLoaderIdentifier identifier, const AuthenticationChallenge& challenge)
 {
     ASSERT(challenge.authenticationClient());
 
@@ -166,11 +173,11 @@ void WebFrameLoaderClient::dispatchDidReceiveAuthenticationChallenge(DocumentLoa
     char *username = NULL, *password = NULL;
     String host = challenge.protectionSpace().host();
     String realm = challenge.protectionSpace().realm();
-    CredentialPersistence persistence = CredentialPersistenceNone;
+    int persistence = static_cast<int>(CredentialPersistence::None);
     
     if(DoMethod(app, MM_OWBApp_Login, host.utf8().data(), realm.utf8().data(), &username, &password, &persistence))
     {
-    Credential credential = Credential(username, password, persistence);
+    Credential credential = Credential(username, password, static_cast<CredentialPersistence>(persistence));
     free(username);
     free(password);
     challenge.authenticationClient()->receivedCredential(challenge, credential);
@@ -179,7 +186,7 @@ void WebFrameLoaderClient::dispatchDidReceiveAuthenticationChallenge(DocumentLoa
     challenge.authenticationClient()->receivedRequestToContinueWithoutCredential(challenge);
 }
 
-bool WebFrameLoaderClient::shouldUseCredentialStorage(DocumentLoader* loader, unsigned long identifier)
+bool WebFrameLoaderClient::shouldUseCredentialStorage(DocumentLoader* loader, ResourceLoaderIdentifier identifier)
 {
     /*WebView* webView = m_webFrame->webView();
     SharedPtr<WebResourceLoadDelegate> resourceLoadDelegate = webView->webResourceLoadDelegate();
@@ -193,11 +200,11 @@ bool WebFrameLoaderClient::shouldUseCredentialStorage(DocumentLoader* loader, un
     return true;
 }
 
-void WebFrameLoaderClient::dispatchWillSendRequest(DocumentLoader* loader, unsigned long identifier, ResourceRequest& request, const ResourceResponse& redirectResponse)
+void WebFrameLoaderClient::dispatchWillSendRequest(DocumentLoader* loader, ResourceLoaderIdentifier identifier, ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
 }
 
-void WebFrameLoaderClient::dispatchDidReceiveResponse(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& response)
+void WebFrameLoaderClient::dispatchDidReceiveResponse(DocumentLoader* loader, ResourceLoaderIdentifier identifier, const ResourceResponse& response)
 {
     WebView* webView = m_webFrame->webView();
 
@@ -208,12 +215,12 @@ void WebFrameLoaderClient::dispatchDidReceiveResponse(DocumentLoader* loader, un
         return;
 
     WebURLResponse* webURLResponse = WebURLResponse::createInstance(response);
-    resourceLoadDelegate->didReceiveResponse(webView, identifier, webURLResponse, getWebDataSource(loader));
+    resourceLoadDelegate->didReceiveResponse(webView, identifier.toUInt64(), webURLResponse, getWebDataSource(loader));
     delete webURLResponse;
 
 }
 
-void WebFrameLoaderClient::dispatchDidReceiveContentLength(DocumentLoader* loader, unsigned long identifier, int length)
+void WebFrameLoaderClient::dispatchDidReceiveContentLength(DocumentLoader* loader, ResourceLoaderIdentifier identifier, int length)
 {
 
     WebView* webView = m_webFrame->webView();
@@ -224,10 +231,10 @@ void WebFrameLoaderClient::dispatchDidReceiveContentLength(DocumentLoader* loade
     if (!resourceLoadDelegate)
         return;
 
-    resourceLoadDelegate->didReceiveContentLength(webView, identifier, length, getWebDataSource(loader));
+    resourceLoadDelegate->didReceiveContentLength(webView, identifier.toUInt64(), length, getWebDataSource(loader));
 }
 
-void WebFrameLoaderClient::dispatchDidFinishLoading(DocumentLoader* loader, unsigned long identifier)
+void WebFrameLoaderClient::dispatchDidFinishLoading(DocumentLoader* loader, IsMainResourceLoad, ResourceLoaderIdentifier identifier)
 {
 
     WebView* webView = m_webFrame->webView();
@@ -238,10 +245,10 @@ void WebFrameLoaderClient::dispatchDidFinishLoading(DocumentLoader* loader, unsi
     if (!resourceLoadDelegate)
         return;
 
-    resourceLoadDelegate->didFinishLoadingFromDataSource(webView, identifier, getWebDataSource(loader));
+    resourceLoadDelegate->didFinishLoadingFromDataSource(webView, identifier.toUInt64(), getWebDataSource(loader));
 }
 
-void WebFrameLoaderClient::dispatchDidFailLoading(DocumentLoader* loader, unsigned long identifier, const ResourceError& error)
+void WebFrameLoaderClient::dispatchDidFailLoading(DocumentLoader* loader, IsMainResourceLoad, ResourceLoaderIdentifier identifier, const ResourceError& error)
 {
     WebView* webView = m_webFrame->webView();
 
@@ -253,7 +260,7 @@ void WebFrameLoaderClient::dispatchDidFailLoading(DocumentLoader* loader, unsign
         return;
 
     WebError* webError = WebError::createInstance(error);
-    resourceLoadDelegate->didFailLoadingWithError(webView, identifier, webError, getWebDataSource(loader));
+    resourceLoadDelegate->didFailLoadingWithError(webView, identifier.toUInt64(), webError, getWebDataSource(loader));
     delete webError;
 }
 
@@ -326,7 +333,7 @@ void WebFrameLoaderClient::dispatchDidReceiveTitle(const WebCore::StringWithDire
         webFrameLoadDelegate->titleChange(m_webFrame, title.string.utf8().data());
 }
 
-void WebFrameLoaderClient::dispatchDidCommitLoad(std::optional<HasInsecureContent>, std::optional<UsedLegacyTLS>)
+void WebFrameLoaderClient::dispatchDidCommitLoad(std::optional<HasInsecureContent>, std::optional<UsedLegacyTLS>, std::optional<WasPrivateRelayed>)
 {
     SharedPtr<WebFrameLoadDelegate> webFrameLoadDelegate = m_webFrame->webView()->webFrameLoadDelegate();
     if (webFrameLoadDelegate)
@@ -347,7 +354,7 @@ void WebFrameLoaderClient::dispatchDidFinishLoad()
         webFrameLoadDelegate->didFinishLoad(m_webFrame);
 }
 
-Frame* WebFrameLoaderClient::dispatchCreatePage(const WebCore::NavigationAction&,  WebCore::NewFrameOpenerPolicy)
+LocalFrame* WebFrameLoaderClient::dispatchCreatePage(const WebCore::NavigationAction&,  WebCore::NewFrameOpenerPolicy)
 {
     BalWidget *widget = (BalWidget *) DoMethod(app, MM_OWBApp_AddPage, NULL, FALSE, FALSE, NULL, NULL, getv(m_webFrame->webView()->viewWindow()->browser, MA_OWBBrowser_PrivateBrowsing), FALSE);
 
@@ -373,13 +380,13 @@ void WebFrameLoaderClient::setMainDocumentError(DocumentLoader*, const ResourceE
 {
 }
 
-void WebFrameLoaderClient::committedLoad(DocumentLoader* loader, const uint8_t* data, int length)
+void WebFrameLoaderClient::committedLoad(DocumentLoader* loader, const SharedBuffer& data)
 {
-    loader->commitData(data, length);
+    loader->commitData(data);
 
     // If the document is a stand-alone media document, now is the right time to cancel the WebKit load.
     // FIXME: This code should be shared across all ports. <http://webkit.org/b/48762>.
-    Frame* coreFrame = core(m_webFrame);
+    LocalFrame* coreFrame = localCore(m_webFrame);
     if (coreFrame->document()->isMediaDocument())
         loader->cancelMainResourceLoad(pluginWillHandleLoadError(loader->response()));
 }
@@ -390,7 +397,7 @@ void WebFrameLoaderClient::finishedLoading(DocumentLoader*)
 
 void WebFrameLoaderClient::updateGlobalHistory()
 {
-    DocumentLoader* loader = core(m_webFrame)->loader().documentLoader();
+    DocumentLoader* loader = localCore(m_webFrame)->loader().documentLoader();
 
     WebView* webView = m_webFrame->webView();
     SharedPtr<WebHistoryDelegate> historyDelegate = webView->historyDelegate();
@@ -419,7 +426,7 @@ void WebFrameLoaderClient::updateGlobalHistoryRedirectLinks()
     WebView* webView = m_webFrame->webView();
     SharedPtr<WebHistoryDelegate> historyDelegate = webView->historyDelegate();
 
-    DocumentLoader* loader = core(m_webFrame)->loader().documentLoader();
+    DocumentLoader* loader = localCore(m_webFrame)->loader().documentLoader();
     ASSERT(loader->unreachableURL().isEmpty());
 
     if (!loader->clientRedirectSourceForHistory().isNull()) {
@@ -439,7 +446,7 @@ void WebFrameLoaderClient::updateGlobalHistoryRedirectLinks()
     }
 }
 
-bool WebFrameLoaderClient::shouldGoToHistoryItem(HistoryItem& item) const
+bool WebFrameLoaderClient::shouldGoToHistoryItem(HistoryItem& item, IsSameDocumentNavigation) const
 {
     return true;
 }
@@ -452,18 +459,13 @@ void WebFrameLoaderClient::didDisplayInsecureContent()
     }
 }
 
-void WebFrameLoaderClient::didRunInsecureContent(SecurityOrigin& origin, const URL& insecureURL)
+void WebFrameLoaderClient::didRunInsecureContent(SecurityOrigin& origin)
 {
     SharedPtr<WebFrameLoadDelegate> webFrameLoadDelegate = m_webFrame->webView()->webFrameLoadDelegate();
     if (webFrameLoadDelegate) {
         WebSecurityOrigin* webSecurityOrigin = WebSecurityOrigin::createInstance(&origin);
         webFrameLoadDelegate->didRunInsecureContent(m_webFrame, webSecurityOrigin);
     }
-}
-
-void WebFrameLoaderClient::didDetectXSS(const URL&, bool)
-{
-    // FIXME: propagate call into the private delegate
 }
 
 Ref<DocumentLoader> WebFrameLoaderClient::createDocumentLoader(const ResourceRequest& request, const SubstituteData& substituteData)
@@ -516,13 +518,13 @@ void WebFrameLoaderClient::setTitle(const WebCore::StringWithDirection& title, c
 
     // Not sure calling twice visitedURL is particularly smart, but else, title isn't set in our history
 //#warning "find something better, really, calling visitedURL is not optimal at all"
-    DocumentLoader* loader = core(m_webFrame)->loader().documentLoader();
+    DocumentLoader* loader = localCore(m_webFrame)->loader().documentLoader();
     history->visitedURL(strdup(loader->urlForHistory().string().utf8().data()), strdup(loader->title().string.utf8().data()), strdup(loader->originalRequestCopy().httpMethod().utf8().data()), loader->urlForHistoryReflectsFailure());
 }
 
 void WebFrameLoaderClient::savePlatformDataToCachedFrame(CachedFrame* cachedFrame)
 {
-    Frame* coreFrame = core(m_webFrame);
+    LocalFrame* coreFrame = localCore(m_webFrame);
     if (!coreFrame)
         return;
 
@@ -535,15 +537,15 @@ void WebFrameLoaderClient::transitionToCommittedFromCachedFrame(CachedFrame*)
 {
 }
 
-void WebFrameLoaderClient::transitionToCommittedForNewPage()
+void WebFrameLoaderClient::transitionToCommittedForNewPage(InitializingIframe)
 {
     WebView* view = m_webFrame->webView();
     BalRectangle rect = view->frameRect();
     bool transparent = view->transparent();
     Color backgroundColor = transparent ? Color::transparentBlack : Color::white;
-    FloatRect logicalFrame(rect);
+    FloatRect logicalFrame(rect.x, rect.y, rect.w, rect.h);
 //    logicalFrame.scale(1.0f / view->deviceScaleFactor());
-    core(m_webFrame)->createView(enclosingIntRect(logicalFrame).size(), backgroundColor, /* fixedLayoutSize */ { }, /* fixedVisibleContentRect */ { });
+    localCore(m_webFrame)->createView(enclosingIntRect(logicalFrame).size(), backgroundColor, /* fixedLayoutSize */ { }, /* fixedVisibleContentRect */ { });
 }
 
 void WebFrameLoaderClient::didRestoreFromBackForwardCache()
@@ -555,23 +557,24 @@ bool WebFrameLoaderClient::canCachePage() const
     return true;
 }
 
-RefPtr<Frame> WebFrameLoaderClient::createFrame(const String& name, HTMLFrameOwnerElement& ownerElement)
+RefPtr<LocalFrame> WebFrameLoaderClient::createFrame(const AtomString& name, HTMLFrameOwnerElement& ownerElement)
 {
     Frame* coreFrame = core(m_webFrame);
     ASSERT(coreFrame);
 
     WebFrame* webFrame = WebFrame::createInstance();
 
-    RefPtr<Frame> childFrame = webFrame->createSubframeWithOwnerElement(m_webFrame->webView(), coreFrame->page(), &ownerElement);
+    Ref<Frame> newFrame = webFrame->createSubframeWithOwnerElement(m_webFrame->webView(), coreFrame->page(), &ownerElement);
+    RefPtr<LocalFrame> childFrame = &downcast<LocalFrame>(newFrame.get());
 
-    childFrame->tree().setName(name);
-    coreFrame->tree().appendChild(*childFrame);
+    childFrame->tree().setSpecifiedName(name);
+    // No tree().appendChild() here: the Frame constructor already adds the child to its parent (a second append corrupts the frame tree).
     childFrame->init();
 
     return childFrame;
 }
 
-RefPtr<Widget> WebFrameLoaderClient::createPlugin(const IntSize& pluginSize, HTMLPlugInElement& element, const URL& url, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually)
+RefPtr<Widget> WebFrameLoaderClient::createPlugin(HTMLPlugInElement& element, const URL& url, const Vector<AtomString>& paramNames, const Vector<AtomString>& paramValues, const String& mimeType, bool loadManually)
 {
     return nullptr;
 }
@@ -674,13 +677,13 @@ bool WebFrameLoaderClient::canShowMIMETypeAsHTML(const WTF::String& MIMEType) co
     return true;
 }
 
-bool WebFrameLoaderClient::representationExistsForURLScheme(const String& /*URLScheme*/) const
+bool WebFrameLoaderClient::representationExistsForURLScheme(StringView /*URLScheme*/) const
 {
     notImplemented();
     return false;
 }
 
-String WebFrameLoaderClient::generatedMIMETypeForURLScheme(const String& /*URLScheme*/) const
+String WebFrameLoaderClient::generatedMIMETypeForURLScheme(StringView /*URLScheme*/) const
 {
     notImplemented();
     ASSERT_NOT_REACHED();
@@ -776,7 +779,7 @@ void WebFrameLoaderClient::cancelPolicyCheck()
     m_policyListenerPrivate->m_policyFunction = nullptr;
 }
 
-WebFramePolicyListener* WebFrameLoaderClient::setUpPolicyListener(WebCore::PolicyCheckIdentifier identifier, WebCore::FramePolicyFunction&& function)
+WebFramePolicyListener* WebFrameLoaderClient::setUpPolicyListener(WebCore::FramePolicyFunction&& function)
 {
     // FIXME: <rdar://5634381> We need to support multiple active policy listeners.
 
@@ -784,7 +787,6 @@ WebFramePolicyListener* WebFrameLoaderClient::setUpPolicyListener(WebCore::Polic
         m_policyListenerPrivate->m_policyListener->invalidate();
 
     m_policyListenerPrivate->m_policyListener = WebFramePolicyListener::createInstance(m_webFrame);
-    m_policyListenerPrivate->m_policyCheckIdentifier = identifier;
     m_policyListenerPrivate->m_policyFunction = WTFMove(function);
 
     return m_policyListenerPrivate->m_policyListener;
@@ -800,10 +802,10 @@ void WebFrameLoaderClient::receivedPolicyDecision(PolicyAction action)
     delete m_policyListenerPrivate->m_policyListener;
     m_policyListenerPrivate->m_policyListener = 0;
 
-    function(action, m_policyListenerPrivate->m_policyCheckIdentifier);
+    function(action);
 }
 
-void WebFrameLoaderClient::dispatchDecidePolicyForResponse(const ResourceResponse& response, const ResourceRequest& request, WebCore::PolicyCheckIdentifier identifier, const String&, BrowsingContextGroupSwitchDecision, FramePolicyFunction&& function)
+void WebFrameLoaderClient::dispatchDecidePolicyForResponse(const ResourceResponse& response, const ResourceRequest& request, const String&, FramePolicyFunction&& function)
 {
     SharedPtr<WebPolicyDelegate> policyDelegate = m_webFrame->webView()->policyDelegate();
     if (!policyDelegate)
@@ -811,13 +813,13 @@ void WebFrameLoaderClient::dispatchDecidePolicyForResponse(const ResourceRespons
 
     WebMutableURLRequest* urlRequest = WebMutableURLRequest::createInstance(request);
 
-    if (policyDelegate->decidePolicyForMIMEType(m_webFrame->webView(), response, urlRequest, m_webFrame, setUpPolicyListener(identifier, WTFMove(function)))) {
+    if (policyDelegate->decidePolicyForMIMEType(m_webFrame->webView(), response, urlRequest, m_webFrame, setUpPolicyListener(WTFMove(function)))) {
         delete urlRequest;
         return;
     }
 }
 
-void WebFrameLoaderClient::dispatchDecidePolicyForNewWindowAction(const NavigationAction& action, const ResourceRequest& request, FormState* formState, const String& frameName, WebCore::PolicyCheckIdentifier identifier, FramePolicyFunction&& function)
+void WebFrameLoaderClient::dispatchDecidePolicyForNewWindowAction(const NavigationAction& action, const ResourceRequest& request, FormState* formState, const String& frameName, std::optional<HitTestResult>&&, FramePolicyFunction&& function)
 {
     SharedPtr<WebPolicyDelegate> policyDelegate = m_webFrame->webView()->policyDelegate();
     if (!policyDelegate)
@@ -828,12 +830,12 @@ void WebFrameLoaderClient::dispatchDecidePolicyForNewWindowAction(const Navigati
 
     //policyDelegate->decidePolicyForNewWindowAction(d->webView, actionInformation, urlRequest, frameName, setUpPolicyListener(function));
 
-    function(PolicyAction::Use, identifier);
+    function(PolicyAction::Use);
     delete urlRequest;
     delete actionInformation;
 }
 
-void WebFrameLoaderClient::dispatchDecidePolicyForNavigationAction(const NavigationAction& action, const ResourceRequest& request, const ResourceResponse&, FormState* formState, WebCore::PolicyDecisionMode, WebCore::PolicyCheckIdentifier identifier, FramePolicyFunction&& function)
+void WebFrameLoaderClient::dispatchDecidePolicyForNavigationAction(const NavigationAction& action, const ResourceRequest& request, const ResourceResponse&, FormState* formState, const String&, std::optional<NavigationIdentifier>, std::optional<HitTestResult>&&, bool, IsPerformingHTTPFallback, SandboxFlags, PolicyDecisionMode, FramePolicyFunction&& function)
 {
     SharedPtr<WebPolicyDelegate> policyDelegate = m_webFrame->webView()->policyDelegate();
     if (!policyDelegate) {
@@ -844,7 +846,7 @@ void WebFrameLoaderClient::dispatchDecidePolicyForNavigationAction(const Navigat
     WebMutableURLRequest* urlRequest =  WebMutableURLRequest::createInstance(request);
     WebNavigationAction* actionInformation = WebNavigationAction::createInstance(&action, formState ? &formState->form() : nullptr, m_webFrame);
 
-    policyDelegate->decidePolicyForNavigationAction(m_webFrame->webView(), actionInformation, urlRequest, m_webFrame, setUpPolicyListener(identifier, WTFMove(function)));
+    policyDelegate->decidePolicyForNavigationAction(m_webFrame->webView(), actionInformation, urlRequest, m_webFrame, setUpPolicyListener(WTFMove(function)));
 
     delete urlRequest;
     delete actionInformation;
@@ -880,7 +882,7 @@ bool WebFrameLoaderClient::dispatchDidLoadResourceFromMemoryCache(DocumentLoader
     return false;
 }
 
-void WebFrameLoaderClient::dispatchDidFailProvisionalLoad(const ResourceError& error, WebCore::WillContinueLoading)
+void WebFrameLoaderClient::dispatchDidFailProvisionalLoad(const ResourceError& error, WebCore::WillContinueLoading, WebCore::WillInternallyHandleFailure)
 {
     SharedPtr<WebFrameLoadDelegate> webFrameLoadDelegate = m_webFrame->webView()->webFrameLoadDelegate();
     if (webFrameLoadDelegate) {
@@ -903,7 +905,7 @@ void WebFrameLoaderClient::dispatchDidFailLoad(const ResourceError& error)
     }
 }
 
-void WebFrameLoaderClient::startDownload(const ResourceRequest&, const String& /* suggestedName */)
+void WebFrameLoaderClient::startDownload(const ResourceRequest&, const String& /* suggestedName */, FromDownloadAttribute)
 {
     notImplemented();
 }
@@ -925,15 +927,15 @@ ObjectContentType WebFrameLoaderClient::objectContentType(const URL& url, const 
 }
 
 
-String WebFrameLoaderClient::overrideMediaType() const
+AtomString WebFrameLoaderClient::overrideMediaType() const
 {
     notImplemented();
-    return String();
+    return AtomString();
 }
 
 void WebFrameLoaderClient::dispatchDidClearWindowObjectInWorld(DOMWrapperWorld& world)
 {
-    Frame* coreFrame = core(m_webFrame);
+    LocalFrame* coreFrame = localCore(m_webFrame);
     ASSERT(coreFrame);
 
     Settings* settings = &(coreFrame->settings());
@@ -970,7 +972,7 @@ void WebFrameLoaderClient::didReceiveSSLSecurityExtension(const ResourceRequest&
 
 Ref<FrameNetworkingContext> WebFrameLoaderClient::createNetworkingContext()
 {
-    return WebFrameNetworkingContext::create(core(m_webFrame), userAgent(core(m_webFrame)->document()->url()));
+    return WebFrameNetworkingContext::create(localCore(m_webFrame), userAgent(localCore(m_webFrame)->document()->url()));
 }
 
 void WebFrameLoaderClient::prefetchDNS(const String& hostname)
@@ -984,18 +986,14 @@ void WebFrameLoaderClient::sendH2Ping(const URL& url, CompletionHandler<void(Exp
     completionHandler(makeUnexpected(WebCore::internalError(url)));
 }
 
+RefPtr<WebCore::HistoryItem> WebFrameLoaderClient::createHistoryItemTree(bool clipAtTarget, WebCore::BackForwardItemIdentifier itemID) const
+{
+    auto* coreFrame = localCore(m_webFrame);
+    return coreFrame->loader().history().createItemTree(*coreFrame, clipAtTarget, itemID);
+}
+
 void WebFrameLoaderClient::dispatchDidFailToStartPlugin(const WebCore::PluginView&) const
 {
-}
-
-std::optional<WebCore::PageIdentifier> WebFrameLoaderClient::pageID() const
-{
-    return std::nullopt;
-}
-
-std::optional<WebCore::FrameIdentifier> WebFrameLoaderClient::frameID() const
-{
-    return std::nullopt;
 }
 
 void WebFrameLoaderClient::dispatchDidReachLayoutMilestone(OptionSet<WebCore::LayoutMilestone>)

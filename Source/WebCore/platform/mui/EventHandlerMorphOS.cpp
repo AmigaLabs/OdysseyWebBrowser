@@ -57,18 +57,19 @@ bool EventHandler::tabsToAllFormControls(KeyboardEvent*) const
 
 void EventHandler::focusDocumentView()
 {
-    if (Page* page = m_frame.page())
-        page->focusController().setFocusedFrame(&m_frame);
+    if (Page* page = m_frame->page())
+        page->focusController().setFocusedFrame(&m_frame.get());
 }
 
 bool EventHandler::passWidgetMouseDownEventToWidget(const MouseEventWithHitTestResults& event)
 {
     // Figure out which view to send the event to.
-  RenderObject* target = event.targetNode() ? event.targetNode()->renderer() : 0;
-    if (!target || !target->isWidget())
+  auto* target = event.targetNode() ? event.targetNode()->renderer() : nullptr;
+    auto* renderWidget = dynamicDowncast<RenderWidget>(target);
+    if (!renderWidget)
         return false;
 
-    return passMouseDownEventToWidget(downcast<RenderWidget>(target)->widget());
+    return passMouseDownEventToWidget(renderWidget->widget());
 }
 
 bool EventHandler::passWidgetMouseDownEventToWidget(RenderWidget* renderWidget)
@@ -93,24 +94,6 @@ bool EventHandler::eventActivatedView(const PlatformMouseEvent&) const
 
 
 #endif
-
-bool EventHandler::passMousePressEventToSubframe(MouseEventWithHitTestResults& mev, Frame& subframe)
-{
-    subframe.eventHandler().handleMousePressEvent(mev.event());
-    return true;
-}
-
-bool EventHandler::passMouseMoveEventToSubframe(MouseEventWithHitTestResults& mev, Frame& subframe, HitTestResult* hoveredNode)
-{
-    subframe.eventHandler().handleMouseMoveEvent(mev.event(), hoveredNode);
-    return true;
-}
-
-bool EventHandler::passMouseReleaseEventToSubframe(MouseEventWithHitTestResults& mev, Frame& subframe)
-{
-    subframe.eventHandler().handleMouseReleaseEvent(mev.event());
-    return true;
-}
 
 OptionSet<PlatformEvent::Modifier> EventHandler::accessKeyModifiers()
 {

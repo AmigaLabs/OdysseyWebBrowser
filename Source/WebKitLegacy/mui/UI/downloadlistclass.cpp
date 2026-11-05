@@ -26,6 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <wtf/text/MakeString.h>
 #include <WebCore/GraphicsContext.h>
 
 #include "WebDownload.h"
@@ -45,6 +46,8 @@
 
 #include "gui.h"
 #include "utils.h"
+
+#define ACCESS_READ SHARED_LOCK
 
 using namespace WebCore;
 
@@ -96,15 +99,15 @@ static void create_icon_if_needed(Object *obj, struct downloadnode *dl, ULONG ty
             {
                 String mimetype = dl->mimetype;
 
-                command = "GetDeficonPath MIMETYPE=\"" + mimetype + "\"";
+                command = makeString("GetDeficonPath MIMETYPE=\""_s, mimetype, "\""_s);
                 if(rexx_send((char *) "AMBIENT", (char *) command.utf8().data()))
                 {
                     iconPath = String(rexx_result());
                 }
                 else // Try again without "x-" prefix, ambient is not always compliant with naming
                 {
-                    mimetype.replace("x-", "");
-                    command = "GetDeficonPath MIMETYPE=\"" + mimetype + "\"";
+                    mimetype = makeStringByReplacingAll(mimetype, "x-"_s, ""_s);
+                    command = makeString("GetDeficonPath MIMETYPE=\""_s, mimetype, "\""_s);
                     if(rexx_send((char *) "AMBIENT", (char *) command.utf8().data()))
                     {
                         iconPath = String(rexx_result());
@@ -134,7 +137,7 @@ static void create_icon_if_needed(Object *obj, struct downloadnode *dl, ULONG ty
                     if(lock)
                     {
                         UnLock(lock);
-                        command = "GetDeficonPath PATH=\"" + String(path) + "\"";
+                        command = makeString("GetDeficonPath PATH=\""_s, String(path), "\""_s);
                         if(rexx_send((char *) "AMBIENT", (char *) command.utf8().data()))
                         {
                             iconPath = String(rexx_result());

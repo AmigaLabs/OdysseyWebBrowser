@@ -40,6 +40,7 @@
  */
  
 #include <wtf/RefPtr.h>
+#include <WebCore/LocalFrame.h>
  
 #include "WebKitTypes.h"
 #include "WebValue.h"
@@ -103,7 +104,7 @@ WebFrame* kit(WebCore::Frame*);
      * @param[in]: WebFrame
      * @param[out]: frame
      */
-WEBKIT_OWB_API WebCore::Frame* core(WebFrame*);
+WEBKIT_OWB_API WebCore::LocalFrame* core(WebFrame*);
 
 class WEBKIT_OWB_API WebFrame
 {
@@ -601,8 +602,8 @@ public:
     void didChangeIcons(WebCore::DocumentLoader*);
 
 protected:
-     friend WebCore::Frame* core(WebFrame*);
-     friend WebCore::Frame* core(const WebFrame*);
+     friend WebCore::LocalFrame* core(WebFrame*);
+     friend WebCore::LocalFrame* core(const WebFrame*);
      friend class WebView;
      friend class WebFrameLoaderClient;
 
@@ -617,13 +618,13 @@ protected:
     /**
      *  init WebFrame
      */
-    WTF::Ref<WebCore::Frame> createSubframeWithOwnerElement(WebView*, WebCore::Page*, WebCore::HTMLFrameOwnerElement*); 
+    WTF::Ref<WebCore::LocalFrame> createSubframeWithOwnerElement(WebView*, WebCore::Page*, WebCore::HTMLFrameOwnerElement*); 
      void initWithWebView(WebView*, WebCore::Page*); 
 
     /**
      * get frame
      */
-    WebCore::Frame* impl();
+    WebCore::LocalFrame* impl();
 
     /**
      *  loadHTMLString

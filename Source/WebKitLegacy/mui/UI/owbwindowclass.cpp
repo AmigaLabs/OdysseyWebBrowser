@@ -36,7 +36,8 @@
 #include "FileIOLinux.h"
 #include <WebCore/FocusController.h>
 #include <WebCore/Frame.h>
-#include <WebCore/FrameView.h>
+#include <WebCore/LocalFrame.h>
+#include <WebCore/LocalFrameView.h>
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/InspectorController.h>
 #include <wtf/MainThread.h>
@@ -56,6 +57,7 @@
 #include "WebPreferences.h"
 #include <WebCore/WindowFeatures.h>
 #include <WebCore/FrameLoader.h>
+#include <WebCore/MemoryCache.h>
 #include "ScriptEntry.h"
 #include "TopSitesManager.h"
 #include <WebCore/markup.h>
@@ -1463,10 +1465,13 @@ DEFSMETHOD(OWBWindow_LoadURL)
 
     widget = (BalWidget *) getv(browser, MA_OWBBrowser_Widget);
 
-    if (widget && msg->url && *(msg->url))
+    // NULL url (address bar Enter/Go): take the text from the address bar.
+    Object *urlString = (Object *) getv(data->addressbargroup, MUIA_Popstring_String);
+    STRPTR input = msg->url ? msg->url : (urlString ? (STRPTR) getv(urlString, MUIA_String_Contents) : NULL);
+
+    if (widget && input && *input)
     {
-        Object *urlString = (Object *) getv(data->addressbargroup, MUIA_Popstring_String);
-        String url = String((const char *) msg->url).stripWhiteSpace();
+        String url = String((const char *) input).trim(isASCIIWhitespace<UChar>);
         URL kurl({ }, url);
         size_t spacepos = url.find(' ');
 
@@ -1495,8 +1500,11 @@ DEFSMETHOD(OWBWindow_LoadURL)
         }
 
         // Close history and restore its global state (a bit heavy to reload whole list...)
-        // TODO: Is this needed for OS4? This crashes the browser loading
-#ifndef __amigaos4__        
+        // WARNING: This hack is needed for OS4 since MUIM_Popstring_Close crash the app if MUI window is not shown
+#ifdef __amigaos4__
+        if (getv(obj, MUIA_Window_Open))
+            DoMethod((Object *) getv(data->addressbargroup, MA_AddressBarGroup_PopString), MUIM_Popstring_Close, FALSE);
+#else
         DoMethod((Object *) getv(data->addressbargroup, MA_AddressBarGroup_PopString), MUIM_Popstring_Close, FALSE);
 #endif
 
@@ -1516,7 +1524,7 @@ DEFSMETHOD(OWBWindow_LoadURL)
         widget->webView->clearMainFrameName();
 
         // Handle protocols (any better place?)
-        if(kurl.protocolIs("about"))
+        if(kurl.protocolIs("about"_s))
         {
             // XXX: duplicate from owbbrowser about: handling...
             OWBFile f("PROGDIR:resource/about.html");
@@ -1529,7 +1537,7 @@ DEFSMETHOD(OWBWindow_LoadURL)
                 {
                     String content = fileContent;
 
-                    widget->webView->mainFrame()->loadHTMLString(content.utf8().data(), "about:");
+                    widget->webView->mainFrame()->loadHTMLString(content.utf8().data(), "about:blank"); // "about:" is cancelled by WebCore
 
                     delete [] fileContent;
                 }
@@ -1537,21 +1545,25 @@ DEFSMETHOD(OWBWindow_LoadURL)
                 f.close();
             }
         }
-        else if(kurl.string().startsWith("topsites"))
+        else if(kurl.string().startsWith("topsites"_s))
         {
             TopSitesManager::getInstance().generateTemplate(widget->webView, kurl.string());
         }
-        else if(kurl.protocolIs("javascript"))
+        else if(kurl.protocolIs("javascript"_s))
         {
             size_t scriptpos = kurl.string().find(':');
             if(scriptpos != notFound)
             {
                 String script = kurl.string().substring(scriptpos+1);
-                script = decodeURLEscapeSequences(script);
+                script = PAL::decodeURLEscapeSequences(script);
                 widget->webView->executeScript(script.utf8().data());
             }
         }
-        else if(kurl.protocolIs("data"))
+        else if(kurl.protocolIs("data"_s))
+        {
+            widget->webView->mainFrame()->loadURL(url.utf8().data());
+        }
+        else if(kurl.protocolIs("file"_s))
         {
             widget->webView->mainFrame()->loadURL(url.utf8().data());
         }
@@ -1559,16 +1571,16 @@ DEFSMETHOD(OWBWindow_LoadURL)
         else if(kurl.string().find(':') == notFound && (kurl.string().find(' ') != notFound || kurl.string().find('.') == notFound))
         {
             // Implement a LoadURLFromDefaultSearchEngine method in searchbargroup or so
-            char *converted = local_to_utf8((char *) msg->url);
+            char *converted = local_to_utf8((char *) input);
             if(converted)
             {
                 String searchString = String::fromUTF8(converted);
                 free(converted);
-                searchString.stripWhiteSpace();
+                searchString = searchString.trim(isASCIIWhitespace<UChar>);
                 searchString = encodeWithURLEscapeSequences(searchString);
-                searchString.replace("+", "%2B");
-                searchString.replace("%20", "+");
-                searchString.replace("&", "%26");
+                searchString = makeStringByReplacingAll(searchString, "+"_s, "%2B"_s);
+                searchString = makeStringByReplacingAll(searchString, "%20"_s, "+"_s);
+                searchString = makeStringByReplacingAll(searchString, "&"_s, "%26"_s);
                 widget->webView->mainFrame()->loadURL(createWithFormatAndArguments("https://www.google.com/search?ie=UTF-8&oe=UTF-8&sourceid=navclient&gfns=1&q=%s", searchString.utf8().data()).utf8().data());
             }
         }
@@ -1578,7 +1590,7 @@ DEFSMETHOD(OWBWindow_LoadURL)
             size_t pos = kurl.string().find(':');
             if(pos == notFound || pos > 5)
             {
-                widget->webView->mainFrame()->loadURL(String("https://" + url).utf8().data());
+                widget->webView->mainFrame()->loadURL(makeString("https://"_s, url).utf8().data());
             }
             else
             {
@@ -1691,16 +1703,30 @@ DEFTMETHOD(OWBWindow_OpenLocalFile)
 
     if(file)
     {
-        ULONG size = strlen(file) + strlen("file:///") + 1;
-        char *uri = (char *) malloc(size);
-
-        if(uri)
+        /* Use Lock+NameFromLock to get the absolute path including volume name,
+         * then build a proper file:/// URL. Without this, paths like "bookmarks.html"
+         * (without volume) would cause AmigaOS to look for a "bookmarks.html:" volume. */
+        BPTR lock = Lock(file, SHARED_LOCK);
+        if(lock)
         {
-            stccpy(uri, "file:///", size);
-            strncat(uri, file, size);
-
-            DoMethod(obj, MM_OWBWindow_LoadURL, uri, NULL);
-            free(uri);
+            char absolutePath[1024];
+            if(NameFromLock(lock, absolutePath, sizeof(absolutePath)))
+            {
+                ULONG size = strlen(absolutePath) + strlen("file:///") + 1;
+                char *uri = (char *) malloc(size);
+                if(uri)
+                {
+                    snprintf(uri, size, "file:///%s", absolutePath);
+                    DoMethod(obj, MM_OWBWindow_LoadURL, uri, NULL);
+                    free(uri);
+                }
+            }
+            UnLock(lock);
+        }
+        else
+        {
+            /* Lock failed, fall back to raw path - LoadURL will try its best */
+            DoMethod(obj, MM_OWBWindow_LoadURL, file, NULL);
         }
         FreeVecTaskPooled(file);
     }
@@ -1720,7 +1746,7 @@ DEFTMETHOD(OWBWindow_SaveAsSource)
         {
             char buffer[100];
             URL url({ }, (char *)getv(data->active_browser, MA_OWBBrowser_URL));
-            char *name = strdup(decodeURLEscapeSequences(url.lastPathComponent()).latin1().data());
+            char *name = strdup(PAL::decodeURLEscapeSequences(url.lastPathComponent()).latin1().data());
 
             if(name)
             {
@@ -1757,7 +1783,7 @@ DEFTMETHOD(OWBWindow_SaveAsSource)
 
                     if(f)
                     {
-                        fwrite(dataSource->data()->data(), dataSource->data()->size(), 1, f);
+                        fwrite(dataSource->data()->span().data(), dataSource->data()->span().size(), 1, f);
                         fclose(f);
                     }
 
@@ -1777,7 +1803,7 @@ DEFTMETHOD(OWBWindow_SaveAsPDF)
     GETDATA;
     char buffer[100];
     URL url({ }, (char *)getv(data->active_browser, MA_OWBBrowser_URL));
-    char *name = strdup(decodeURLEscapeSequences(url.lastPathComponent()).latin1().data());
+    char *name = strdup(PAL::decodeURLEscapeSequences(url.lastPathComponent()).latin1().data());
 
     if(name)
     {
@@ -2089,6 +2115,9 @@ DEFSMETHOD(OWBWindow_RemoveBrowser)
         DoMethod(data->pagegroup, MUIM_Group_ExitChange);
         DoMethod(_parent(data->pagegroup), MUIM_Group_ExitChange);
     }
+
+    // Keep tab close responsive: only prune dead cache entries, not the full process-wide release.
+    MemoryCache::singleton().pruneDeadResourcesToSize(0);
 
     return 0;
 }
@@ -2560,10 +2589,10 @@ DEFSMETHOD(OWBWindow_UpdateUserScript)
         
         for(size_t i = 0; i < scripts->size(); i++)
         {
-            shorthelp = shorthelp +  String(" - ") + (*scripts)[i]->title;
+            shorthelp = makeString(shorthelp, " - "_s, (*scripts)[i]->title);
             
             if(i < scripts->size() - 1)
-                shorthelp = shorthelp + String("\n");
+                shorthelp = makeString(shorthelp, "\n"_s);
         }
         
         free(data->userscriptimage_shorthelp);
@@ -2803,7 +2832,7 @@ DEFSMETHOD(Search)
             if(msg->flags & MV_FindText_MarkOnly)
             {
                 FindOptions opts;
-                if (!(msg->flags & MV_FindText_CaseSensitive)) opts.add(WebCore::CaseInsensitive);
+                if (!(msg->flags & MV_FindText_CaseSensitive)) opts.add(WebCore::FindOption::CaseInsensitive);
                 res = widget->webView->page()->markAllMatchesForText(searchString, opts, msg->flags & MV_FindText_ShowAllMatches, 512);
                 
                 if((msg->flags & MV_FindText_ShowAllMatches) == 0)
@@ -2814,11 +2843,11 @@ DEFSMETHOD(Search)
             else
             {
                 //widget->webView->page()->markAllMatchesForText(searchString, (msg->flags & MV_FindText_CaseSensitive) ? TextCaseSensitive : TextCaseInsensitive, msg->flags & MV_FindText_ShowAllMatches, 512);
-                FindOptions opts = WrapAround;
-                if (!(msg->flags & MV_FindText_CaseSensitive)) opts.add(CaseInsensitive);
-                if (msg->flags & MV_FindText_Previous) opts.add(Backwards);
+                FindOptions opts { FindOption::WrapAround };
+                if (!(msg->flags & MV_FindText_CaseSensitive)) opts.add(FindOption::CaseInsensitive);
+                if (msg->flags & MV_FindText_Previous) opts.add(FindOption::Backwards);
 
-                res = widget->webView->page()->findString(searchString, opts);
+                res = widget->webView->page()->findString(searchString, opts).has_value();
             }
 
             free(converted);
@@ -3058,7 +3087,7 @@ static void completion_thread_start(void* p)
                     for(unsigned int j = 0; j < sizeof(prefixes)/sizeof(String); j++)
                     {
                         String urlToCompare = prefixes[j];
-                        urlToCompare.append(url);
+                        urlToCompare = makeString(urlToCompare, String::fromLatin1(url));
                         match = historyURL.startsWith(urlToCompare);
 
                         if(match)
@@ -3072,7 +3101,7 @@ static void completion_thread_start(void* p)
                 // Otherwise, match anything
                 else if(data->completion_mode_popup)
                 {
-                    offset = historyURL.find(url, 0);
+                    offset = historyURL.find(String::fromUTF8(url), 0);
                     match = offset != -1;
                 }
 
@@ -3276,8 +3305,8 @@ DEFSMETHOD(OWBWindow_AddClosedView)
         truncatedTitle = title;
         if(truncatedTitle.length() > 64)
         {
-            truncatedTitle.truncate(64);
-            truncatedTitle.append("...");
+            truncatedTitle = truncatedTitle.left(64);
+            truncatedTitle = makeString(truncatedTitle, "..."_s);
         }
 
         menu_entry = (struct menu_entry *) malloc(sizeof(*menu_entry) + strlen(url) + 1);
@@ -3364,8 +3393,8 @@ DEFSMETHOD(OWBWindow_AddHistoryItem)
         truncatedTitle = String::fromUTF8(titleptr);
         if(truncatedTitle.length() > 64)
         {
-            truncatedTitle.truncate(64);
-            truncatedTitle.append("...");
+            truncatedTitle = truncatedTitle.left(64);
+            truncatedTitle = makeString(truncatedTitle, "..."_s);
         }
 
         menu_entry = (struct menu_entry *) malloc(sizeof(*menu_entry) + strlen(url) + 1);

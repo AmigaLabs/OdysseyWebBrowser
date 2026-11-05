@@ -27,6 +27,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <wtf/text/MakeString.h>
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/ContextMenu.h>
 #include <wtf/text/CString.h>
@@ -408,7 +409,7 @@ DEFMMETHOD(Export)
         ITERATELIST(n, &contextmenu_list)
         {
             struct contextmenunode *cn = (struct contextmenunode *) n;
-            output.append(createWithFormatAndArguments("%d\1%s\1%d\1%s\n", cn->category, cn->label, cn->commandType, cn->commandString));
+            output = makeString(output, createWithFormatAndArguments("%d\1%s\1%d\1%s\n", cn->category, cn->label, cn->commandType, cn->commandString));
         }
 
         DoMethod(msg->dataspace, MUIM_Dataspace_Add, output.latin1().data(), output.length()+1, id);

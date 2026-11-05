@@ -127,6 +127,21 @@
 #endif
 
 
+/* OS(AROS) */
+#if defined(__AROS__)
+#define WTF_OS_AROS 1
+#endif
+
+/* OS(MORPHOS) */
+#if defined(__MORPHOS__)
+#define WTF_OS_MORPHOS 1
+#endif
+
+/* OS(AMIGAOS) */
+#if defined(__amigaos4__)
+#define WTF_OS_AMIGAOS 1
+#endif
+
 /* OS(UNIX) - Any Unix-like system */
 #if    OS(AIX)              \
     || OS(DARWIN)           \

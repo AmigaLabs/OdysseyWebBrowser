@@ -2141,7 +2141,7 @@ bool LocalFrameView::shouldSetCursor() const
     return page && page->isVisible() && page->focusController().isActive();
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 void LocalFrameView::setCursor(const Cursor& cursor)
 {
     frame().page()->chrome().setCursor(cursor);
@@ -5531,6 +5531,14 @@ bool LocalFrameView::handleWheelEventForScrolling(const PlatformWheelEvent& whee
             if (!result.needsMainThreadProcessing())
                 return result.wasHandled;
         }
+    }
+#endif
+
+#if PLATFORM(MUI)
+    // No WebCore scroll bars on MUI (see ScrollView::setHasScrollbarInternal): scroll the view directly.
+    if ((wheelEvent.deltaY() || wheelEvent.deltaX()) && (!verticalScrollbar() && !horizontalScrollbar())) {
+        scrollBy(IntSize(-wheelEvent.deltaX(), -wheelEvent.deltaY()));
+        return true;
     }
 #endif
 

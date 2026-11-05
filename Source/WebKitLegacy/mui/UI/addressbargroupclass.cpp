@@ -168,7 +168,7 @@ DEFNEW
 
         doset(obj, data, INITTAGS);
 
-        DoMethod((Object *) getv(pop_path, MUIA_Popstring_String),   MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, obj, 3, MM_OWBWindow_LoadURL, NULL, NULL);
+        DoMethod((Object *) getv(pop_path, MUIA_Popstring_String),   MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, obj, 3, MM_OWBWindow_LoadURL, MUIV_TriggerValue, NULL);
         DoMethod(bt_bookmarks, MUIM_Notify, MA_ToolButton_Pressed, FALSE, MUIV_Notify_Application, 2, MM_OWBApp_OpenWindow, MV_OWB_Window_Bookmarks);
         DoMethod(bt_add,       MUIM_Notify, MA_ToolButton_Pressed, FALSE, MUIV_Notify_Window, 1, MM_OWBWindow_InsertBookmark);
         DoMethod(bt_addtab,    MUIM_Notify, MA_ToolButton_Pressed, FALSE, MUIV_Notify_Window, 2, MM_OWBWindow_MenuAction, MNA_NEW_PAGE);

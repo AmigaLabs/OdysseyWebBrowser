@@ -45,6 +45,9 @@ public:
     // ColorChooser functions:
     virtual void setSelectedColor(const WebCore::Color&);
     virtual void endChooser();
+    // Refcount owned here (2.34 style); starts at 0, held via Ref<> so it is deleted at 0.
+    void ref() const final { ++m_refCount; }
+    void deref() const final { if (!--m_refCount) delete const_cast<ColorChooserController*>(this); }
 
     // WebColorChooserClient functions:
     virtual void didChooseColor(const WebCore::Color&);
@@ -53,9 +56,9 @@ public:
 
 protected:
     void openColorChooser();
-    std::unique_ptr<ColorChooser> m_chooser;
 
 private:
+    mutable unsigned m_refCount { 0 };
 
     WebChromeClient* m_chromeClient;
     WebCore::ColorChooserClient* m_client;

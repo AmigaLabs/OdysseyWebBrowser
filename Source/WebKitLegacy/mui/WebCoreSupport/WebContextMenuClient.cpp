@@ -30,6 +30,8 @@
 #include "WebContextMenuClient.h"
 #include <WebCore/UserGestureIndicator.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/MakeString.h>
+#include <wtf/text/StringView.h>
 
 #include "WebDownload.h"
 #include "WebHitTestResults.h"
@@ -49,6 +51,7 @@
 #undef String
 
 using namespace WebCore;
+using namespace WTF::StringLiterals;
 
 WebContextMenuClient::WebContextMenuClient(WebView* webView)
     : m_webView(webView)
@@ -86,25 +89,29 @@ void WebContextMenuClient::downloadURL(const URL& url)
     }
 }
 
-void WebContextMenuClient::searchWithGoogle(const Frame* frame)
+void WebContextMenuClient::searchWithGoogle(const LocalFrame* frame)
 {
-    String searchString = frame->editor().selectedText();
-    searchString.stripWhiteSpace();
+    auto* localFrame = const_cast<LocalFrame*>(frame);
+    if (!localFrame)
+        return;
+
+    String searchString = localFrame->editor().selectedText();
+    searchString = searchString.trim(isASCIIWhitespace<UChar>);
     String encoded = encodeWithURLEscapeSequences(searchString);
-    encoded.replace("%20", "+");
+    if (auto impl = encoded.impl())
+        encoded = String { impl->replace("%20"_s, "+"_s) };
     
-    String url("https://www.google.com/search?q=");
-    url.append(encoded);
-    url.append("&ie=UTF-8&oe=UTF-8");
+    String url = makeString("https://www.google.com/search?q="_s, encoded, "&ie=UTF-8&oe=UTF-8"_s);
     auto searchURL = URL { { }, url };
 
     if (Page* page = frame->page()) {
-      UserGestureIndicator indicator(ProcessingUserGesture);
-      page->mainFrame().loader().changeLocation(searchURL, { }, nullptr, WebCore::ReferrerPolicy::EmptyString, WebCore::ShouldOpenExternalURLsPolicy::ShouldNotAllow);
+      UserGestureIndicator indicator(IsProcessingUserGesture::Yes);
+      if (RefPtr mainFrame = page->localMainFrame())
+          mainFrame->loader().changeLocation(searchURL, { }, nullptr, WebCore::ReferrerPolicy::EmptyString, WebCore::ShouldOpenExternalURLsPolicy::ShouldNotAllow);
     };
 }
 
-void WebContextMenuClient::lookUpInDictionary(Frame*)
+void WebContextMenuClient::lookUpInDictionary(LocalFrame*)
 {
     notImplemented();
 }
@@ -119,7 +126,7 @@ void WebContextMenuClient::stopSpeaking()
     notImplemented();
 }
 
-bool WebContextMenuClient::isSpeaking()
+bool WebContextMenuClient::isSpeaking() const
 {
     return false;
 }

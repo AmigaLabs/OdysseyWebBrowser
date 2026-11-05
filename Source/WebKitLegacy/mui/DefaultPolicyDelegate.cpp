@@ -53,6 +53,7 @@
 #include "gui.h"
 #include "utils.h"
 #include <proto/intuition.h>
+#include <proto/exec.h>
 #include <clib/debug_protos.h>
 #undef get
 #undef String

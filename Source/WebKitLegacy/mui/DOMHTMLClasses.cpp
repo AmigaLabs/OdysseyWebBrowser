@@ -682,7 +682,7 @@ void DOMHTMLInputElement::setType(const char* type)
 {
     ASSERT(m_element && m_element->hasTagName(inputTag));
     HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(m_element);
-    inputElement->setType(type);
+    inputElement->setType(AtomString(String(type)));
 }
     
 const char* DOMHTMLInputElement::useMap()
@@ -761,11 +761,11 @@ BalRectangle DOMHTMLInputElement::rectOnScreen()
     RenderObject* renderer = m_element->renderer();
     FrameView* view = m_element->document().view();
     if (!renderer || !view)
-        return WebCore::IntRect();
+        return BalRectangle();
 
     WebCore::IntRect coreRect = renderer->absoluteBoundingBoxRect();
     coreRect.setLocation(view->contentsToWindow(coreRect.location()));
-    return coreRect;
+    return BalRectangle { coreRect.x(), coreRect.y(), coreRect.width(), coreRect.height() };
 }
 
 void DOMHTMLInputElement::replaceCharactersInRange(int /*startTarget*/, int /*endTarget*/, const char* /*replacementString*/, int /*index*/)
@@ -784,7 +784,7 @@ void DOMHTMLInputElement::setAutofilled(bool filled)
 {
     ASSERT(m_element && m_element->hasTagName(inputTag));
     HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(m_element);
-    inputElement->setAutoFilled(!!filled);
+    inputElement->setAutofilled(!!filled);
 }
 
 bool DOMHTMLInputElement::isAutofilled()
@@ -792,7 +792,7 @@ bool DOMHTMLInputElement::isAutofilled()
     ASSERT(m_element);
     ASSERT(m_element->hasTagName(inputTag));
     HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(m_element);
-    return inputElement->isAutoFilled();
+    return inputElement->autofilled();
 }
 
 // DOMHTMLInputElement -- FormPromptAdditions ------------------------------------

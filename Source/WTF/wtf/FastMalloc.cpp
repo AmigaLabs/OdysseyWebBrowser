@@ -66,6 +66,10 @@ extern "C" { void _oomCrash() { std::abort(); }; void oomCrash() __attribute__((
 #define CRASH oomCrash
 #endif
 
+#if OS(AMIGAOS)
+#include <malloc.h>
+#endif
+
 namespace WTF {
 
 #if !defined(NDEBUG)
@@ -196,7 +200,11 @@ void fastAlignedFree(void* p)
 void* fastAlignedMalloc(size_t alignment, size_t size)
 {
     ASSERT_IS_WITHIN_LIMIT(size);
+#if OS(AMIGAOS)
+	void* p = memalign(alignment, size); // clib4 aligned_alloc is unreliable here (as in 2.34)
+#else
 	void* p = aligned_alloc(alignment, size);
+#endif
 	if (UNLIKELY(!p))
 		CRASH();
 	return p;
@@ -205,7 +213,11 @@ void* fastAlignedMalloc(size_t alignment, size_t size)
 void *tryFastAlignedMalloc(size_t alignment, size_t size)
 {
     FAIL_IF_EXCEEDS_LIMIT(size);
+#if OS(AMIGAOS)
+    return memalign(alignment, size);
+#else
     return aligned_alloc(alignment, size);
+#endif
 }
 
 void fastAlignedFree(void *p)

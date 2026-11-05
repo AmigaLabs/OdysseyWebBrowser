@@ -164,7 +164,7 @@ DEFNEW
         DoMethod(obj, MUIM_MultiSet, MUIA_Weight, 0, cy_search, NULL);
 
         DoMethod(searchgroup, MUIM_Notify, MA_SearchManagerGroup_Changed, MUIV_EveryTime, obj, 1, MM_SearchBarGroup_Update);
-        DoMethod((Object *) getv(pop_search, MUIA_Popstring_String), MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, obj, 3, MM_OWBWindow_LoadURL, NULL, NULL);
+        DoMethod((Object *) getv(pop_search, MUIA_Popstring_String), MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, obj, 3, MM_OWBWindow_LoadURL, MUIV_TriggerValue, NULL);
     }
 
     return (IPTR)obj;
@@ -338,12 +338,12 @@ DEFSMETHOD(OWBWindow_LoadURL)
 
                 if(converted)
                 {
-                    String searchString = String::fromUTF8(converted).stripWhiteSpace();
-                    searchString.stripWhiteSpace();
+                    String searchString = String::fromUTF8(converted).trim(isASCIIWhitespace<UChar>);
+                    searchString = searchString.trim(isASCIIWhitespace<UChar>);
                     String encoded = encodeWithURLEscapeSequences(searchString);
-                    encoded.replace("+", "%2B");
-                    encoded.replace("%20", "+");
-                    encoded.replace("&", "%26");
+                    encoded = makeStringByReplacingAll(encoded, "+"_s, "%2B"_s);
+                    encoded = makeStringByReplacingAll(encoded, "%20"_s, "+"_s);
+                    encoded = makeStringByReplacingAll(encoded, "&"_s, "%26"_s);
                     data->url = createWithFormatAndArguments(fmt, encoded.utf8().data());
 
                     DoMethod(_win(obj), MM_OWBWindow_LoadURL, data->url.utf8().data(), NULL);
@@ -379,11 +379,11 @@ DEFSMETHOD(SearchBarGroup_LoadURLFromShortcut)
 
                 if(converted && fmt)
                 {
-                    String searchString = String::fromUTF8(converted).stripWhiteSpace();
+                    String searchString = String::fromUTF8(converted).trim(isASCIIWhitespace<UChar>);
                     String encoded = encodeWithURLEscapeSequences(searchString);
-                    encoded.replace("+", "%2B");
-                    encoded.replace("%20", "+");
-                    encoded.replace("&", "%26");
+                    encoded = makeStringByReplacingAll(encoded, "+"_s, "%2B"_s);
+                    encoded = makeStringByReplacingAll(encoded, "%20"_s, "+"_s);
+                    encoded = makeStringByReplacingAll(encoded, "&"_s, "%26"_s);
                     data->url = createWithFormatAndArguments(fmt, encoded.utf8().data());
 
                     DoMethod(_win(obj), MM_OWBWindow_LoadURL, data->url.utf8().data(), NULL);

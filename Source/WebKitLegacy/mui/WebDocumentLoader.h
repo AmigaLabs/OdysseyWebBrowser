@@ -84,7 +84,7 @@ public:
     /**
      * detach from frame
      */
-    virtual void detachFromFrame();
+    virtual void detachFromFrame(WebCore::LoadWillContinueInAnotherProcess);
 
 private:
     /**

@@ -41,6 +41,9 @@
 #include <wtf/MainThread.h>
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/text/MakeString.h>
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#endif
 #include "SynchronousLoaderClient.h"
 
 #if OS(MORPHOS)
@@ -596,6 +599,7 @@ int CurlRequest::didReceiveDebugInfo(curl_infotype type, std::span<const char> d
 {
     if (!data.data())
         return 0;
+
 
     if (type == CURLINFO_HEADER_OUT) {
         String requestHeader(data);

@@ -27,23 +27,8 @@
  */
 #include "config.h"
 #include "IntPoint.h"
-#include "stdio.h"
 
 namespace WebCore {
-
-IntPoint::IntPoint(const BalPoint& p)
-    : m_x(p.x)
-    , m_y(p.y)
-{
-}
-
-IntPoint::operator BalPoint() const
-{
-    BalPoint p;
-    p.x = x();
-    p.y = y();
-    return p;
-}
 
 }
 

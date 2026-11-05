@@ -65,7 +65,7 @@ void Widget::setFocus(bool)
 
 void Widget::setCursor(const Cursor& cursor)
 {
-    if (!isFrameView())
+    if (!is<FrameView>(*this))
         return;
 #if OS(AMIGAOS)
     set((Object *) getv(app, MA_OWBApp_ActiveBrowser), MA_OWBBrowser_Pointer, cursor.platformCursor());
@@ -85,7 +85,7 @@ void Widget::hide()
 {
 }
 
-void Widget::paint(GraphicsContext& , const IntRect &, SecurityOriginPaintPolicy, EventRegionContext*)
+void Widget::paint(GraphicsContext& , const IntRect &, SecurityOriginPaintPolicy, RegionContext*)
 {
 }
 
@@ -105,6 +105,27 @@ IntRect Widget::frameRect() const
 void Widget::setFrameRect(const IntRect& rect)
 {
     m_frame = rect;
+}
+
+
+IntRect Widget::convertFromRootToContainingWindow(const Widget*, const IntRect& rect)
+{
+    return rect;
+}
+
+IntRect Widget::convertFromContainingWindowToRoot(const Widget*, const IntRect& rect)
+{
+    return rect;
+}
+
+IntPoint Widget::convertFromRootToContainingWindow(const Widget*, const IntPoint& point)
+{
+    return point;
+}
+
+IntPoint Widget::convertFromContainingWindowToRoot(const Widget*, const IntPoint& point)
+{
+    return point;
 }
 
 }

@@ -85,6 +85,12 @@ bool ScrollView::setHasVerticalScrollbar(bool hasBar, bool* contentSizeAffected)
 
 bool ScrollView::setHasScrollbarInternal(RefPtr<Scrollbar>& scrollbar, ScrollbarOrientation orientation, bool hasBar, bool* contentSizeAffected)
 {
+#if PLATFORM(MUI)
+    // The main frame view has no WebCore scroll bars: MUI draws its own (vbar/hbar). Same as 2.34.
+    if (!parent())
+        hasBar = false;
+#endif
+
     if (hasBar && !scrollbar) {
         scrollbar = createScrollbar(orientation);
         addChild(*scrollbar);
@@ -716,6 +722,11 @@ void ScrollView::updateScrollbars(const ScrollPosition& desiredPosition)
                 sendContentResizedNotification |= changeAffectsContentSize;
             }
         }
+
+#if PLATFORM(MUI)
+        if (!parent())
+            sendContentResizedNotification = false;
+#endif
 
         const unsigned cMaxUpdateScrollbarsPass = 3;
         if ((sendContentResizedNotification || needAnotherPass) && m_updateScrollbarsPass < cMaxUpdateScrollbarsPass) {

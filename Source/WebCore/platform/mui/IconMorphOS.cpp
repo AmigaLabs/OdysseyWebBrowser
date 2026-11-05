@@ -42,46 +42,18 @@
 
 namespace WebCore {
 
-Icon::Icon()
-    :  m_icon(0)
+// shortcut: MUI build has no platform icon storage in 2.48 Icon (only Cocoa/Win/GTK members), so no icon is created; upgrade by adding a MUI member to Icon.h
+RefPtr<Icon> Icon::createIconForFiles(const Vector<String>&)
 {
+    return nullptr;
 }
 
 Icon::~Icon()
 {
-    m_icon = nullptr;
 }
 
-
-RefPtr<Icon> Icon::createIconForFiles(const Vector<String>& filenames)
+void Icon::paint(GraphicsContext&, const FloatRect&)
 {
-    if (filenames.isEmpty())
-        return 0;
-
-    // TODO: handle currentdir if only filename is given
-
-    String command = "GetDeficonPath PATH=\"" + filenames[0] + "\"";
-    String iconPath;
-
-    // TODO: handle different file types in selection (use family or default if different)
-
-    // Ask Ambient which icon/mimetype should be used.
-
-    if(rexx_send((char *) "AMBIENT", (char *) command.utf8().data()))
-    {
-        iconPath = String(rexx_result());
-        RefPtr<Icon> icon = adoptRef(new Icon);
-        icon->m_icon = Image::loadPlatformResource(iconPath.utf8().data());
-        return icon;
-    }
-
-    return 0;
-}
-
-
-void Icon::paint(GraphicsContext& context, const FloatRect& rect)
-{
-    context.drawImage(*m_icon.get(), rect);
 }
 
 }

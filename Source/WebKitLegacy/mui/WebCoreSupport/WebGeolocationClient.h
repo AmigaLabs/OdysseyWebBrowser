@@ -60,7 +60,7 @@ public:
 
     // GeolocationClient
     void geolocationDestroyed() final;
-    void startUpdating(const String& authorizationToken) final;
+    void startUpdating(const String& authorizationToken);
     void stopUpdating() final;
     void setEnableHighAccuracy(bool) final;
     std::optional<WebCore::GeolocationPositionData> lastPosition() final;

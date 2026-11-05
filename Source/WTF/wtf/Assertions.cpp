@@ -71,6 +71,19 @@
 extern "C" { void vdprintf(const char *, va_list); }
 #endif
 
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#include <stdio.h>
+// stderr opens an "Odyssey output" console window when started from Workbench: log to the debug port (serial) instead.
+// shortcut: messages longer than the buffer are truncated.
+static void debugPortVprintf(const char* format, va_list args)
+{
+    char buffer[1024];
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    DebugPrintF("%s", buffer);
+}
+#endif
+
 WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 
 namespace WTF {
@@ -149,7 +162,11 @@ static void logToStderr([[maybe_unused]] WTFLogChannel* channel, const char* buf
 #if PLATFORM(COCOA)
     os_log(channel ? channel->osLogChannel : webkitSubsystemForGenericOSLog(), "%s", buffer);
 #endif
+#if OS(AMIGAOS)
+    DebugPrintF("%s", buffer);
+#else
     fputs(buffer, stderr);
+#endif
 }
 
 WTF_ATTRIBUTE_PRINTF(2, 0)
@@ -201,6 +218,10 @@ ALLOW_NONLITERAL_FORMAT_END
 #if OS(MORPHOS)
 	vdprintf(format, args);
 	return;
+#endif
+#if OS(AMIGAOS)
+    debugPortVprintf(format, args);
+    return;
 #endif
     vfprintf(stderr, format, args);
 }

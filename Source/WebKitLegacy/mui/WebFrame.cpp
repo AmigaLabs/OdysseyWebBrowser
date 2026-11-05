@@ -28,6 +28,7 @@
 
 #include "WebEditorClient.h"
 #include "WebFrame.h"
+#include <WebCore/DocumentMarker.h>
 #include <WebCore/HistoryItem.h>
 #include "DefaultPolicyDelegate.h"
 #include "DOMCoreClasses.h"
@@ -36,6 +37,7 @@
 #include "WebNavigationAction.h"
 #include "WebChromeClient.h"
 #include "WebDocumentLoader.h"
+#include <WebCore/DocumentInlines.h>
 #include "WebDownload.h"
 #include "WebError.h"
 #include "WebFrameLoaderClient.h"
@@ -63,6 +65,8 @@
 #include <WebCore/FrameTree.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/Frame.h>
+#include <WebCore/LocalFrame.h>
+#include <WebCore/OriginAccessPatterns.h>
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/HTMLFormElement.h>
 #include <WebCore/HTMLInputElement.h>
@@ -102,6 +106,10 @@
 
 using namespace WebCore;
 using namespace HTMLNames;
+using namespace WTF::StringLiterals;
+
+static BalPoint toBal(const IntPoint& p) { return { p.x(), p.y() }; }
+static BalRectangle toBal(const IntRect& r) { return { r.x(), r.y(), r.width(), r.height() }; }
 
 #define FLASH_REDRAW 0
 
@@ -139,7 +147,7 @@ void WebFrameObserver::observe(const WTF::String &topic, const WTF::String &data
 void WebFrameObserver::observe(const String &topic, Bookmarklet *bookmarklet)
 {
     ASSERT(bookmarklet);
-    if (topic == "ExecuteBookmarklet")
+    if (topic == "ExecuteBookmarklet"_s)
         m_webFrame->webView()->stringByEvaluatingJavaScriptFromString(bookmarklet->data().utf8().data());
 }
 
@@ -148,14 +156,15 @@ void WebFrameObserver::observe(const String &topic, Bookmarklet *bookmarklet)
 // Helpers to convert from WebCore to WebKit type
 WebFrame* kit(Frame* frame)
 {
-    if (!frame)
+    auto* localFrame = dynamicDowncast<LocalFrame>(frame);
+    if (!localFrame)
         return 0;
 
-    FrameLoaderClient& frameLoaderClient = frame->loader().client();
+    FrameLoaderClient& frameLoaderClient = localFrame->loader().client();
     return static_cast<WebFrameLoaderClient&>(frameLoaderClient).webFrame();
 }
 
-Frame* core(WebFrame* webFrame)
+LocalFrame* core(WebFrame* webFrame)
 {
     if (!webFrame)
         return 0;
@@ -163,7 +172,7 @@ Frame* core(WebFrame* webFrame)
 }
 
 // This function is not in WebFrame.h because we don't want to advertise the ability to get a non-const Frame from a const WebFrame
-Frame* core(const WebFrame* webFrame)
+LocalFrame* core(const WebFrame* webFrame)
 {
     if (!webFrame)
         return 0;
@@ -187,7 +196,7 @@ public:
     }
     FrameView* frameView() { return frame ? frame->view() : 0; }
 
-    Frame* frame;
+    LocalFrame* frame;
     WebView* webView;
 };
 
@@ -218,14 +227,14 @@ WebFrame* WebFrame::createInstance()
 
 void WebFrame::setAllowsScrolling(bool flag)
 {
-    if (Frame* frame = core(this))
+    if (LocalFrame* frame = core(this))
         if (FrameView* view = frame->view())
             view->setCanHaveScrollbars(flag);
 }
 
 bool WebFrame::allowsScrolling()
 {
-    if (Frame* frame = core(this))
+    if (LocalFrame* frame = core(this))
         if (FrameView* view = frame->view())
             return view->canHaveScrollbars();
 
@@ -242,7 +251,7 @@ void WebFrame::setExcludeFromTextSearch(bool flag)
 
 void WebFrame::reloadFromOrigin()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return;
 
@@ -251,7 +260,7 @@ void WebFrame::reloadFromOrigin()
 
 const char* WebFrame::name()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return strdup("");
 
@@ -267,13 +276,13 @@ const char* WebFrame::name()
 
 void WebFrame::setName(const char* frameName)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     // FIXME: we should have a way of knowing it is too early to set the frame name
     // because the WebFrame was not initialized.
     if (!coreFrame)
         return;
 
-    coreFrame->tree().setName(frameName);
+    coreFrame->tree().setSpecifiedName(AtomString(String(frameName)));
 }
 
 WebView* WebFrame::webView()
@@ -288,7 +297,7 @@ void WebFrame::setWebView(WebView* webView)
 
 DOMDocument* WebFrame::domDocument()
 {
-    if (Frame* coreFrame = core(this))
+    if (LocalFrame* coreFrame = core(this))
         if (Document* document = coreFrame->document())
             return DOMDocument::createInstance(document);
     return 0;
@@ -296,25 +305,25 @@ DOMDocument* WebFrame::domDocument()
 
 DOMElement* WebFrame::currentForm()
 {
-    if (Frame* coreFrame = core(this)) {
-    if (HTMLFormElement* formElement = coreFrame->selection().currentForm())
-            return DOMElement::createInstance(formElement);
+    if (LocalFrame* coreFrame = core(this)) {
+    if (RefPtr<HTMLFormElement> formElement = coreFrame->selection().currentForm())
+            return DOMElement::createInstance(formElement.get());
     }
     return 0;
 }
 
 JSGlobalContextRef WebFrame::globalContext()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
-    return toGlobalRef(coreFrame->script().globalObject(mainThreadNormalWorld()));
+    return toGlobalRef(coreFrame->script().globalObject(mainThreadNormalWorldSingleton()));
 }
 
 void WebFrame::loadURL(const char* url)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return;
 
@@ -328,7 +337,7 @@ void WebFrame::loadURL(const char* url)
 
 JSGlobalContextRef WebFrame::contextForScriptWorld(WebScriptWorld* world)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
@@ -337,7 +346,7 @@ JSGlobalContextRef WebFrame::contextForScriptWorld(WebScriptWorld* world)
 
 void WebFrame::loadRequest(WebMutableURLRequest* request)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return;
 
@@ -346,7 +355,7 @@ void WebFrame::loadRequest(WebMutableURLRequest* request)
 
 void WebFrame::loadHTMLString(const char* string, const char* baseURL, const char* unreachableURL)
 {
-    RefPtr<SharedBuffer> data = SharedBuffer::create(string, strlen(string));
+    RefPtr<SharedBuffer> data = SharedBuffer::create(std::span { reinterpret_cast<const uint8_t*>(string), strlen(string) });
     String utf8Encoding("utf-8");
     String mimeType("text/html");
 
@@ -357,7 +366,7 @@ void WebFrame::loadHTMLString(const char* string, const char* baseURL, const cha
     ResourceResponse response(URL(), mimeType, data.get()->size(), utf8Encoding);
     SubstituteData substituteData(WTFMove(data), failingURL, response, SubstituteData::SessionHistoryVisibility::Hidden);
 
-    if (Frame* coreFrame = core(this))
+    if (LocalFrame* coreFrame = core(this))
         coreFrame->loader().load(FrameLoadRequest(*coreFrame, request, substituteData));
 }
 
@@ -383,7 +392,7 @@ static inline WebDataSource *getWebDataSource(DocumentLoader* loader)
 
 WebDataSource* WebFrame::dataSource()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
@@ -392,7 +401,7 @@ WebDataSource* WebFrame::dataSource()
 
 WebDataSource* WebFrame::provisionalDataSource()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
@@ -401,7 +410,7 @@ WebDataSource* WebFrame::provisionalDataSource()
 
 const char* WebFrame::url() const
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return strdup("");
 
@@ -428,13 +437,13 @@ const char* WebFrame::url() const
 
 void WebFrame::stopLoading()
 {
-    if (Frame* coreFrame = core(this))
+    if (LocalFrame* coreFrame = core(this))
         coreFrame->loader().stopAllLoaders();
 }
 
 void WebFrame::reload()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return;
 
@@ -443,12 +452,12 @@ void WebFrame::reload()
 
 WebFrame* WebFrame::findFrameNamed(const char* name)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
     String nameString = String::fromUTF8(name);
-    Frame* foundFrame = coreFrame->tree().find(AtomString(nameString), *coreFrame);
+    Frame* foundFrame = coreFrame->tree().findBySpecifiedName(AtomString(nameString), *coreFrame);
     if (!foundFrame)
         return 0;
 
@@ -461,7 +470,7 @@ WebFrame* WebFrame::findFrameNamed(const char* name)
 
 WebFrame* WebFrame::parentFrame()
 {
-    if (Frame* coreFrame = core(this))
+    if (LocalFrame* coreFrame = core(this))
         if (WebFrame* webFrame = kit(coreFrame->tree().parent()))
             return webFrame;
 
@@ -470,7 +479,7 @@ WebFrame* WebFrame::parentFrame()
 
 const char* WebFrame::renderTreeAsExternalRepresentation()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return "";
 
@@ -479,36 +488,34 @@ const char* WebFrame::renderTreeAsExternalRepresentation()
 
 char* WebFrame::counterValueForElementById(const char* id)
 {
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame)
         return 0;
 
-    Element* element = frame->document()->getElementById(String(id));
+    RefPtr<Element> element = frame->document()->getElementById(String(id));
     if (!element)
         return 0;
 
-    String counterValue = counterValueForElement(element);
+    String counterValue = counterValueForElement(element.get());
     return strdup(counterValue.utf8().data());
 }
 
 int WebFrame::pageNumberForElementById(const char* id, float pageWidthInPixels, float pageHeightInPixels)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
-    String coreId = String(id, strlen(id));
-
-    Element* element = coreFrame->document()->getElementById(coreId);
+    RefPtr<Element> element = coreFrame->document()->getElementById(String::fromUTF8(id));
     if (!element)
         return 0;
 
-    return PrintContext::pageNumberForElement(element, FloatSize(pageWidthInPixels, pageHeightInPixels));
+    return PrintContext::pageNumberForElement(element.get(), FloatSize(pageWidthInPixels, pageHeightInPixels));
 }
 
 int WebFrame::numberOfPages(float pageWidthInPixels, float pageHeightInPixels)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
@@ -517,21 +524,20 @@ int WebFrame::numberOfPages(float pageWidthInPixels, float pageHeightInPixels)
 
 BalPoint WebFrame::scrollOffset()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
-        return IntPoint();
+        return BalPoint();
 
     FrameView* view = coreFrame->view();
     if (!view)
-        return IntPoint();
+        return BalPoint();
 
-    IntPoint p(view->scrollPosition());
-    return p;
+    return toBal(IntPoint(view->scrollPosition()));
 }
 
 BalRectangle WebFrame::visibleContentRect()
 {
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame)
         return BalRectangle();
 
@@ -539,16 +545,16 @@ BalRectangle WebFrame::visibleContentRect()
     if (!view)
         return BalRectangle();
 
-    return view->visibleContentRect();
+    return toBal(view->visibleContentRect());
 }
 
 void WebFrame::layout()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return ;
 
-    FrameView* view = coreFrame->view();
+    LocalFrameView* view = coreFrame->view();
     if (!view)
         return ;
 
@@ -557,7 +563,7 @@ void WebFrame::layout()
 
 bool WebFrame::firstLayoutDone()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return false;
 
@@ -566,7 +572,7 @@ bool WebFrame::firstLayoutDone()
 
 WebFrameLoadType WebFrame::loadType()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return WebFrameLoadTypeStandard;
 
@@ -580,7 +586,7 @@ bool WebFrame::supportsTextEncoding()
 
 const char* WebFrame::selectedString()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return "";
 
@@ -590,7 +596,7 @@ const char* WebFrame::selectedString()
 
 bool WebFrame::selectAll()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return false;
 
@@ -599,18 +605,24 @@ bool WebFrame::selectAll()
 
 bool WebFrame::deselectAll()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return false;
 
     return coreFrame->editor().command("Unselect").execute();
 }
 
-Ref<Frame> WebFrame::createSubframeWithOwnerElement(WebView* webView, Page* page, HTMLFrameOwnerElement* ownerElement)
+Ref<LocalFrame> WebFrame::createSubframeWithOwnerElement(WebView* webView, Page* page, HTMLFrameOwnerElement* ownerElement)
 {
     d->webView = webView;
 
-    Ref<Frame> frame = Frame::create(page, ownerElement, makeUniqueRef<WebFrameLoaderClient>(this));
+    auto effectiveSandboxFlags = ownerElement->sandboxFlags();
+    if (RefPtr parentLocalFrame = ownerElement->document().frame())
+        effectiveSandboxFlags.add(parentLocalFrame->effectiveSandboxFlags());
+
+    auto frame = LocalFrame::createSubframe(*page, [this](LocalFrame&, FrameLoader& loader) -> UniqueRef<LocalFrameLoaderClient> {
+        return makeUniqueRefWithoutRefCountedCheck<WebFrameLoaderClient>(loader, this);
+    }, FrameIdentifier::generate(), effectiveSandboxFlags, *ownerElement);
     d->frame = frame.ptr();
     return frame;
 }
@@ -618,17 +630,17 @@ Ref<Frame> WebFrame::createSubframeWithOwnerElement(WebView* webView, Page* page
 void WebFrame::initWithWebView(WebView* webView, Page* page) 
 { 
     d->webView = webView;
-    d->frame = &page->mainFrame();
+    d->frame = dynamicDowncast<LocalFrame>(page->mainFrame());
 }
 
-Frame* WebFrame::impl()
+LocalFrame* WebFrame::impl()
 {
     return d->frame;
 }
 
 void WebFrame::invalidate()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     ASSERT(coreFrame);
 
     if (Document* document = coreFrame->document())
@@ -637,7 +649,7 @@ void WebFrame::invalidate()
 
 bool WebFrame::isDisplayingStandaloneImage()
 {
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame)
         return false;
 
@@ -647,11 +659,11 @@ bool WebFrame::isDisplayingStandaloneImage()
 
 bool WebFrame::allowsFollowingLink(const char* url) const
 {
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame)
         return false;
 
-    return frame->document()->securityOrigin().canDisplay(URL(URL(), url));
+    return frame->document()->securityOrigin().canDisplay(URL(URL(), url), OriginAccessPatternsForWebProcess::singleton());
 }
 
 /*HRESULT WebFrame::elementWithName(BSTR name, IDOMElement* form, IDOMElement** element)
@@ -746,7 +758,7 @@ HRESULT WebFrame::searchForLabelsBeforeElement(const BSTR* labels, unsigned cLab
     if (cLabels < 1)
         return E_INVALIDARG;
 
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return E_FAIL;
 
@@ -786,7 +798,7 @@ HRESULT WebFrame::matchLabelsAgainstElement(const BSTR* labels, int cLabels, IDO
     if (cLabels < 1)
         return E_INVALIDARG;
 
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return E_FAIL;
 
@@ -837,7 +849,7 @@ HRESULT WebFrame::canProvideDocumentSource(bool* result)
 
 void WebFrame::void setPrinting(bool printing, float minPageWidth, float minPageHeight, float maximumShrinkRatio, bool adjustViewSize); 
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     ASSERT(coreFrame);
     coreFrame->setPrinting(printing, FloatSize(minPageWidth, minPageHeight), maxPageWidth / minPageWidth, adjustViewSize ? AdjustViewSize : DoNotAdjustViewSize); 
 }
@@ -847,7 +859,7 @@ HRESULT STDMETHODCALLTYPE WebFrame::setInPrintingMode( BOOL value, HDC printDC)
     if (m_inPrintingMode == !!value)
         return S_OK;
 
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return E_FAIL;
 
@@ -924,7 +936,7 @@ const Vector<WebCore::IntRect>& WebFrame::computePageRects(HDC printDC)
 {
     ASSERT(m_inPrintingMode);
 
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     ASSERT(coreFrame);
     ASSERT(coreFrame->document());
 
@@ -961,7 +973,7 @@ UINT WebFrame::getPrintedPageCount( HDC printDC)
         return E_FAIL;
     }
 
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame || !coreFrame->document())
         return E_FAIL;
 
@@ -983,7 +995,7 @@ void* WebFrame::spoolPages(HDC printDC, UINT startPage, UINT endPage)
         return E_FAIL;
     }
 
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame || !coreFrame->document())
         return E_FAIL;
 
@@ -1062,7 +1074,7 @@ void* WebFrame::spoolPages(HDC printDC, UINT startPage, UINT endPage)
 
 bool WebFrame::isFrameSet()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame || !coreFrame->document())
         return false;
 
@@ -1071,7 +1083,7 @@ bool WebFrame::isFrameSet()
 
 const char* WebFrame::toString()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return "";
     if (coreFrame->view() && coreFrame->view()->layoutContext().isLayoutPending())
@@ -1084,7 +1096,7 @@ const char* WebFrame::toString()
 
 const char* WebFrame::renderTreeDump() const
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (coreFrame->view() && coreFrame->view()->layoutContext().isLayoutPending())
         coreFrame->view()->layoutContext().layout();
 
@@ -1094,18 +1106,18 @@ const char* WebFrame::renderTreeDump() const
 
 BalPoint WebFrame::size()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
-        return IntPoint();
+        return BalPoint();
     FrameView* view = coreFrame->view();
     if (!view)
-        return IntPoint();
-    return IntPoint(view->width(), view->height());
+        return BalPoint();
+    return toBal(IntPoint(view->width(), view->height()));
 }
 
 bool WebFrame::hasScrollBars()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return false;
 
@@ -1120,65 +1132,67 @@ bool WebFrame::hasScrollBars()
 
 BalRectangle WebFrame::contentBounds()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
-        return IntRect();
+        return BalRectangle();
 
     FrameView* view = coreFrame->view();
     if (!view)
-        return IntRect();
+        return BalRectangle();
 
-    return IntRect(0, 0, view->contentsWidth(), view->contentsHeight());
+    return toBal(IntRect(0, 0, view->contentsWidth(), view->contentsHeight()));
 }
 
 BalRectangle WebFrame::frameBounds()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
-        return IntRect();
+        return BalRectangle();
 
     FrameView* view = coreFrame->view();
     if (!view)
-        return IntRect();
+        return BalRectangle();
 
     FloatRect bounds = view->visibleContentRectIncludingScrollbars();
-    return IntRect(0, 0, (int)bounds.width(), (int)bounds.height());
+    return toBal(IntRect(0, 0, (int)bounds.width(), (int)bounds.height()));
 }
 
 bool WebFrame::isDescendantOfFrame(WebFrame *ancestor)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
 
     return (coreFrame && coreFrame->tree().isDescendantOf(core(ancestor))) ? true : false;
 }
 
 void WebFrame::unmarkAllMisspellings()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     for (Frame* frame = coreFrame; frame; frame = frame->tree().traverseNext(coreFrame)) {
-        Document *doc = frame->document();
+        auto* localFrame = dynamicDowncast<LocalFrame>(frame);
+        Document *doc = localFrame ? localFrame->document() : nullptr;
         if (!doc)
             return;
 
-        doc->markers().removeMarkers(DocumentMarker::Spelling);
+        doc->markers().removeMarkers(DocumentMarkerType::Spelling);
     }
 }
 
 void WebFrame::unmarkAllBadGrammar()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     for (Frame* frame = coreFrame; frame; frame = frame->tree().traverseNext(coreFrame)) {
-        Document *doc = frame->document();
+        auto* localFrame = dynamicDowncast<LocalFrame>(frame);
+        Document *doc = localFrame ? localFrame->document() : nullptr;
         if (!doc)
             return;
 
-        doc->markers().removeMarkers(DocumentMarker::Grammar);
+        doc->markers().removeMarkers(DocumentMarkerType::Grammar);
     }
 }
 
 void WebFrame::updateBackground()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
 
     if (!coreFrame || !coreFrame->view())
         return;
@@ -1231,7 +1245,7 @@ bool WebFrame::elementDoesAutoComplete(DOMElement *element)
 
 void WebFrame::setEditable(bool flag)
 {
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame)
         return;
 
@@ -1242,7 +1256,7 @@ void WebFrame::setEditable(bool flag)
 
 unsigned WebFrame::pendingFrameUnloadEventCount()
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame)
         return 0;
 
@@ -1263,7 +1277,7 @@ void WebFrame::addToJSWindowObject(BALObject* object)
 {
 #if 0
     JSC::JSLock lock(JSC::SilenceAssertionsOnly);
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     JSDOMWindow* window = toJSDOMWindow(frame, mainThreadNormalWorld());
     if (!window)
         return;
@@ -1291,23 +1305,23 @@ bool WebFrame::stringByEvaluatingJavaScriptInScriptWorld(WebScriptWorld* world, 
         return false;
     *evaluationResult = 0;
 
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     JSObjectRef globalObjectRef = reinterpret_cast<JSObjectRef>(jsGlobalObject);
     String string = String(script);
 
     // Start off with some guess at a frame and a global object, we'll try to do better...!
-    JSDOMWindow* anyWorldGlobalObject = coreFrame->script().globalObject(mainThreadNormalWorld());
+    JSDOMWindow* anyWorldGlobalObject = JSC::jsCast<JSDOMWindow*>(coreFrame->script().globalObject(mainThreadNormalWorldSingleton()));
 
     // The global object is probably a proxy object? - if so, we know how to use this!
     JSC::JSObject* globalObjectObj = toJS(globalObjectRef);
     auto& vm = globalObjectObj->vm();
-    if (globalObjectObj->inherits<JSWindowProxy>(vm))
-        anyWorldGlobalObject = JSC::jsDynamicCast<JSDOMWindow*>(vm, static_cast<JSWindowProxy*>(globalObjectObj)->window());
+    if (globalObjectObj->inherits<JSWindowProxy>())
+        anyWorldGlobalObject = JSC::jsDynamicCast<JSDOMWindow*>(static_cast<JSWindowProxy*>(globalObjectObj)->window());
 
     // Get the frame from the global object we've settled on.
-    Frame* frame = anyWorldGlobalObject->wrapped().frame();
+    auto* frame = dynamicDowncast<LocalFrame>(anyWorldGlobalObject->wrapped().frame());
     ASSERT(frame->document());
-    JSC::JSValue result = frame->script().executeScriptInWorldIgnoringException(world->world(), string, true);
+    JSC::JSValue result = frame->script().executeScriptInWorldIgnoringException(world->world(), string, JSC::SourceTaintedOrigin::Untainted, true);
 
     if (!frame) // In case the script removed our frame from the page.
         return true;
@@ -1329,7 +1343,7 @@ bool WebFrame::stringByEvaluatingJavaScriptInScriptWorld(WebScriptWorld* world, 
 TransferSharedPtr<WebValue> WebFrame::getWrappedAttributeEventListener(const char* name)
 {
     AtomString type(name);
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame && !coreFrame->document())
         return 0;
     EventListener* listener = coreFrame->document()->getWindowAttributeEventListener(type);
@@ -1348,7 +1362,7 @@ void WebFrame::addEventListener(const char* name, TransferSharedPtr<WebValue> va
         return;
 
     AtomString type(name);
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame && !frame->document())
         return;
     JSC::JSGlobalObject* global = frame->script()->globalObject(mainThreadNormalWorld());
@@ -1361,7 +1375,7 @@ void WebFrame::removeEventListener(const char* name, TransferSharedPtr<WebValue>
         return;
 
     AtomString type(name);
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame && !frame->document())
         return;
     JSC::JSGlobalObject* global = frame->script()->globalObject(mainThreadNormalWorld());
@@ -1373,17 +1387,17 @@ void WebFrame::removeEventListener(const char* name, TransferSharedPtr<WebValue>
 
 void WebFrame::dispatchEvent(const char* name)
 {
-    Frame* coreFrame = core(this);
+    LocalFrame* coreFrame = core(this);
     if (!coreFrame->document())
         return;
-    AtomString type(name);
+    AtomString type { String(name) };
     RefPtr<Event> ev = Event::create(type, WebCore::Event::CanBubble::No, WebCore::Event::IsCancelable::No);
     coreFrame->document()->dispatchWindowEvent(*ev.get());
 }
 
 const char* WebFrame::layerTreeAsText()
 {
-    Frame* frame = core(this);
+    LocalFrame* frame = core(this);
     if (!frame)
         return "";
 

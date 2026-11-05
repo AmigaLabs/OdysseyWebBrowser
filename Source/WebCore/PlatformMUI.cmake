@@ -15,6 +15,8 @@ list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/platform/graphics/egl"
     "${WEBCORE_DIR}/platform/network/curl"
     "${WEBCORE_DIR}/platform/mui"
+    "${WEBCORE_DIR}/PAL"
+    "${WEBCORE_DIR}/platform/morphos"
     "${WEBCORE_DIR}/platform/bal"
     "${WEBCORE_DIR}/platform/mediacapabilities"
     "${WEBKITLEGACY_DIR}/mui/UI"
@@ -29,34 +31,16 @@ list(APPEND WebCore_SOURCES
 
     #loader/AdBlock.cpp
 
-    #platform/bal/ObserverServiceBookmarklet.cpp
-    #platform/bal/ObserverServiceData.cpp
+    platform/mui/ObserverServiceBookmarklet.cpp
+    platform/morphos/SelectionData.cpp
+    platform/mui/ObserverServiceData.cpp
 
-    platform/Cursor.cpp
 
     platform/generic/KeyedDecoderGeneric.cpp
     platform/generic/KeyedEncoderGeneric.cpp
 
-    platform/graphics/ImageSource.cpp
-    platform/graphics/WOFFFileFormat.cpp
 
-    platform/graphics/morphos/acinerella.c
-    platform/graphics/morphos/AcinerellaAudioDecoder.cpp
-    platform/graphics/morphos/AcinerellaBuffer.cpp
-    platform/graphics/morphos/AcinerellaContainer.cpp
-    platform/graphics/morphos/AcinerellaDecoder.cpp
-    platform/graphics/morphos/AcinerellaHLS.cpp
-    platform/graphics/morphos/AcinerellaMuxer.cpp
-    platform/graphics/morphos/AcinerellaPointer.cpp
-    platform/graphics/morphos/AcinerellaVideoDecoder.cpp
-    platform/graphics/morphos/AudioTrackPrivateMorphOS.cpp
     platform/graphics/morphos/DisplayRefreshMonitorMorphOS.cpp
-    platform/graphics/morphos/MediaDescriptionMorphOS.cpp
-    platform/graphics/morphos/MediaPlayerPrivateMorphOS.cpp
-    platform/graphics/morphos/MediaSampleMorphOS.cpp
-    platform/graphics/morphos/MediaSourceBufferPrivateMorphOS.cpp
-    platform/graphics/morphos/MediaSourcePrivateMorphOS.cpp
-    platform/graphics/morphos/VideoTrackPrivateMorphOS.cpp
 
     platform/linux/FileIOLinux.cpp
 
@@ -81,20 +65,25 @@ list(APPEND WebCore_SOURCES
     platform/mui/PasteboardMorphOS.cpp
     platform/mui/PlatformKeyboardEventMorphOS.cpp
     platform/mui/PlatformMouseEventMorphOS.cpp
+    platform/mui/AccessibilityMUI.cpp
     platform/mui/PlatformScreenMorphOS.cpp
+    platform/mui/GLContextMUI.cpp
+    platform/mui/GLES2StubMUI.cpp
+    platform/mui/AdBlockStubMUI.cpp
+    platform/network/mui/CurlSSLHandleMUI.cpp
+    platform/mui/SystemFontDatabaseMUI.cpp
+    platform/mui/ThemeMUI.cpp
     platform/mui/PlatformWheelEventMorphOS.cpp
     platform/mui/PopupMenuMorphOS.cpp
     platform/mui/RenderThemeMorphOS.cpp
     platform/mui/ScrollbarThemeMorphOS.cpp
     platform/mui/SearchPopupMenuMorphOS.cpp
-    platform/mui/SSLKeyGeneratorMorphOS.cpp
     platform/mui/WidgetMorphOS.cpp
 
     platform/image-decoders/cairo/ImageBackingStoreCairo.cpp
 
     #platform/network/mui/CurlSSLHandleMUI.cpp
 
-    platform/PlatformStrategies.cpp
 
     #platform/posix/SharedBufferPOSIX.cpp
 
@@ -103,6 +92,27 @@ list(APPEND WebCore_SOURCES
     #platform/text/TextCodecICU.cpp
     #platform/text/TextEncodingDetectorICU.cpp
 )
+
+if (ENABLE_VIDEO AND ENABLE_VIDEO_TRACK)
+    list(APPEND WebCore_SOURCES
+        platform/graphics/morphos/acinerella.c
+        platform/graphics/morphos/AcinerellaAudioDecoder.cpp
+        platform/graphics/morphos/AcinerellaBuffer.cpp
+        platform/graphics/morphos/AcinerellaContainer.cpp
+        platform/graphics/morphos/AcinerellaDecoder.cpp
+        platform/graphics/morphos/AcinerellaHLS.cpp
+        platform/graphics/morphos/AcinerellaMuxer.cpp
+        platform/graphics/morphos/AcinerellaPointer.cpp
+        platform/graphics/morphos/AcinerellaVideoDecoder.cpp
+        platform/graphics/morphos/AudioTrackPrivateMorphOS.cpp
+        platform/graphics/morphos/MediaDescriptionMorphOS.cpp
+        platform/graphics/morphos/MediaPlayerPrivateMorphOS.cpp
+        platform/graphics/morphos/MediaSampleMorphOS.cpp
+        platform/graphics/morphos/MediaSourceBufferPrivateMorphOS.cpp
+        platform/graphics/morphos/MediaSourcePrivateMorphOS.cpp
+        platform/graphics/morphos/VideoTrackPrivateMorphOS.cpp
+    )
+endif ()
 
 list(APPEND WebCore_PRIVATE_FRAMEWORK_HEADERS
     platform/morphos/SelectionData.h

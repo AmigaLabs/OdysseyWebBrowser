@@ -116,8 +116,9 @@ public:
 
     WTF_EXPORT_PRIVATE void threadWillExit();
 
-#if OS(MORPHOS)
-    void iterate();
+#if OS(MORPHOS) || OS(AMIGAOS)
+    // Called from the MUI main loop to run queued main-thread work and timers.
+    WTF_EXPORT_PRIVATE static void iterate();
 #endif
 
 #if USE(GLIB_EVENT_LOOP)

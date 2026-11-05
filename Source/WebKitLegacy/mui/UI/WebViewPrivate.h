@@ -31,7 +31,7 @@
 #include "WebView.h"
 #include <WebCore/IntRect.h>
 #include <wtf/Vector.h>
-#include <WebCore/FrameView.h>
+#include <WebCore/LocalFrameView.h>
 #include <WebCore/Frame.h>
 #include "BALBase.h"
 #include "cairo.h"
@@ -174,7 +174,7 @@ public:
         return 0;
     }
 
-    void initWithFrameView(WebCore::FrameView *frameView)
+    void initWithFrameView(WebCore::LocalFrameView *frameView)
     {
     }
 
@@ -217,7 +217,7 @@ public:
 
     void addToDirtyRegion(const BalRectangle& dirtyRect)
     {
-        m_backingStoreDirtyRegion.unite(dirtyRect);
+        m_backingStoreDirtyRegion.unite(WebCore::IntRect(dirtyRect.x, dirtyRect.y, dirtyRect.w, dirtyRect.h));
     if(m_dirtyRegions.size() > 10)
     {
         m_dirtyRegions.clear();
@@ -225,7 +225,7 @@ public:
     }
     else
     {
-        m_dirtyRegions.append(dirtyRect);
+        m_dirtyRegions.append(WebCore::IntRect(dirtyRect.x, dirtyRect.y, dirtyRect.w, dirtyRect.h));
     }
     }
 
@@ -246,7 +246,7 @@ public:
     
     void repaint(const WebCore::IntRect&, bool contentChanged, bool immediate = false, bool repaintContentOnly = false);
     
-    void scrollBackingStore(WebCore::FrameView*, int dx, int dy, const WebCore::IntRect& scrollViewRect, const WebCore::IntRect& clipRect);
+    void scrollBackingStore(WebCore::LocalFrameView*, int dx, int dy, const WebCore::IntRect& scrollViewRect, const WebCore::IntRect& clipRect);
     
     void resize(BalRectangle);
     void move(BalPoint, BalPoint);

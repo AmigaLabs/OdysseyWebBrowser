@@ -26,6 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <wtf/text/MakeString.h>
 #include <wtf/text/WTFString.h>
 #include <wtf/text/CString.h>
 #include <wtf/Vector.h>
@@ -114,22 +115,22 @@ static bool parse_script(ScriptEntry *entry)
                     }
                     else if((pos = lines[i].find("@name")) != notFound && (lines[i].find("@namespace") == notFound)) // Additional space/tab hack to avoid matching @namespace
                     {
-                        entry->title = lines[i].substring(pos + 1 + strlen("@name")).stripWhiteSpace();
+                        entry->title = lines[i].substring(pos + 1 + strlen("@name")).trim(isASCIIWhitespace<UChar>);
                     }
                     else if((pos = lines[i].find("@description")) != notFound)
                     {
                         if(entry->description.length() == 0) // Just the first line (we should use multiline)
                         {
-                            entry->description = lines[i].substring(pos + 1 + strlen("@decription")).stripWhiteSpace();
+                            entry->description = lines[i].substring(pos + 1 + strlen("@decription")).trim(isASCIIWhitespace<UChar>);
                         }
                     }
                     else if((pos = lines[i].find("@include")) != notFound)
                     {
-                        entry->whitelist.append(lines[i].substring(pos + 1 + strlen("@include")).stripWhiteSpace());
+                        entry->whitelist.append(lines[i].substring(pos + 1 + strlen("@include")).trim(isASCIIWhitespace<UChar>));
                     }
                     else if((pos = lines[i].find("@exclude")) != notFound)
                     {
-                        entry->blacklist.append(lines[i].substring(pos + 1 + strlen("@exclude")).stripWhiteSpace());
+                        entry->blacklist.append(lines[i].substring(pos + 1 + strlen("@exclude")).trim(isASCIIWhitespace<UChar>));
                     }
                 }
             }
@@ -177,7 +178,7 @@ static void load_scripts(Object *obj, struct Data *data)
             if(script)
             {
                 script->path    = scriptAttributes[0];
-                script->enabled = scriptAttributes[1] == "1";
+                script->enabled = scriptAttributes[1] == "1"_s;
 
                 if(parse_script(script))
                 {
@@ -218,21 +219,21 @@ void save_scripts()
 
         for(size_t j = 0; j < scripts_list[i]->whitelist.size(); j++)
         {
-                whitelisthosts.append(scripts_list[i]->whitelist[j]);
+                whitelisthosts = makeString(whitelisthosts, scripts_list[i]->whitelist[j]);
 
             if(j < scripts_list[i]->whitelist.size() - 1)
             {
-                    whitelisthosts.append("\2");
+                    whitelisthosts = makeString(whitelisthosts, "\2"_s);
             }
         }
 
         for(size_t j = 0; j < scripts_list[i]->blacklist.size(); j++)
         {
-                blacklisthosts.append(scripts_list[i]->blacklist[j]);
+                blacklisthosts = makeString(blacklisthosts, scripts_list[i]->blacklist[j]);
 
             if(j < scripts_list[i]->blacklist.size() - 1)
             {
-                    blacklisthosts.append("\2");
+                    blacklisthosts = makeString(blacklisthosts, "\2"_s);
             }
         }
 

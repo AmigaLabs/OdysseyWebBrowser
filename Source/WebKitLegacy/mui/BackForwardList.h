@@ -43,11 +43,15 @@ public:
     void goBack();
     void goForward();
     void goToItem(WebCore::HistoryItem&) override;
+    void setChildItem(WebCore::BackForwardFrameItemIdentifier, Ref<WebCore::HistoryItem>&&) override;
+    void goToProvisionalItem(const WebCore::HistoryItem&) override;
+    void clearProvisionalItem(const WebCore::HistoryItem&) override;
         
     RefPtr<WebCore::HistoryItem> backItem();
     RefPtr<WebCore::HistoryItem> currentItem();
     RefPtr<WebCore::HistoryItem> forwardItem();
-    RefPtr<WebCore::HistoryItem> itemAtIndex(int) override;
+    RefPtr<WebCore::HistoryItem> itemAtIndex(int);
+    RefPtr<WebCore::HistoryItem> itemAtIndex(int, WebCore::FrameIdentifier) override;
 
     void backListWithLimit(int, HistoryItemVector&);
     void forwardListWithLimit(int, HistoryItemVector&);
@@ -58,7 +62,7 @@ public:
     void setEnabled(bool);
     unsigned backListCount() const final;
     unsigned forwardListCount() const final;
-    bool containsItem(WebCore::HistoryItem*);
+    bool containsItem(const WebCore::HistoryItem&) const override;
 
     void close() override;
     bool closed();

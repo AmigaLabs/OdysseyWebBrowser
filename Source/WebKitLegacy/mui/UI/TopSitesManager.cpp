@@ -16,6 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <wtf/text/MakeString.h>
 #include "TopSitesManager.h"
 
 #include <wtf/text/Base64.h>
@@ -78,12 +79,12 @@ TopSitesManager::TopSitesManager()
     
     if(m_topSitesDB.isOpen())
     {
-        if(!m_topSitesDB.tableExists("topsites"))
+        if(!m_topSitesDB.tableExists("topsites"_s))
         {
             m_topSitesDB.executeCommand("CREATE TABLE topsites (url TEXT, title TEXT, screenshot BLOB, visitCount INTEGER, lastAccessed DOUBLE);"_s);    
         }
         
-        if(!m_topSitesDB.tableExists("settings"))
+        if(!m_topSitesDB.tableExists("settings"_s))
         {
             m_topSitesDB.executeCommand("CREATE TABLE settings (displayMode INTEGER, maxEntries INTEGER, screenshotSize INTEGER, filterMode INTEGER);"_s);
             
@@ -125,6 +126,12 @@ TopSitesManager::TopSitesManager()
 TopSitesManager::~TopSitesManager()
 {
     if(m_topSitesDB.isOpen())
+        m_topSitesDB.close();
+}
+
+void TopSitesManager::close()
+{
+    if (m_topSitesDB.isOpen())
         m_topSitesDB.close();
 }
 
@@ -247,7 +254,7 @@ RefPtr<Image> TopSitesManager::screenshot(URL &url)
         
         data = select->columnBlob(0);
         
-        imageData = SharedBuffer::create(data.data(), data.size());
+        imageData = SharedBuffer::create(std::span<const uint8_t>(data));
         
         image = BitmapImage::create();                                                            
         image->setData(WTFMove(imageData), true);
@@ -433,10 +440,10 @@ bool TopSitesManager::shouldAdd(URL &url)
     if(url.string().startsWith("topsites:"))
         return false;
 
-    if(url.string().endsWith("webinspector/inspector.html"))
+    if(url.string().endsWith("webinspector/inspector.html"_s))
         return false;
 
-    if(url.protocolIs("data:"))
+    if(url.protocolIs("data:"_s))
         return false;
 
     return true;
@@ -662,22 +669,22 @@ void TopSitesManager::generateTemplate(WebView *webView, String originurl)
                 String title = select->columnText(1);    
                 data = select->columnBlob(2);
                 
-                if(data.size() == 0 && m_placeholderImage && m_placeholderImage->data())
+                if(data.size() == 0 && m_placeholderImage && m_placeholderImage->size())
                 {
-                    base64Data = base64EncodeToString(m_placeholderImage->data(), m_placeholderImage->size());
+                    base64Data = base64EncodeToString(m_placeholderImage->span());
                 }
                 else
                 {
                     base64Data = base64EncodeToString(data);
                 }
                 
-                if(m_closeImage && m_closeImage->data())
+                if(m_closeImage && m_closeImage->size())
                 {
-                    closeBase64Data = base64EncodeToString(m_closeImage->data(), m_closeImage->size());
+                    closeBase64Data = base64EncodeToString(m_closeImage->span());
                 }
 
-                String screenshotURL =  "data:image/png;base64," + base64Data;
-                String removeURL = "data:image/png;base64," + closeBase64Data;
+                String screenshotURL = makeString("data:image/png;base64,"_s, base64Data);
+                String removeURL = makeString("data:image/png;base64,"_s, closeBase64Data);
                 //double timestamp = select.getColumnDouble(3);
                 int visits = select->columnInt(4);
 
@@ -687,33 +694,33 @@ void TopSitesManager::generateTemplate(WebView *webView, String originurl)
                 {
                     case TEMPLATE_3D:        
                     {        
-                        contents.append("<div class=\"item\" href=\"" + url + "\">");
+                        contents = makeString(contents, "<div class=\"item\" href=\""_s, url, "\">"_s);
                         
-                        contents.append("<img class=\"content\" title=\"" + title  + "\" src=\"" + screenshotURL + "\" alt=\"" + title  + "\" visitcount=\"" + String::number(visits) + "\">");
+                        contents = makeString(contents, "<img class=\"content\" title=\""_s, title, "\" src=\""_s, screenshotURL, "\" alt=\""_s, title, "\" visitcount=\""_s, String::number(visits), "\">"_s);
 
-                        contents.append("<div class=\"caption\">");
-                        contents.append("<h4><a href=\"topsites://?remove=" + url + "\"><img src=\"" + removeURL + "\"></a>&nbsp;<a href=\"" + url + "\">" + title + "</h4></a>");
-                        contents.append("</div>");
+                        contents = makeString(contents, "<div class=\"caption\">"_s);
+                        contents = makeString(contents, "<h4><a href=\"topsites://?remove="_s, url, "\"><img src=\""_s, removeURL, "\"></a>&nbsp;<a href=\""_s, url, "\">"_s, title, "</h4></a>"_s);
+                        contents = makeString(contents, "</div>"_s);
 
-                        contents.append("</div>");
+                        contents = makeString(contents, "</div>"_s);
                     
                         break;
                     }
                         
                     case TEMPLATE_GRID:
                     {
-                        contents.append("<li class=\"clearfix\">");
-                        contents.append("<a href=\"" + url + "\"><img src=\"" + screenshotURL + "\" visitcount=\"" + String::number(visits) + "\"></a>");
+                        contents = makeString(contents, "<li class=\"clearfix\">"_s);
+                        contents = makeString(contents, "<a href=\""_s, url, "\"><img src=\""_s, screenshotURL, "\" visitcount=\""_s, String::number(visits), "\"></a>"_s);
                         
-                        contents.append("<div class=\"meta\">");
-                        contents.append("<h4>" + title + "</h4>");
-                        contents.append("</div>");
+                        contents = makeString(contents, "<div class=\"meta\">"_s);
+                        contents = makeString(contents, "<h4>"_s, title, "</h4>"_s);
+                        contents = makeString(contents, "</div>"_s);
 
-                        contents.append("<div class=\"remove\">");
-                        contents.append("<span><a href=\"topsites://?remove=" + url + "\"><img src=\"" + removeURL + "\"></a></span>");
-                        contents.append("</div>");
+                        contents = makeString(contents, "<div class=\"remove\">"_s);
+                        contents = makeString(contents, "<span><a href=\"topsites://?remove="_s, url, "\"><img src=\""_s, removeURL, "\"></a></span>"_s);
+                        contents = makeString(contents, "</div>"_s);
                         
-                        contents.append("</li>");
+                        contents = makeString(contents, "</li>"_s);
                         
                         break;
                     }
@@ -726,11 +733,11 @@ void TopSitesManager::generateTemplate(WebView *webView, String originurl)
             contents = " ";
         }
         
-        templateData.replace("{{topsites}}", contents);
-        templateData.replace("{{maxEntries}}", String::number(m_maxEntries));
-        templateData.replace("{{displayMode}}", String::number(m_displayMode));
-        templateData.replace("{{filterMode}}", String::number(m_filterMode));
-        templateData.replace("{{screenshotSize}}", String::number(m_screenshotSize));
+        templateData = makeStringByReplacingAll(templateData, "{{topsites}}"_s, contents);
+        templateData = makeStringByReplacingAll(templateData, "{{maxEntries}}"_s, String::number(m_maxEntries));
+        templateData = makeStringByReplacingAll(templateData, "{{displayMode}}"_s, String::number(m_displayMode));
+        templateData = makeStringByReplacingAll(templateData, "{{filterMode}}"_s, String::number(m_filterMode));
+        templateData = makeStringByReplacingAll(templateData, "{{screenshotSize}}"_s, String::number(m_screenshotSize));
 
         webView->mainFrame()->loadHTMLString(templateData.utf8().data(), originurl.utf8().data());
     }

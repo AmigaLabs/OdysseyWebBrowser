@@ -33,6 +33,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#if !OS(AMIGAOS)
+#define DEV_URANDOM "/dev/urandom"
+#else
+#define DEV_URANDOM "RANDOM:" // AmigaOS has no /dev/urandom
+#endif
 #endif
 
 #if OS(WINDOWS)
@@ -72,11 +77,11 @@ RandomDevice::RandomDevice()
 {
     int ret = 0;
     do {
-        ret = open("/dev/urandom", O_RDONLY, 0);
+        ret = open(DEV_URANDOM, O_RDONLY, 0);
     } while (ret == -1 && errno == EINTR);
     m_fd = ret;
     if (m_fd < 0)
-        crashUnableToOpenURandom(); // We need /dev/urandom for this API to work...
+        crashUnableToOpenURandom(); // We need DEV_URANDOM for this API to work...
 }
 #endif
 

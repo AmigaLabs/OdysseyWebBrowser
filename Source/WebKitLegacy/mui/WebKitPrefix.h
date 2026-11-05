@@ -51,7 +51,7 @@
 
 #endif
 
-#include <wtf/DisallowCType.h>
+// TEMP: wtf/DisallowCType.h dropped in 2.48 WTF; it is a no-op on PLATFORM(MUI) anyway.
 
 #if USE(CG)
 #ifndef CGFLOAT_DEFINED

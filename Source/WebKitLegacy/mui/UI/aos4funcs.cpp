@@ -114,6 +114,37 @@ ULONG _WritePixelArrayAlpha(APTR src, UWORD srcx, UWORD srcy, UWORD srcmod, stru
 }
 
 
+APTR ARGB2BGRA(APTR src, uint32_t stride, uint32_t height)
+{
+    APTR _return = malloc(stride * height);
+    uint32_t * dstptr = (uint32_t *)_return;
+    uint32_t * srcptr = (uint32_t *)src;
+    uint32_t x, y, pixelsperline = stride / 4, srcval, dstval;
+
+    for (y = 0; y < height; y++)
+        for (x = 0; x < pixelsperline; x++)
+        {
+            srcval = (*srcptr);
+            dstval = 0;
+            dstval |= ((srcval & 0x000000FF) >> 0)  << 24;
+            dstval |= ((srcval & 0x0000FF00) >> 8)  << 16;
+            dstval |= ((srcval & 0x00FF0000) >> 16) << 8;
+            dstval |= ((srcval & 0xFF000000) >> 24) << 0;
+
+            (*dstptr) = dstval;
+            srcptr++;
+            dstptr++;
+        }
+
+    return _return;
+}
+
+VOID ARGB2BGRAFREE(APTR dst)
+{
+    if (dst)
+        free(dst);
+}
+
 #ifdef __cplusplus
 }
 #endif

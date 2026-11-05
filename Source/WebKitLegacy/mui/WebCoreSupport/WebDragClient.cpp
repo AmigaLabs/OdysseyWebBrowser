@@ -36,6 +36,7 @@
 #include "WebView.h"
 
 #include <WebCore/DragData.h>
+#include <WebCore/SelectionData.h>
 #include <WebCore/Font.h>
 #include <WebCore/FontDescription.h>
 #include <WebCore/FontSelector.h>
@@ -105,6 +106,17 @@ void WebDragClient::willPerformDragSourceAction(DragSourceAction action, const I
     // See WebKit/win/WebCoreSupport/WebDragClient.cpp for how to implement it.
 }
 
+// DragData wraps a SelectionData, so copy the drag object into one that outlives the DragData.
+static SelectionData selectionDataFrom(DataObjectMorphOS* dataObject)
+{
+    SelectionData selection;
+    selection.setText(dataObject->text());
+    selection.setMarkup(dataObject->markup());
+    selection.setURL(dataObject->url(), dataObject->urlLabel());
+    selection.setURIList(dataObject->uriList());
+    return selection;
+}
+
 void WebDragClient::startDrag(DragItem item, DataTransfer& dataTransfer, Frame& frame)
 {
     D(kprintf("startDrag image %p islink %d imageOrigin (%d %d) dragPoint (%d %d) clipboard %p\n", image, isLink, imageOrigin.x(), imageOrigin.y(), dragPoint.x(), dragPoint.y(), clipboard));
@@ -115,12 +127,19 @@ void WebDragClient::startDrag(DragItem item, DataTransfer& dataTransfer, Frame& 
 
     if(widget)
     {
-        RefPtr<DataObjectMorphOS> dataObject = dataTransfer.pasteboard().dataObject();
+        // Pasteboard no longer exposes its DataObjectMorphOS, so rebuild one from the drag pasteboard.
+        Pasteboard& pasteboard = dataTransfer.pasteboard();
+        RefPtr<DataObjectMorphOS> dataObject = DataObjectMorphOS::create();
+        dataObject->setText(pasteboard.readString("text/plain"));
+        dataObject->setMarkup(pasteboard.readString("text/html"));
+        dataObject->setURIList(pasteboard.readString("text/uri-list"));
+        dataObject->setURL(URL(URL(), pasteboard.readString("URL")), String());
         D(kprintf("dataObject %p\n", dataObject.get()));
 
         if (item.sourceAction != DragSourceAction::Link)
         {
-            DragData dragData(dataObject.get(), IntPoint(0, 0), IntPoint(0,0), dataTransfer.sourceOperationMask());
+            SelectionData selection = selectionDataFrom(dataObject.get());
+            DragData dragData(&selection, IntPoint(0, 0), IntPoint(0,0), dataTransfer.sourceOperationMask());
             char *data = NULL;
 
             if(dragData.containsURL())

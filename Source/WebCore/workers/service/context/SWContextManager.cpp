@@ -24,6 +24,10 @@
  */
 
 #include "config.h"
+
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#endif
 #include "SWContextManager.h"
 
 #include "LocalFrameLoaderClient.h"
@@ -256,7 +260,7 @@ void SWContextManager::serviceWorkerFailedToTerminate(ServiceWorkerIdentifier se
     dprintf("Failed to terminate service worker with identifier %s, freezing the service worker process", serviceWorkerIdentifier.loggingString().utf8().data());
     Wait(0);
 #elif OS(AMIGAOS)
-    DebugPrintf("Failed to terminate service worker with identifier %s, freezing the service worker process", serviceWorkerIdentifier.loggingString().utf8().data());
+    DebugPrintF("Failed to terminate service worker with identifier %s, freezing the service worker process", serviceWorkerIdentifier.loggingString().utf8().data());
     Wait(0);
 #else
     terminateProcess(EXIT_FAILURE);

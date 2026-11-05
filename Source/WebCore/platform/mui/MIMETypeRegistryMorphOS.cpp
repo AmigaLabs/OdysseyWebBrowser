@@ -162,9 +162,9 @@ static const ExtensionMap extensionMap [] = {
     { 0, 0 }
 };
 
-String MIMETypeRegistry::mimeTypeForExtension(const String &ext)
+String MIMETypeRegistry::mimeTypeForExtension(StringView ext)
 {
-    String s = ext.convertToLowercaseWithoutLocale();
+    String s = ext.toString().convertToLowercaseWithoutLocale();
     const ExtensionMap *e = extensionMap;
     while (e->extension) {
         if (s == e->extension)

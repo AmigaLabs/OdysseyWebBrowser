@@ -31,6 +31,7 @@
 #if !HAVE(WOFF_SUPPORT)
 #include <wtf/ByteOrder.h>
 #include <zlib.h>
+#include <arpa/inet.h>
 #if USE(WOFF2)
 #include <woff2/decode.h>
 static const uint32_t kWoff2Signature = 0x774f4632; // "wOF2"

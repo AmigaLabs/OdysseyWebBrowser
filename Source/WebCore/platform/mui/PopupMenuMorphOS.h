@@ -39,7 +39,7 @@
 
 namespace WebCore {
 
-class FrameView;
+class LocalFrameView;
 class Scrollbar;
 
 class PopupMenuMorphOS : public PopupMenu {
@@ -47,7 +47,7 @@ public:
     PopupMenuMorphOS(PopupMenuClient*);
     virtual ~PopupMenuMorphOS();
 
-    virtual void show(const IntRect&, FrameView*, int index);
+    virtual void show(const IntRect&, LocalFrameView&, int index);
     virtual void hide();
     virtual void updateFromElement();
     virtual void disconnectClient();
@@ -62,11 +62,11 @@ private:
     PopupMenuClient* m_popupClient;
 
     //
-    void calculatePositionAndSize(const IntRect&, FrameView*);
+    void calculatePositionAndSize(const IntRect&, LocalFrameView&);
 
     IntRect m_windowRect;
     int m_itemHeight;
-    FrameView * m_frameView;
+    LocalFrameView* m_frameView;
 };
 
 }

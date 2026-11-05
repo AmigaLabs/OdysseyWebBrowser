@@ -46,8 +46,9 @@
 #include <WebCore/Editor.h>
 #include <WebCore/FocusController.h>
 #include <WebCore/Frame.h>
+#include <WebCore/LocalFrame.h>
 #include <WebCore/FrameLoader.h>
-#include <WebCore/FrameView.h>
+#include <WebCore/LocalFrameView.h>
 #include <WebCore/GCController.h>
 #include <WebCore/ProgressTracker.h>
 #include <WebCore/SubstituteData.h>
@@ -80,6 +81,8 @@
 #endif
 #endif
 #include "WebHistory.h"
+#include "TopSitesManager.h"
+#include "AutofillBackingStore.h"
 #include "WebHistoryItem.h"
 #include "WebMutableURLRequest.h"
 #include "WebPasswordFormData.h"
@@ -94,13 +97,12 @@
 #include "WebStorageNamespaceProvider.h"
 #include "WebDatabaseProvider.h"
 #include <WebCore/CurlCacheManager.h>
-#include <WebCore/DOMWindow.h>
+#include <WebCore/LocalDOMWindow.h>
 #include <WebCore/MemoryCache.h>
 #include <WebCore/MemoryRelease.h>
 #include "JITWorklist.h"
 #include <WebCore/CommonVM.h>
 #include "DataURLDecoder.h"
-#include <WebCore/AsyncFileStream.h>
 #include <WebCore/BlobRegistryImpl.h>
 #include <wtf/text/StringToIntegerConversion.h>
 
@@ -787,9 +789,9 @@ static LONG Rexx(struct Hook *h, Object * obj, IPTR *params)
                 {
                     String arg   = String((CONST_STRPTR)*params);
                     ULONG mode;
-                    if(arg == "ON")
+                    if(arg == "ON"_s)
                         mode = MV_OWBWindow_FullScreen_On;
-                    else if(arg == "OFF")
+                    else if(arg == "OFF"_s)
                         mode = MV_OWBWindow_FullScreen_Off;
                     else
                         mode = MV_OWBWindow_FullScreen_Toggle;
@@ -893,22 +895,22 @@ void ParseConfigFile(const char* url, AppSettings *settings)
         if(eol == notFound)
             break;
 
-        String keyword = fileBuffer.substring(0, delimiter).stripWhiteSpace();
-        String key = fileBuffer.substring(delimiter +  1, eol - delimiter).stripWhiteSpace();
+        String keyword = fileBuffer.substring(0, delimiter).trim(isASCIIWhitespace<UChar>);
+        String key = fileBuffer.substring(delimiter +  1, eol - delimiter).trim(isASCIIWhitespace<UChar>);
 
-        if (keyword == "panelweight")
+        if (keyword == "panelweight"_s)
             settings->panelweight = parseIntegerAllowingTrailingJunk<int>(key).value_or(0);
 
-        if (keyword == "showbookmarkpanel")
+        if (keyword == "showbookmarkpanel"_s)
             settings->showbookmarkpanel = parseIntegerAllowingTrailingJunk<int>(key).value_or(0);
 
-        if (keyword == "showhistorypanel")
+        if (keyword == "showhistorypanel"_s)
             settings->showhistorypanel = parseIntegerAllowingTrailingJunk<int>(key).value_or(0);
 
-        if (keyword == "addbookmarkstomenu")
+        if (keyword == "addbookmarkstomenu"_s)
             settings->addbookmarkstomenu = parseIntegerAllowingTrailingJunk<int>(key).value_or(0);
 
-        if (keyword == "continuousspellchecking")
+        if (keyword == "continuousspellchecking"_s)
             settings->continuousspellchecking = parseIntegerAllowingTrailingJunk<int>(key).value_or(0);
         /*
         if (keyword == "privatebrowsing")
@@ -934,11 +936,11 @@ void WriteConfigFile(const char* url, AppSettings *settings)
         return;
     }
 
-    configFile->write(makeString("panelweight=", (unsigned long)settings->panelweight,"\n"));
-    configFile->write(makeString("showbookmarkpanel=", (unsigned long)settings->showbookmarkpanel,"\n"));
-    configFile->write(makeString("showhistorypanel=", (unsigned long)settings->showhistorypanel,"\n"));
-    configFile->write(makeString("addbookmarkstomenu=", (unsigned long)settings->addbookmarkstomenu,"\n"));
-    configFile->write(makeString("continuousspellchecking=", (unsigned long)settings->continuousspellchecking,"\n"));
+    configFile->write(makeString("panelweight="_s, (unsigned long)settings->panelweight,"\n"_s));
+    configFile->write(makeString("showbookmarkpanel="_s, (unsigned long)settings->showbookmarkpanel,"\n"_s));
+    configFile->write(makeString("showhistorypanel="_s, (unsigned long)settings->showhistorypanel,"\n"_s));
+    configFile->write(makeString("addbookmarkstomenu="_s, (unsigned long)settings->addbookmarkstomenu,"\n"_s));
+    configFile->write(makeString("continuousspellchecking="_s, (unsigned long)settings->continuousspellchecking,"\n"_s));
     //configFile->write(String::format("privatebrowsing=%lu\n", (unsigned long)settings->privatebrowsing));
     
     configFile->close();
@@ -1010,9 +1012,7 @@ DEFNEW
     NEWLIST(&urlsetting_list);
     NEWLIST(&family_list);
 
-	#if !OS(AMIGAOS)
     installClipboardMonitor();
-    #endif
 
     menus_init();
 
@@ -1162,6 +1162,11 @@ DEFDISP
     APTR n, m;
 
     owb_timer_should_exit = 1;
+    /* Wait for the timer thread to exit before tearing down: it signals completion with owb_timer_should_exit = 2 (DoIO is 14 ms). */
+    if (owbTimer) {
+        owbTimer->waitForCompletion();
+        owbTimer = nullptr;
+    }
 
     ITERATELISTSAFE(n, m, &window_list)
     {
@@ -1210,20 +1215,19 @@ DEFDISP
     }
 #endif
 
-    #if !OS(AMIGAOS)
+    /* Explicitly close SQLite databases: static destructors are not reliably run on AmigaOS. */
+    WebHistory::closeDatabase();
+    TopSitesManager::getInstance().close();
+    autofillBackingStore().close();
+
     removeClipboardMonitor();
-    #endif
     //kprintf("OWBApp: Ok, calling supermethod\n");
 
-    WebCore::DOMWindow::dispatchAllPendingUnloadEvents();
+    WebCore::LocalDOMWindow::dispatchAllPendingUnloadEvents();
     WebCore::CurlContext::singleton().stopThread();
-    WebDatabaseProvider::singleton().shutdownServers();
     WebKit::WebStorageNamespaceProvider::closeLocalStorage();
-    DataURLDecoder::shutdown();
-    WebCore::AsyncFileStream::shutdown();
-    WebCore::shutdownBlobRegistryImpl();
+    WebCore::DataURLDecoder::shutdownDecodePipeline();
     /* !!! Manually call save as destructors for static objects are not getting called (where saveIndex is called) !!! */
-    CurlCacheManager::singleton().saveIndex();
 
 #if !OS(AMIGAOS)    
     GCController::singleton().garbageCollectNow();
@@ -2224,9 +2228,8 @@ DEFSMETHOD(OWBApp_Download)
         quiet = true;
     }
 
-    lastComponent = decodeURLEscapeSequences(msg->suggestedname ? String(msg->suggestedname) : GetFilePart(url));
-    lastComponent.replace(":", "");
-    lastComponent.replace("/", ""); // XXX: any other to filter?
+    lastComponent = PAL::decodeURLEscapeSequences(msg->suggestedname ? String(msg->suggestedname) : GetFilePart(url));
+    lastComponent = lastComponent.removeCharacters([](UChar c) { return c == ':' || c == '/'; }); // XXX: any other to filter?
     localFilename = utf8_to_local(lastComponent.utf8().data());
 
     if(localFilename)
@@ -2696,7 +2699,7 @@ DEFSMETHOD(OWBApp_Login)
         {
             *msg->username = (TEXT *) strdup((char *) getv(loginwin, MA_LoginWindow_Username));
             *msg->password = (TEXT *) strdup((char *) getv(loginwin, MA_LoginWindow_Password));
-            *msg->persistence = getv(loginwin, MA_LoginWindow_SaveAuthentication) ? CredentialPersistencePermanent : CredentialPersistenceForSession;
+            *msg->persistence = static_cast<ULONG>(getv(loginwin, MA_LoginWindow_SaveAuthentication) ? CredentialPersistence::Permanent : CredentialPersistence::ForSession);
             ret = TRUE;
         }
 
@@ -2752,26 +2755,26 @@ DEFSMETHOD(OWBApp_SetFormState)
                 {
                     ExtCredential extCredential(webFormPasswordData.userNameValue,
                                                 webFormPasswordData.passwordValue,
-                                                CredentialPersistencePermanent,
+                                                CredentialPersistence::Permanent,
                                                 webFormPasswordData.userNameElement,
                                                 webFormPasswordData.passwordElement,
                                                 0);
                     if(webFormPasswordData.userNameElementElement)
                     {
                         webFormPasswordData.userNameElementElement->setValue(credential->user());
-                        webFormPasswordData.userNameElementElement->setAutoFilled();
+                        webFormPasswordData.userNameElementElement->setAutofilled();
                     }
 
                     if(webFormPasswordData.passwordElementElement)
                     {
                         webFormPasswordData.passwordElementElement->setValue(credential->password());
-                        webFormPasswordData.passwordElementElement->setAutoFilled();
+                        webFormPasswordData.passwordElementElement->setAutofilled();
                     }
 
                     if(webFormPasswordData.oldPasswordElementElement)
                     {
                         webFormPasswordData.oldPasswordElementElement->setValue(credential->password());
-                        webFormPasswordData.oldPasswordElementElement->setAutoFilled();
+                        webFormPasswordData.oldPasswordElementElement->setAutofilled();
                     }
                 }
             }
@@ -2790,7 +2793,7 @@ DEFSMETHOD(OWBApp_SaveFormState)
     if(!msg->webView || !msg->request)
         return 0;
 
-    Frame* coreFrame = &webView->page()->focusController().focusedOrMainFrame();
+    LocalFrame* coreFrame = webView->page()->focusController().focusedOrMainFrame();
 
     if (coreFrame && coreFrame->document())
     {
@@ -2813,7 +2816,7 @@ DEFSMETHOD(OWBApp_SaveFormState)
                     {
                         ExtCredential extCredential(webFormPasswordData.userNameValue,
                                                     webFormPasswordData.passwordValue,
-                                                    CredentialPersistencePermanent,
+                                                    CredentialPersistence::Permanent,
                                                     webFormPasswordData.userNameElement,
                                                     webFormPasswordData.passwordElement,
                                                     0);
@@ -2976,7 +2979,6 @@ DEFTMETHOD(OWBApp_UpdateBookmarkPanels)
 DEFSMETHOD(OWBApp_BuildUserMenu)
 {
     ContextMenu *menu = (ContextMenu *) msg->menu;
-    ContextMenuController *controller = (ContextMenuController *) msg->controller;
 
     if(menu)
     {
@@ -2994,8 +2996,8 @@ DEFSMETHOD(OWBApp_BuildUserMenu)
 
         if(count)
         {
-            ContextMenuItem separator(SeparatorType, ContextMenuItemTagNoAction, String());
-            controller->appendItem(separator, menu);
+            ContextMenuItem separator(ContextMenuItemType::Separator, ContextMenuItemTagNoAction, String());
+            menu->appendItem(separator);
 
             ITERATELIST(n, &contextmenu_list)
             {
@@ -3003,8 +3005,8 @@ DEFSMETHOD(OWBApp_BuildUserMenu)
 
                 if(cn->category == msg->category)
                 {
-                    ContextMenuItem item(ActionType, (ContextMenuAction) cn->actionId, String(cn->label));
-                    controller->appendItem(item, menu);
+                    ContextMenuItem item(ContextMenuItemType::Action, (ContextMenuAction) cn->actionId, String(cn->label));
+                    menu->appendItem(item);
                 }
             }
         }
@@ -3021,7 +3023,7 @@ DEFSMETHOD(OWBApp_SelectUserMenu)
     if(menucontroller)
     {
         HitTestResult result = menucontroller->hitTestResult();
-        Frame* frame = result.innerNonSharedNode()->document().frame();
+        LocalFrame* frame = result.innerNonSharedNode()->document().frame();
         if (!frame)
             return 0;
 
@@ -3035,10 +3037,10 @@ DEFSMETHOD(OWBApp_SelectUserMenu)
                 if(cn->actionId == (int) item->action())
                 {
                     String command = cn->commandString;
-                    command.replace("%u", frame->document()->url().string());
-                    command.replace("%l", result.absoluteLinkURL().string());
-                    command.replace("%i", result.absoluteImageURL().string());
-                    command.replace("%p", (char *)getv(app, MUIA_Application_Base));
+                    command = makeStringByReplacingAll(command, "%u"_s, frame->document()->url().string());
+                    command = makeStringByReplacingAll(command, "%l"_s, result.absoluteLinkURL().string());
+                    command = makeStringByReplacingAll(command, "%i"_s, result.absoluteImageURL().string());
+                    command = makeStringByReplacingAll(command, "%p"_s, String::fromUTF8((char *)getv(app, MUIA_Application_Base)));
 
                     OWBCommand cmd(command, ACTION_AMIGADOS);
                     cmd.execute();
@@ -3097,7 +3099,7 @@ DEFSMETHOD(OWBApp_RequestPolicyForMimeType)
     else
     {
         path = GetFilePart(response->url());
-        path =  decodeURLEscapeSequences(path);
+        path =  PAL::decodeURLEscapeSequences(path);
     }
 
     //kprintf("OWBApp_RequestPolicyForMimeType mimetype <%s> url <%s> attachment %d path <%s>\n", mimetype.utf8().data(), urlstring.utf8().data(), response->isAttachment(), path.latin1().data());
@@ -3136,7 +3138,7 @@ DEFSMETHOD(OWBApp_RequestPolicyForMimeType)
         if(typeparts.size() == 2)
         {
             String family = typeparts[0];
-            family.append("/*");
+            family = makeString(family, "/*"_s);
 
             ITERATELIST(n, &mimetype_list)
             {
@@ -3155,12 +3157,12 @@ DEFSMETHOD(OWBApp_RequestPolicyForMimeType)
     //kprintf("2 matching_mn %p <%s>\n", matching_mn, matching_mn?matching_mn->mimetype:"");
 
     /* Extension check in text/plain case, to handle bad text/html mimetype responses */
-    if((matching_mn && (equalIgnoringASCIICase(String(matching_mn->mimetype), "text/html") ||
-                        equalIgnoringASCIICase(String(matching_mn->mimetype), "text/plain") ||
-                        equalIgnoringASCIICase(String(matching_mn->mimetype), "application/octet-stream")
+    if((matching_mn && (equalIgnoringASCIICase(String(matching_mn->mimetype), "text/html"_s) ||
+                        equalIgnoringASCIICase(String(matching_mn->mimetype), "text/plain"_s) ||
+                        equalIgnoringASCIICase(String(matching_mn->mimetype), "application/octet-stream"_s)
                        )
        ) ||
-       url.protocolIs("ftp") ||
+       url.protocolIs("ftp"_s) ||
        matching_mn == NULL)
     {
         int pos = path.reverseFind('.');
@@ -3264,14 +3266,14 @@ DEFSMETHOD(OWBApp_RequestPolicyForMimeType)
                 bool processafterdownload;
                 String command = mn->viewer;
                 
-                command.append(" ");
-                command.append(mn->parameters);
+                command = makeString(command, " "_s);
+                command = makeString(command, String(mn->parameters));
 
                 processafterdownload = command.find("%f") != notFound;
 
-                command.replace("%l", urlstring);
-                command.replace("%f", generatedpath);
-                command.replace("%p", (char *)getv(app, MUIA_Application_Base));
+                command = makeStringByReplacingAll(command, "%l"_s, urlstring);
+                command = makeStringByReplacingAll(command, "%f"_s, generatedpath);
+                command = makeStringByReplacingAll(command, "%p"_s, String::fromUTF8((char *)getv(app, MUIA_Application_Base)));
 
                 if(processafterdownload) /* %f in command means file must be downloaded first, and command processed after completion */
                 {
@@ -3349,7 +3351,7 @@ DEFSMETHOD(OWBApp_RequestPolicyForMimeType)
 /* Fall back to default behaviour */
 
     /* hardcoded check for FTP scheme to handle most common binary formats */
-    if(webView->canShowMIMEType(mimetype.utf8().data()) && url.protocolIs("ftp") && name_match(path.latin1().data(), "#?.(zip|gz|bz2|tar|exe|elf|rar|avi|mpg|lha|lzx|pdf)"))
+    if(webView->canShowMIMEType(mimetype.utf8().data()) && url.protocolIs("ftp"_s) && name_match(path.latin1().data(), "#?.(zip|gz|bz2|tar|exe|elf|rar|avi|mpg|lha|lzx|pdf)"))
     {
         String truncatedpath = truncate(path, 64);
         String message = createWithFormatAndArguments(GSI(MSG_OWBAPP_MIMETYPE_REQUEST_ACTION), truncatedpath.latin1().data(), mimetype.utf8().data());
@@ -3599,7 +3601,7 @@ DEFSMETHOD(OWBApp_SaveSession)
                     if(!getv(vn->browser, MA_OWBBrowser_PrivateBrowsing))
                     {
                         // core(vn->webView->mainFrame())->view()->visibleContentRect().y()
-                      output.append(createWithFormatAndArguments("%lu %s %d %d\n", (unsigned long)i, (char *) getv(vn->browser, MA_OWBBrowser_URL), vn->webView->scrollOffset().x, vn->webView->scrollOffset().y));
+                      output = makeString(output, createWithFormatAndArguments("%lu %s %d %d\n", (unsigned long)i, (char *) getv(vn->browser, MA_OWBBrowser_URL), vn->webView->scrollOffset().x, vn->webView->scrollOffset().y));
                     }
                 }
             }

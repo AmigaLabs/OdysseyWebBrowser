@@ -40,6 +40,9 @@
 #include <wtf/MainThread.h>
 #include <wtf/SetForScope.h>
 #include <wtf/TZoneMallocInlines.h>
+#if OS(AMIGAOS)
+#include <proto/exec.h>
+#endif
 #include <wtf/URL.h>
 #include <wtf/text/CString.h>
 
@@ -419,7 +422,7 @@ void WebResourceLoadScheduler::preconnectTo(FrameLoader&, const URL&, StoredCred
 {
 }
 
-#if OS(MORPHOS)
+#if OS(MORPHOS) || OS(AMIGAOS)
 WebCore::ResourceError WebResourceLoadScheduler::cancelledError(const WebCore::ResourceRequest&) const
 {
     return ResourceError(WebCore::ResourceErrorBaseType::Cancellation);
@@ -435,12 +438,12 @@ WebCore::ResourceError WebResourceLoadScheduler::blockedByContentBlockerError(co
     return ResourceError(WebCore::ResourceErrorBaseType::Cancellation);
 }
 
-WebCore::ResourceError WebResourceLoadScheduler::cannotShowURLError(const WebCore::ResourceRequest&) const
+WebCore::ResourceError WebResourceLoadScheduler::cannotShowURLError(const WebCore::ResourceRequest& request) const
 {
     return ResourceError(WebCore::ResourceErrorBaseType::General);
 }
 
-WebCore::ResourceError WebResourceLoadScheduler::interruptedForPolicyChangeError(const WebCore::ResourceRequest&) const
+WebCore::ResourceError WebResourceLoadScheduler::interruptedForPolicyChangeError(const WebCore::ResourceRequest& request) const
 {
     return ResourceError(WebCore::ResourceErrorBaseType::AccessControl);
 }
@@ -452,12 +455,12 @@ WebCore::ResourceError WebResourceLoadScheduler::blockedByContentFilterError(con
 }
 #endif
 
-WebCore::ResourceError WebResourceLoadScheduler::cannotShowMIMETypeError(const WebCore::ResourceResponse&) const
+WebCore::ResourceError WebResourceLoadScheduler::cannotShowMIMETypeError(const WebCore::ResourceResponse& response) const
 {
     return ResourceError(WebCore::ResourceErrorBaseType::General);
 }
 
-WebCore::ResourceError WebResourceLoadScheduler::fileDoesNotExistError(const WebCore::ResourceResponse&) const
+WebCore::ResourceError WebResourceLoadScheduler::fileDoesNotExistError(const WebCore::ResourceResponse& response) const
 {
     return ResourceError(WebCore::ResourceErrorBaseType::General);
 }
