@@ -49,12 +49,6 @@
 
 #include "gui.h"
 
-#if OS(AMIGAOS)
-// Implemented in aos4funcs.cpp
-extern "C" APTR ARGB2BGRA(APTR src, uint32_t stride, uint32_t height);
-extern "C" VOID ARGB2BGRAFREE(APTR dst);
-#endif
-
 #define D(x)
 
 #define FAVICON_WIDTH 16
@@ -70,7 +64,7 @@ struct Data
     ULONG isfolder;
     STRPTR url;
     cairo_surface_t *surface;
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
     APTR bgra;
 #endif
     cairo_t *cr;
@@ -141,7 +135,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
                     if(data->surface)
                     {
                         cairo_surface_destroy(data->surface);
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
                         if (data->bgra)
                         {
                             ARGB2BGRAFREE(data->bgra);
@@ -238,7 +232,7 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                                 cairo_restore(data->cr);
 
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
                                 data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
                                         cairo_image_surface_get_stride(data->surface),
                                         cairo_image_surface_get_height(data->surface));
@@ -309,7 +303,7 @@ DEFDISP
         data->url = NULL;
     }
 
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
     if(data->bgra)
     {
         ARGB2BGRAFREE(data->bgra);
@@ -377,7 +371,7 @@ DEFMMETHOD(Draw)
         if(data->url && cairo_surface_status(data->surface) == CAIRO_STATUS_SUCCESS)
         {
             stride = cairo_image_surface_get_stride(data->surface);
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
             src = (unsigned char *)data->bgra;
 #else
             src    = cairo_image_surface_get_data(data->surface);

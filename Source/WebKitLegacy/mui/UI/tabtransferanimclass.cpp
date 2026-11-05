@@ -40,16 +40,10 @@
 #include "gui.h"
 #include "tabthrobber.h"
 
-#if OS(AMIGAOS)
-// Implemented in aos4funcs.cpp
-extern "C" APTR ARGB2BGRA(APTR src, uint32_t stride, uint32_t height);
-extern "C" VOID ARGB2BGRAFREE(APTR dst);
-#endif
-
 struct Data
 {
     cairo_surface_t *surface;
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
     APTR bgra;
 #endif
     ULONG imagecount;
@@ -133,7 +127,7 @@ DEFNEW
                 data->imagecount  = cairo_image_surface_get_width(data->surface) / cairo_image_surface_get_height(data->surface);
                 data->imageheight = cairo_image_surface_get_height(data->surface);
                 data->imagewidth  = data->imageheight;
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
                 data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
                         cairo_image_surface_get_stride(data->surface),data->imageheight);
 #endif
@@ -172,7 +166,7 @@ DEFDISP
         cairo_surface_destroy (data->surface);
     }
 
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
     if(data->bgra)
     {
         ARGB2BGRAFREE(data->bgra);
@@ -273,7 +267,7 @@ DEFMMETHOD(Draw)
 
         if(data->surface)
         {
-#if OS(AROS) || OS(AMIGAOS)
+#if OS(AROS)
             src = (char *) data->bgra;
 #else
             src = (char *) cairo_image_surface_get_data(data->surface);
