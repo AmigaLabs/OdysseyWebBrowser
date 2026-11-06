@@ -1535,7 +1535,7 @@ DEFSMETHOD(OWBWindow_LoadURL)
 
                 if(fileContent)
                 {
-                    String content = fileContent;
+                    String content = String::fromUTF8(fileContent);
 
                     widget->webView->mainFrame()->loadHTMLString(content.utf8().data(), "about:blank"); // "about:" is cancelled by WebCore
 

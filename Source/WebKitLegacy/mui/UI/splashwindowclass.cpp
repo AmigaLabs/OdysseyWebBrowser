@@ -333,14 +333,12 @@ DEFMMETHOD(Process_Process)
     data->running = TRUE;
     Signal(data->maintask, 1L<<data->StartupBit);
 
-#if !OS(AMIGAOS)    
     /* XXX: Seriously, it sucks, but needed with dynamicache, else thread finishes too early,
      * and it somehow causes a race in main thread, even though i don't see how.
      */
     Delay(5);
 
     fontconfig_testcache();
-#endif
     //kprintf("[fontcache thread] signaling thread end to main task\n");
 
     myproc->pr_WindowPtr = oldwindowptr;

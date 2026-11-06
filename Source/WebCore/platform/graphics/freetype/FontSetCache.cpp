@@ -45,11 +45,16 @@ RefPtr<FcPattern> FontSetCache::bestForCharacters(const FontDescription& fontDes
 {
     auto addResult = m_cache.ensure(FontSetCacheKey(fontDescription, preferColoredFont), [&fontDescription, preferColoredFont]() -> std::unique_ptr<FontSetCache::FontSet> {
         RefPtr<FcPattern> pattern = adoptRef(FcPatternCreate());
-        FcPatternAddBool(pattern.get(), FC_SCALABLE, FcTrue);
 #ifdef FC_COLOR
-        if (preferColoredFont)
+        if (preferColoredFont) {
+            // Color emoji fonts (e.g. Noto Color Emoji) use CBDT/CBLC bitmap tables and fontconfig
+            // marks them scalable=False; adding FC_SCALABLE here would exclude them.
             FcPatternAddBool(pattern.get(), FC_COLOR, FcTrue);
+        } else {
+            FcPatternAddBool(pattern.get(), FC_SCALABLE, FcTrue);
+        }
 #else
+        FcPatternAddBool(pattern.get(), FC_SCALABLE, FcTrue);
         UNUSED_VARIABLE(preferColoredFont);
 #endif
         if (!FontCache::configurePatternForFontDescription(pattern.get(), fontDescription))
