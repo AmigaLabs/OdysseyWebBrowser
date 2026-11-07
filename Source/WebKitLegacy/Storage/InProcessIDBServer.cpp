@@ -57,8 +57,37 @@ Ref<InProcessIDBServer> InProcessIDBServer::create(PAL::SessionID sessionID, con
     return adoptRef(*new InProcessIDBServer(sessionID, databaseDirectoryPath));
 }
 
+#if OS(AMIGAOS)
+void InProcessIDBServer::shutdown()
+{
+    // The server can outlive WebDatabaseProvider::shutdownServers() while JS still references it, so its
+    // queue thread would never stop. Close the server and stop the queue here. Afterwards the destructor
+    // must not dispatch: a stopped queue never runs the task, and waiting on it would hang.
+    if (m_isShutdown)
+        return;
+    m_isShutdown = true;
+
+    BinarySemaphore semaphore;
+    m_queue->dispatch([this, &semaphore] {
+        {
+            Locker locker { m_serverLock };
+            m_server = nullptr;
+        }
+        m_connectionToClient = nullptr;
+        semaphore.signal();
+    });
+    semaphore.wait();
+    m_queue->shutdown();
+}
+#endif
+
 InProcessIDBServer::~InProcessIDBServer()
 {
+#if OS(AMIGAOS)
+    if (m_isShutdown)
+        return;
+
+#endif
     BinarySemaphore semaphore;
     dispatchTask([this, &semaphore] {
         {

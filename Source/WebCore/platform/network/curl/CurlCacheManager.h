@@ -74,7 +74,13 @@ private:
     CurlCacheSizeType m_currentStorageSize;
     CurlCacheSizeType m_storageSizeLimit;
 
+#if OS(AMIGAOS)
+public:
     void saveIndex();
+private:
+#else
+    void saveIndex();
+#endif
     void loadIndex();
     void makeRoomForNewEntry();
 

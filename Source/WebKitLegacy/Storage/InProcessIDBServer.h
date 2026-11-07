@@ -62,6 +62,9 @@ public:
     static Ref<InProcessIDBServer> create(PAL::SessionID, const String& databaseDirectoryPath);
 
     virtual ~InProcessIDBServer();
+#if OS(AMIGAOS)
+    void shutdown(); // AmigaOS quit: close the server and stop its queue thread (see .cpp)
+#endif
 
     WebCore::IDBClient::IDBConnectionToServer& connectionToServer() const;
     WebCore::IDBServer::IDBConnectionToClient& connectionToClient() const;
@@ -134,4 +137,7 @@ private:
     RefPtr<WebCore::IDBClient::IDBConnectionToServer> m_connectionToServer;
     RefPtr<WebCore::IDBServer::IDBConnectionToClient> m_connectionToClient;
     const Ref<WTF::WorkQueue> m_queue;
+#if OS(AMIGAOS)
+    bool m_isShutdown { false };
+#endif
 };

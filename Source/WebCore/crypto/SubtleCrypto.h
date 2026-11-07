@@ -42,6 +42,10 @@ class CallFrame;
 
 namespace WebCore {
 
+#if OS(AMIGAOS)
+WEBCORE_EXPORT void shutdownSubtleCryptoQueue();
+#endif
+
 struct JsonWebKey;
 
 class BufferSource;

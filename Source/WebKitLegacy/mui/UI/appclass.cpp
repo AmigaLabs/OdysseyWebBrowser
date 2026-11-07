@@ -104,7 +104,12 @@
 #include <WebCore/CommonVM.h>
 #include "DataURLDecoder.h"
 #include <WebCore/BlobRegistryImpl.h>
+#include <WebCore/AsyncFileStream.h>
 #include <wtf/text/StringToIntegerConversion.h>
+
+#if OS(AMIGAOS)
+namespace WebCore { void shutdownIDBSerializationThread(); }
+#endif
 
 namespace JSC {
 namespace DFG {
@@ -1156,11 +1161,14 @@ DEFNEW
     return (IPTR)obj;
 }
 
+#if OS(AMIGAOS)
+namespace WebCore { void shutdownSubtleCryptoQueue(); }
+#endif
+
 DEFDISP
 {
     GETDATA;
     APTR n, m;
-
     owb_timer_should_exit = 1;
     /* Wait for the timer thread to exit before tearing down: it signals completion with owb_timer_should_exit = 2 (DoIO is 14 ms). */
     if (owbTimer) {
@@ -1225,9 +1233,22 @@ DEFDISP
 
     WebCore::LocalDOMWindow::dispatchAllPendingUnloadEvents();
     WebCore::CurlContext::singleton().stopThread();
+    /* Close the cookie window first: it uses the sessions destroyed below. */
+    if(data->cookiemanagerwin)
+        set(data->cookiemanagerwin, MUIA_Window_Open, FALSE);
+    NetworkStorageSessionMap::destroyAllSessions();
+#if OS(AMIGAOS)
+    WebDatabaseProvider::singleton().shutdownServers();
+#endif
     WebKit::WebStorageNamespaceProvider::closeLocalStorage();
     WebCore::DataURLDecoder::shutdownDecodePipeline();
-    /* !!! Manually call save as destructors for static objects are not getting called (where saveIndex is called) !!! */
+#if OS(AMIGAOS)
+    /* Static destructors are not run on AmigaOS: stop the threads and save the cache index explicitly. */
+    WebCore::AsyncFileStream::shutdown();
+    WebCore::shutdownBlobRegistryImpl();
+    CurlCacheManager::singleton().saveIndex();
+    WebCore::shutdownIDBSerializationThread();
+#endif
 
 #if !OS(AMIGAOS)    
     GCController::singleton().garbageCollectNow();
@@ -1235,9 +1256,10 @@ DEFDISP
     //    FontCache::singleton().invalidate(); // trashes memory like fuck on https://testdrive-archive.azurewebsites.net/Graphics/CanvasPinball/default.html
     MemoryCache::singleton().setDisabled(true);
 
-#if !OS(AMIGAOS)    
-    delete &commonVM(); /* This looks weird, but it stops JSC Heap Collector Thread */
-#endif    
+#if OS(AMIGAOS)
+    WebCore::shutdownSubtleCryptoQueue(); // stops the CryptoQueue thread (see SubtleCrypto.cpp)
+#endif
+    delete &commonVM(); /* This looks weird, but it stops JSC Heap Collector Thread (also on AmigaOS, as in 2.34) */
 #if 0
 // broken 2.34.6
 #if ENABLE(JIT)

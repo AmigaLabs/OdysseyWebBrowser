@@ -335,6 +335,13 @@ static WorkQueue& blobUtilityQueue()
     return queue.get();
 }
 
+#if OS(AMIGAOS)
+void shutdownBlobRegistryImpl()
+{
+    blobUtilityQueue().shutdown();
+}
+#endif
+
 bool BlobRegistryImpl::populateBlobsForFileWriting(const Vector<String>& blobURLs, Vector<BlobForFileWriting>& blobsForWriting)
 {
     for (auto& url : blobURLs) {

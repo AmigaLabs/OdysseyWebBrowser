@@ -50,6 +50,16 @@ WebCore::IDBClient::IDBConnectionToServer& WebDatabaseProvider::idbConnectionToS
     }).iterator->value->connectionToServer();
 }
 
+#if OS(AMIGAOS)
+void WebDatabaseProvider::shutdownServers()
+{
+    // Stop each server's queue thread first: a server still referenced by JS is not destroyed by clear().
+    for (auto& server : m_idbServerMap.values())
+        server->shutdown();
+    m_idbServerMap.clear();
+}
+#endif
+
 void WebDatabaseProvider::deleteAllDatabases()
 {
     for (auto& server : m_idbServerMap.values())

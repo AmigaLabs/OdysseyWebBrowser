@@ -52,6 +52,10 @@ public:
     void close();
     void read(std::span<uint8_t> buffer);
 
+#if OS(AMIGAOS)
+    static void shutdown();
+#endif
+
 private:
     void start();
     void perform(Function<Function<void(FileStreamClient&)>(FileStream&)>&&);

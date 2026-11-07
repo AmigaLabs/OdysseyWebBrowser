@@ -58,9 +58,28 @@
 namespace WebCore {
 using namespace JSC;
 
+#if OS(AMIGAOS)
+// One queue shared by all SubtleCrypto objects: a per-object queue keeps its thread alive if the object is
+// still referenced at app quit. shutdownSubtleCryptoQueue() stops it.
+static Ref<WorkQueue>& sharedSubtleCryptoWorkQueue()
+{
+    static NeverDestroyed<Ref<WorkQueue>> queue(WorkQueue::create("com.apple.WebKit.CryptoQueue"_s));
+    return queue.get();
+}
+
+void shutdownSubtleCryptoQueue()
+{
+    sharedSubtleCryptoWorkQueue()->shutdown();
+}
+#endif
+
 SubtleCrypto::SubtleCrypto(ScriptExecutionContext* context)
     : ContextDestructionObserver(context)
+#if OS(AMIGAOS)
+    , m_workQueue(sharedSubtleCryptoWorkQueue())
+#else
     , m_workQueue(WorkQueue::create("com.apple.WebKit.CryptoQueue"_s))
+#endif
 {
 }
 

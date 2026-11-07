@@ -44,6 +44,9 @@ public:
     WebCore::IDBClient::IDBConnectionToServer& idbConnectionToServerForSession(PAL::SessionID) override;
 
     void deleteAllDatabases();
+#if OS(AMIGAOS)
+    void shutdownServers();
+#endif
 
 private:
     explicit WebDatabaseProvider();

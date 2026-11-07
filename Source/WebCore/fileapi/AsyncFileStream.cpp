@@ -63,12 +63,18 @@ inline AsyncFileStream::Internals::Internals(FileStreamClient& client)
 {
 }
 
+#if OS(AMIGAOS)
+static NeverDestroyed<MessageQueue<Function<void ()>>> queue;
+#endif
+
 static void callOnFileThread(Function<void ()>&& function)
 {
     ASSERT(isMainThread());
     ASSERT(function);
 
+#if !OS(AMIGAOS)
     static NeverDestroyed<MessageQueue<Function<void ()>>> queue;
+#endif
 
     static std::once_flag createFileThreadOnce;
     std::call_once(createFileThreadOnce, [] {
@@ -175,5 +181,12 @@ void AsyncFileStream::read(std::span<uint8_t> buffer)
         };
     });
 }
+
+#if OS(AMIGAOS)
+void AsyncFileStream::shutdown()
+{
+    queue.get().kill();
+}
+#endif
 
 } // namespace WebCore

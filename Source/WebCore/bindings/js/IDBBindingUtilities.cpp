@@ -577,15 +577,21 @@ private:
 #endif
 };
 
+#if OS(AMIGAOS)
+static NeverDestroyed<MessageQueue<Function<void(JSC::JSGlobalObject&)>>> idbSerializationQueue;
+#endif
+
 void callOnIDBSerializationThreadAndWait(Function<void(JSC::JSGlobalObject&)>&& function)
 {
-    static NeverDestroyed<MessageQueue<Function<void(JSC::JSGlobalObject&)>>> queue;
+#if !OS(AMIGAOS)
+    static NeverDestroyed<MessageQueue<Function<void(JSC::JSGlobalObject&)>>> idbSerializationQueue;
+#endif
     static std::once_flag createThread;
 
     std::call_once(createThread, [] {
         Thread::create("IndexedDB Serialization"_s, [] {
             IDBSerializationContext serializationContext;
-            while (auto function = queue->waitForMessage()) {
+            while (auto function = idbSerializationQueue->waitForMessage()) {
                 AutodrainedPool pool;
                 (*function)(serializationContext.globalObject());
             }
@@ -597,8 +603,15 @@ void callOnIDBSerializationThreadAndWait(Function<void(JSC::JSGlobalObject&)>&& 
         function(globalObject);
         semaphore.signal();
     };
-    queue->append(makeUnique<Function<void(JSC::JSGlobalObject&)>>(WTFMove(newFuntion)));
+    idbSerializationQueue->append(makeUnique<Function<void(JSC::JSGlobalObject&)>>(WTFMove(newFuntion)));
     semaphore.wait();
 }
+
+#if OS(AMIGAOS)
+void shutdownIDBSerializationThread()
+{
+    idbSerializationQueue->kill();
+}
+#endif
 
 } // namespace WebCore
