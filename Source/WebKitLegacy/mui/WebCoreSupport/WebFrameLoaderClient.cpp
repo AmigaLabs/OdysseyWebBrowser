@@ -61,6 +61,9 @@
 
 #include <WebCore/CachedFrame.h>
 #include <WebCore/DNS.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <sys/stat.h>
 #include <WebCore/CredentialStorage.h>
 #include <WebCore/DocumentLoader.h>
 #include <WebCore/FormState.h>
@@ -140,6 +143,48 @@ WebFrameLoaderClient::~WebFrameLoaderClient()
         m_webFrame = 0;
     }
     m_policyListenerPrivate = nullptr;
+}
+
+// Favicons are cached per host in PROGDIR:Conf/Cache/FavIcons; faviconclass reads them back with the same path.
+String favIconPathForPageURL(const String& pageURL)
+{
+    CString host = URL({ }, pageURL).host().toString().utf8();
+    std::string name;
+    for (size_t i = 0; i < host.length(); ++i) {
+        char c = host.data()[i];
+        name += (isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-') ? c : '_';
+    }
+    // shortcut: sites sharing a host name share one icon file. Upgrade: hash the host if collisions show up.
+    return String(("PROGDIR:Conf/Cache/FavIcons/" + name + ".ico").c_str());
+}
+
+void WebFrameLoaderClient::getLoadDecisionForIcons(const Vector<std::pair<WebCore::LinkIcon&, uint64_t>>& icons)
+{
+    DocumentLoader* loader = core(m_webFrame)->loader().documentLoader();
+    String pageURL = loader->url().string();
+
+    for (auto& icon : icons) {
+        // Pages without a host (local files) would all share one ".ico" file, so they get no icon.
+        if (icon.first.type != WebCore::LinkIconType::Favicon || loader->url().host().isEmpty()) {
+            loader->didGetLoadDecisionForIcon(false, icon.second, [](WebCore::FragmentedSharedBuffer*) { });
+            continue;
+        }
+
+        loader->didGetLoadDecisionForIcon(true, icon.second, [pageURL](WebCore::FragmentedSharedBuffer* data) {
+            if (!data || !data->size())
+                return;
+
+            auto contiguous = data->makeContiguous();
+            mkdir("PROGDIR:Conf/Cache/FavIcons", 0777); // fails harmlessly when the folder already exists
+            FILE* file = fopen(favIconPathForPageURL(pageURL).utf8().data(), "wb");
+            if (!file)
+                return;
+            fwrite(contiguous->span().data(), 1, contiguous->span().size(), file);
+            fclose(file);
+
+            SetAttrs(app, MA_OWBApp_DidReceiveFavIcon, pageURL.utf8().data(), TAG_DONE);
+        });
+    }
 }
 
 bool WebFrameLoaderClient::hasWebView() const

@@ -183,6 +183,7 @@ public:
     bool shouldAlwaysUsePluginDocument(const WTF::String& mimeType) const;
 
     void prefetchDNS(const String&) override;
+    void getLoadDecisionForIcons(const Vector<std::pair<WebCore::LinkIcon&, uint64_t>>&) override;
     void sendH2Ping(const URL&, CompletionHandler<void(Expected<Seconds, WebCore::ResourceError>&&)>&&) override;
 
     void updateSandboxFlags(WebCore::SandboxFlags) override { }

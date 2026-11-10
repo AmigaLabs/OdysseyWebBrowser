@@ -27,9 +27,8 @@
  */
 
 #include <WebCore/GraphicsContext.h>
-#include "WebIconDatabase.h"
-#include <WebCore/BitmapImage.h>
 #include <WebCore/ImageAdapter.h>
+#include <WebCore/BitmapImage.h>
 #include <wtf/text/CString.h>
 #include <wtf/URL.h>
 
@@ -57,6 +56,23 @@
 #define FACTOR (data->scalefactor + 1)
 
 using namespace WebCore;
+using namespace WTF::StringLiterals;
+
+// Written by WebFrameLoaderClient::getLoadDecisionForIcons().
+String favIconPathForPageURL(const String& pageURL);
+
+static RefPtr<WebCore::BitmapImage> favIconForPageURL(const char* pageURL)
+{
+    RefPtr<WebCore::SharedBuffer> buffer = WebCore::SharedBuffer::createWithContentsOfFile(favIconPathForPageURL(String::fromUTF8(pageURL)));
+    if (!buffer)
+        return nullptr;
+
+    RefPtr<WebCore::BitmapImage> image = WebCore::BitmapImage::create();
+    image->setData(WTFMove(buffer), true);
+    if (image->size().isEmpty())
+        return nullptr;
+    return image;
+}
 
 struct Data
 {
@@ -69,7 +85,6 @@ struct Data
 #endif
     cairo_t *cr;
     ULONG scalefactor;
-    ULONG retain;
 };
 
 STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
@@ -84,12 +99,6 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
         switch (tag->ti_Tag)
         {
-            case MA_FavIcon_Retain:
-            {
-                data->retain = tag_data;
-            }
-            break;
-
             case MA_FavIcon_Folder:
             {
                 data->isfolder = tag_data;
@@ -105,142 +114,134 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
             case MA_FavIcon_PageURL:
             {
-// broken 2.18
-// broken 2.26
-                //WebIconDatabase* sharedWebIconDatabase = NULL;//WebIconDatabase::sharedWebIconDatabase();
-                APTR sharedWebIconDatabase = NULL;
-                    
-                if(sharedWebIconDatabase)
+                ULONG sameURL = data->url && tag_data && strcmp((char *) tag_data, data->url) == 0;
+
+                if(!sameURL)
                 {
-                    ULONG sameURL = data->url && tag_data && strcmp((char *) tag_data, data->url) == 0;
+                    char *tmp = (STRPTR) strdup(tag_data ? (char *)tag_data : (char *) "");
 
-                    if(!sameURL)
+                    if(data->url)
                     {
-                        char *tmp = (STRPTR) strdup(tag_data ? (char *)tag_data : (char *) "");
-
-                        if(data->url)
-                        {
-                            free(data->url);
-                        }
-
-                        data->url = tmp;
+                        free(data->url);
                     }
 
-                    if(data->cr)
-                    {
-                        cairo_destroy(data->cr);
-                        data->cr = NULL;
-                    }
+                    data->url = tmp;
+                }
 
-                    if(data->surface)
-                    {
-                        cairo_surface_destroy(data->surface);
+                if(data->cr)
+                {
+                    cairo_destroy(data->cr);
+                    data->cr = NULL;
+                }
+
+                if(data->surface)
+                {
+                    cairo_surface_destroy(data->surface);
 #if OS(AROS)
-                        if (data->bgra)
-                        {
-                            ARGB2BGRAFREE(data->bgra);
-                            data->bgra = NULL;
-                        }
+                    if (data->bgra)
+                    {
+                        ARGB2BGRAFREE(data->bgra);
+                        data->bgra = NULL;
+                    }
 #endif
-                    }
-                    data->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, FAVICON_WIDTH*FACTOR, FAVICON_HEIGHT*FACTOR);
+                }
+                data->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, FAVICON_WIDTH*FACTOR, FAVICON_HEIGHT*FACTOR);
 
-                    if(cairo_surface_status(data->surface) == CAIRO_STATUS_SUCCESS)
+                if(cairo_surface_status(data->surface) == CAIRO_STATUS_SUCCESS)
+                {
+                    data->cr = cairo_create(data->surface);
+                }
+
+                if(data->cr)
+                {
+                    WebCore::BitmapImage* icon = 0;
+                    RefPtr<WebCore::BitmapImage> cachedIcon;
+
+                    static RefPtr<WebCore::Image> defaultIcon = nullptr;
+                    if (!defaultIcon)
+                        defaultIcon = WebCore::ImageAdapter::loadPlatformResource("urlIcon");
+
+                    static RefPtr<WebCore::Image> defaultFolderIcon = nullptr;
+                    if (!defaultFolderIcon)
+                        defaultFolderIcon = WebCore::ImageAdapter::loadPlatformResource("folderIcon");
+
+                    static RefPtr<WebCore::Image> defaultScriptIcon = nullptr;
+                    if (!defaultScriptIcon)
+                        defaultScriptIcon = WebCore::ImageAdapter::loadPlatformResource("scriptIcon");
+
+                    static RefPtr<WebCore::Image> topsitesIcon = nullptr;
+                    if (!topsitesIcon)
+                        topsitesIcon = WebCore::ImageAdapter::loadPlatformResource("topsitesIcon");
+
+                    static RefPtr<WebCore::Image> aboutIcon = nullptr;
+                    if (!aboutIcon)
+                        aboutIcon = WebCore::ImageAdapter::loadPlatformResource("aboutIcon");
+
+                    if(data->isfolder)
                     {
-                        data->cr = cairo_create(data->surface);
+                        icon = (WebCore::BitmapImage *) defaultFolderIcon.get();
+                    }
+                    else if(URL({ }, data->url).protocolIs("javascript"_s))
+                    {
+                        icon = (WebCore::BitmapImage *) defaultScriptIcon.get();
+                    }
+                    else if(URL({ }, data->url).string().startsWith("topsites"_s))
+                    {
+                        icon = (WebCore::BitmapImage *) topsitesIcon.get();
+                    }
+                    else if(URL({ }, data->url).protocolIs("about"_s))
+                    {
+                        icon = (WebCore::BitmapImage *) aboutIcon.get();
+                    }
+                    else
+                    {
+                        cachedIcon = favIconForPageURL(data->url);
+                        icon = cachedIcon.get();
                     }
 
-                    if(data->cr)
+                    if(!icon)
                     {
-                        WebCore::BitmapImage* icon = 0;
+                        icon = (WebCore::BitmapImage*) defaultIcon.get();
+                    }
 
-                        static RefPtr<WebCore::Image> defaultIcon = nullptr;
-                        if (!defaultIcon)
-                            defaultIcon = WebCore::ImageAdapter::loadPlatformResource("urlIcon");
+                    if(icon)
+                    {
+                        cairo_surface_t * icon_surface = (icon->currentNativeImage() ? icon->currentNativeImage()->platformImage().get() : nullptr);
 
-                        static RefPtr<WebCore::Image> defaultFolderIcon = nullptr;
-                        if (!defaultFolderIcon)
-                            defaultFolderIcon = WebCore::ImageAdapter::loadPlatformResource("folderIcon");
-
-                        static RefPtr<WebCore::Image> defaultScriptIcon = nullptr;
-                        if (!defaultScriptIcon)
-                            defaultScriptIcon = WebCore::ImageAdapter::loadPlatformResource("scriptIcon");
-
-                        static RefPtr<WebCore::Image> topsitesIcon = nullptr;
-                        if (!topsitesIcon)
-                            topsitesIcon = WebCore::ImageAdapter::loadPlatformResource("topsitesIcon");
-
-                        static RefPtr<WebCore::Image> aboutIcon = nullptr;
-                        if (!aboutIcon)
-                            aboutIcon = WebCore::ImageAdapter::loadPlatformResource("aboutIcon");
-
-                        if(data->isfolder)
-                        {
-                            icon = (WebCore::BitmapImage *) defaultFolderIcon.get();
-                        }
-                        else if(URL({ }, data->url).protocolIs("javascript"_s))
-                        {
-                            icon = (WebCore::BitmapImage *) defaultScriptIcon.get();
-                        }
-                        else if(URL({ }, data->url).string().startsWith("topsites"))
-                        {
-                            icon = (WebCore::BitmapImage *) topsitesIcon.get();
-                        }
-                        else if(URL({ }, data->url).protocolIs("about"_s))
-                        {
-                            icon = (WebCore::BitmapImage *) aboutIcon.get();
-                        }
-                        else
-                        {
-// broken 2.26
-/*                            sharedWebIconDatabase->retainIconForURL(data->url);
-                            icon = (WebCore::BitmapImage*) sharedWebIconDatabase->iconForURL((const char *) data->url, IntSize(FAVICON_WIDTH*FACTOR, FAVICON_HEIGHT*FACTOR), false);*/
-                        }
-
-                        if(!icon)
+                        if(!icon_surface)
                         {
                             icon = (WebCore::BitmapImage*) defaultIcon.get();
+
+                            if(icon)
+                            {
+                                icon_surface = (icon->currentNativeImage() ? icon->currentNativeImage()->platformImage().get() : nullptr);
+                            }
                         }
 
-                        if(icon)
+                        if(icon_surface)
                         {
-                                cairo_surface_t * icon_surface = icon->nativeImage()->platformImage().get();
+                            cairo_save(data->cr);
 
-                            if(!icon_surface)
-                            {
-                                icon = (WebCore::BitmapImage*) defaultIcon.get();
+                            cairo_set_source_rgba(data->cr, 0, 0, 0, 0);
+                            cairo_rectangle(data->cr, 0, 0, FAVICON_WIDTH*FACTOR, FAVICON_HEIGHT*FACTOR);
+                            cairo_fill(data->cr);
 
-                                if(icon)
-                                {
-                                  icon_surface = icon->nativeImage()->platformImage().get();
-                                }
-                            }
-                                    
-                            if(icon_surface)
-                            {
-                                cairo_save(data->cr);
+                            cairo_scale(data->cr, ((double) FAVICON_WIDTH*FACTOR)/((double) icon->width()),
+                                                    ((double) FAVICON_HEIGHT*FACTOR)/((double) icon->height()));
 
-                                cairo_set_source_rgba(data->cr, 0, 0, 0, 0);
-                                cairo_rectangle(data->cr, 0, 0, FAVICON_WIDTH*FACTOR, FAVICON_HEIGHT*FACTOR);
-                                cairo_fill(data->cr);
+                            cairo_set_source_surface(data->cr, icon_surface, 0, 0);
+                            cairo_paint(data->cr);
 
-                                cairo_scale(data->cr, ((double) FAVICON_WIDTH*FACTOR)/((double) icon->width()),
-                                                        ((double) FAVICON_HEIGHT*FACTOR)/((double) icon->height()));
-
-                                cairo_set_source_surface(data->cr, icon_surface, 0, 0);
-                                cairo_paint(data->cr);
-
-                                cairo_restore(data->cr);
+                            cairo_restore(data->cr);
 
 #if OS(AROS)
-                                data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
-                                        cairo_image_surface_get_stride(data->surface),
-                                        cairo_image_surface_get_height(data->surface));
+                            data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
+                                                   cairo_image_surface_get_stride(data->surface),
+                                                   cairo_image_surface_get_height(data->surface));
 
 #endif
-                                        
-                                set(obj, MA_FavIcon_NeedRedraw, TRUE);
-                            }
+
+                            set(obj, MA_FavIcon_NeedRedraw, TRUE);
                         }
                     }
                 }
@@ -266,7 +267,6 @@ DEFNEW
         data->surface = NULL;
         data->cr = NULL;
         data->need_redraw = FALSE;
-        data->retain = (ULONG) GetTagData(MA_FavIcon_Retain, TRUE, msg->ops_AttrList);
         data->scalefactor = (ULONG) GetTagData(MA_FavIcon_ScaleFactor, MV_FavIcon_Scale_Normal, msg->ops_AttrList);
 
         doset(data, obj, INITTAGS);
@@ -371,6 +371,7 @@ DEFMMETHOD(Draw)
         if(data->url && cairo_surface_status(data->surface) == CAIRO_STATUS_SUCCESS)
         {
             stride = cairo_image_surface_get_stride(data->surface);
+            
 #if OS(AROS)
             src = (unsigned char *)data->bgra;
 #else
@@ -391,12 +392,11 @@ DEFSMETHOD(FavIcon_DidReceiveFavIcon)
 {
     GETDATA;
 
-    if(msg->url)
+    // Icons are cached per host, so refresh every favicon on that host. Exact URL
+    // matching misses bookmarks stored without a trailing slash, www., or before a redirect.
+    if(msg->url && data->url && URL({ }, msg->url).host() == URL({ }, data->url).host())
     {
-        if(data->url && !strcmp(msg->url, data->url))
-        {
-            set(obj, MA_FavIcon_PageURL, data->url);
-        }
+        set(obj, MA_FavIcon_PageURL, data->url);
     }
 
     return 0;
