@@ -40,9 +40,65 @@
 
 #include <wtf/CompletionHandler.h>
 
+#if PLATFORM(MUI)
+#include "gui.h"
+#undef String
+#undef set
+#undef get
+#endif
+
 #if USE(CURL)
 
 namespace WebCore {
+
+#if PLATFORM(MUI)
+// Activity of each running request, keyed by its ResourceHandle. Only the main thread touches it.
+static UncheckedKeyHashMap<const ResourceHandle*, NetworkActivity>& networkActivities()
+{
+    static NeverDestroyed<UncheckedKeyHashMap<const ResourceHandle*, NetworkActivity>> activities;
+    return activities;
+}
+
+static NetworkActivity currentNetworkActivity(ResourceHandle& handle)
+{
+    auto it = networkActivities().find(&handle);
+    return it == networkActivities().end() ? NetworkActivity { } : it->value;
+}
+
+static void pushNetworkActivityMethod(ULONG method, ResourceHandle& handle)
+{
+    if (app)
+        methodstack_push_sync(app, 2, method, &handle);
+}
+
+// Stores the new activity and tells the UI (LEDs and network window redraw).
+static void updateNetworkActivity(ResourceHandle& handle, const NetworkActivity& activity)
+{
+    auto it = networkActivities().find(&handle);
+    if (it == networkActivities().end())
+        return;
+    it->value = activity;
+    pushNetworkActivityMethod(MM_Network_UpdateJob, handle);
+}
+
+// The UI list keeps raw pointers to the requests, so a listed request is kept alive until it ends.
+void networkActivityStarted(ResourceHandle& handle)
+{
+    NetworkActivity activity { };
+    activity.state = NETWORK_ACTIVITY_CONNECTING;
+    networkActivities().set(&handle, activity);
+    handle.ref();
+    pushNetworkActivityMethod(MM_Network_AddJob, handle);
+}
+
+void networkActivityEnded(ResourceHandle& handle)
+{
+    if (!networkActivities().remove(&handle))
+        return;
+    pushNetworkActivityMethod(MM_Network_RemoveJob, handle);
+    handle.deref();
+}
+#endif
 
 CurlResourceHandleDelegate::CurlResourceHandleDelegate(ResourceHandle& handle)
     : m_handle(handle)
@@ -82,6 +138,13 @@ void CurlResourceHandleDelegate::curlDidSendData(CurlRequest&, unsigned long lon
     if (cancelledOrClientless())
         return;
 
+#if PLATFORM(MUI)
+    auto activity = currentNetworkActivity(m_handle);
+    activity.state = NETWORK_ACTIVITY_SENDING_DATA;
+    activity.sent = bytesSent;
+    activity.bodySize = totalBytesToBeSent;
+    updateNetworkActivity(m_handle, activity);
+#endif
     client()->didSendData(&m_handle, bytesSent, totalBytesToBeSent);
 }
 
@@ -106,6 +169,14 @@ void CurlResourceHandleDelegate::curlDidReceiveResponse(CurlRequest& request, Cu
         return;
 
     m_response = ResourceResponse(receivedResponse);
+#if PLATFORM(MUI)
+    auto activity = currentNetworkActivity(m_handle);
+    activity.state = NETWORK_ACTIVITY_WAITING_DATA;
+    activity.received = 0;
+    auto expectedLength = m_response.expectedContentLength();
+    activity.total = expectedLength > 0 ? expectedLength : 0;
+    updateNetworkActivity(m_handle, activity);
+#endif
 
     updateNetworkLoadMetrics(receivedResponse.networkLoadMetrics);
     m_response.setDeprecatedNetworkLoadMetrics(Box<NetworkLoadMetrics>::create(WTFMove(receivedResponse.networkLoadMetrics)));
@@ -153,6 +224,12 @@ void CurlResourceHandleDelegate::curlDidReceiveData(CurlRequest&, Ref<SharedBuff
     if (cancelledOrClientless())
         return;
 
+#if PLATFORM(MUI)
+    auto activity = currentNetworkActivity(m_handle);
+    activity.state = NETWORK_ACTIVITY_RECEIVING_DATA;
+    activity.received += buffer->size();
+    updateNetworkActivity(m_handle, activity);
+#endif
     CurlCacheManager::singleton().didReceiveData(m_handle, buffer->span());
     client()->didReceiveBuffer(&m_handle, buffer, buffer->size());
 }
@@ -160,6 +237,9 @@ void CurlResourceHandleDelegate::curlDidReceiveData(CurlRequest&, Ref<SharedBuff
 void CurlResourceHandleDelegate::curlDidComplete(CurlRequest&, NetworkLoadMetrics&& metrics)
 {
     ASSERT(isMainThread());
+#if PLATFORM(MUI)
+    networkActivityEnded(m_handle);
+#endif
 
     if (cancelledOrClientless())
         return;
@@ -173,6 +253,9 @@ void CurlResourceHandleDelegate::curlDidComplete(CurlRequest&, NetworkLoadMetric
 void CurlResourceHandleDelegate::curlDidFailWithError(CurlRequest&, ResourceError&& resourceError, CertificateInfo&&)
 {
     ASSERT(isMainThread());
+#if PLATFORM(MUI)
+    networkActivityEnded(m_handle);
+#endif
 
     if (cancelledOrClientless())
         return;
@@ -195,5 +278,40 @@ void CurlResourceHandleDelegate::updateNetworkLoadMetrics(NetworkLoadMetrics& ne
 }
 
 } // namespace WebCore
+
+#if PLATFORM(MUI)
+// User abort from the network window. The page loader only stops waiting when it gets a result, and a
+// cancelled request never reports one, so report a cancellation first (WebCore does not show it as an error).
+void networkActivityAbort(void *job)
+{
+    auto* handle = static_cast<WebCore::ResourceHandle*>(job);
+    Ref protectedHandle { *handle }; // the loader's didFail may drop its reference
+    if (auto* client = handle->client())
+        client->didFail(handle, WebCore::ResourceError(WebCore::ResourceError::Type::Cancellation));
+    handle->cancel();
+}
+
+// Aborts only the requests active when called. Aborting makes page loaders start new requests, which must survive.
+void networkActivityAbortAll()
+{
+    Vector<Ref<WebCore::ResourceHandle>> jobs;
+    for (auto* handle : WebCore::networkActivities().keys())
+        jobs.append(Ref { *const_cast<WebCore::ResourceHandle*>(handle) });
+
+    for (auto& job : jobs) {
+        if (WebCore::networkActivities().contains(job.ptr()))
+            networkActivityAbort(job.ptr());
+    }
+}
+
+int networkActivityFor(void *job, struct NetworkActivity *out)
+{
+    auto it = WebCore::networkActivities().find(static_cast<const WebCore::ResourceHandle*>(job));
+    if (it == WebCore::networkActivities().end())
+        return 0;
+    *out = it->value;
+    return 1;
+}
+#endif
 
 #endif

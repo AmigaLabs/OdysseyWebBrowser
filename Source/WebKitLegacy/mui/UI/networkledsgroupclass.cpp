@@ -40,7 +40,6 @@
 #include <WebCore/Timer.h>
 #include <wtf/MainThread.h>
 #include <WebCore/ResourceHandle.h>
-#include "ResourceHandleInternal.h"
 #include <WebCore/FrameLoader.h>
 #include <unistd.h>
 #include <cstdio>
@@ -126,10 +125,8 @@ DEFNEW
 
     if (obj)
     {
-#if OS(AMIGAOS)
-// broken 2.18
-        set(obj, MA_NetworkLedsGroup_Count, 16);
-#endif
+        // One LED per allowed connection (preferences); windows opened after startup need it too.
+        set(obj, MA_NetworkLedsGroup_Count, getv(app, MA_OWBApp_ActiveConnections));
 
         DoMethod(obj, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 2, MM_OWBApp_OpenWindow, MV_OWB_Window_Network);
 
@@ -196,21 +193,22 @@ DEFSMETHOD(Network_UpdateJob)
     if(job)
     {
         ULONG color;
-        ResourceHandleInternal *d = (ResourceHandleInternal*) job->getInternal();
+        NetworkActivity activity = { };
+        networkActivityFor(job, &activity);
 
-        switch(d->m_state)
+        switch(activity.state)
         {
             default:
-            case STATUS_CONNECTING:
+            case NETWORK_ACTIVITY_CONNECTING:
                 color = MUIV_Lamp_Color_Connecting;
                 break;
-            case STATUS_WAITING_DATA:
+            case NETWORK_ACTIVITY_WAITING_DATA:
                 color = MUIV_Lamp_Color_Processing;
                 break;
-            case STATUS_RECEIVING_DATA:
+            case NETWORK_ACTIVITY_RECEIVING_DATA:
                 color = MUIV_Lamp_Color_ReceivingData;
                 break;
-            case STATUS_SENDING_DATA:
+            case NETWORK_ACTIVITY_SENDING_DATA:
                 color = MUIV_Lamp_Color_SendingData;
                 break;
 

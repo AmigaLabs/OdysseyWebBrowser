@@ -83,6 +83,22 @@ void CurlRequestScheduler::callOnWorkerThread(Function<void()>&& task)
     startOrWakeUpThread();
 }
 
+void CurlRequestScheduler::setMaxTotalConnections(long maxTotalConnections)
+{
+    {
+        Locker locker { m_mutex };
+        if (m_maxTotalConnections == maxTotalConnections)
+            return;
+        m_maxTotalConnections = maxTotalConnections;
+        // The multi handle belongs to the worker thread: change it there, not while requests run.
+        m_taskQueue.append([this, maxTotalConnections] {
+            if (m_curlMultiHandle)
+                m_curlMultiHandle->setMaxTotalConnections(maxTotalConnections);
+        });
+    }
+    startOrWakeUpThread();
+}
+
 void CurlRequestScheduler::startOrWakeUpThread()
 {
     ASSERT(isMainThread());
@@ -288,8 +304,9 @@ void CurlRequestScheduler::finalizeTransfer(CurlRequestSchedulerClient* client, 
 {
     Locker locker { m_mutex };
 
-    if (!m_activeJobs.contains(client))
+    if (!m_activeJobs.contains(client)) {
         return;
+    }
 
     m_activeJobs.remove(client);
 

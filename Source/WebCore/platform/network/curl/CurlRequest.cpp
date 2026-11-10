@@ -175,12 +175,15 @@ void CurlRequest::cancel()
 
     auto& scheduler = CurlContext::singleton().scheduler();
 
+    // The scheduler must always drop a started transfer: it holds the curl handle and a connection slot.
+    if (m_startState == StartState::DidStart)
+        scheduler.cancel(this);
+
     if (needToInvokeDidCancelTransfer()) {
         runOnWorkerThreadIfRequired([this, protectedThis = Ref { *this }]() {
             didCancelTransfer();
         });
-    } else if (m_startState == StartState::DidStart)
-        scheduler.cancel(this);
+    }
 
     invalidateClient();
 }

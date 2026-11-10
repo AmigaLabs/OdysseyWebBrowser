@@ -38,6 +38,12 @@ namespace WebCore {
 class ResourceHandle;
 class ResourceHandleClient;
 class ResourceHandleInternal;
+
+#if PLATFORM(MUI)
+// MUI network activity (LEDs, network window): start/end of a request, see CurlResourceHandleDelegate.cpp.
+void networkActivityStarted(ResourceHandle&);
+void networkActivityEnded(ResourceHandle&);
+#endif
 class SharedBuffer;
 
 class CurlResourceHandleDelegate final : public CurlRequestClient {

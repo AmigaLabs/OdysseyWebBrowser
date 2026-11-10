@@ -37,6 +37,7 @@
 #include "CurlCacheManager.h"
 #include "CurlContext.h"
 #include "CurlRequest.h"
+#include "CurlResourceHandleDelegate.h"
 #include "HTTPParsers.h"
 #include "Logging.h"
 #include "NetworkLoadMetrics.h"
@@ -94,6 +95,9 @@ bool ResourceHandle::start()
         d->m_curlRequest->setAuthenticationScheme(ProtectionSpace::AuthenticationScheme::HTTPBasic);
     }
 
+#if PLATFORM(MUI)
+    networkActivityStarted(*this);
+#endif
     d->m_curlRequest->start();
 
     return true;
@@ -102,8 +106,12 @@ bool ResourceHandle::start()
 void ResourceHandle::cancel()
 {
     ASSERT(isMainThread());
+    Ref protectedThis { *this }; // networkActivityEnded() may drop the last reference (list entry), d must stay valid
 
     d->m_cancelled = true;
+#if PLATFORM(MUI)
+    networkActivityEnded(*this);
+#endif
 
     if (d->m_curlRequest)
         d->m_curlRequest->cancel();

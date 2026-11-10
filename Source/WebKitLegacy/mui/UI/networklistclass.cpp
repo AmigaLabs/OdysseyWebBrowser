@@ -31,7 +31,6 @@
 #include <wtf/text/CString.h>
 #include <WebCore/SecurityOrigin.h>
 #include <WebCore/ResourceHandle.h>
-#include "ResourceHandleInternal.h"
 #include <WebCore/ResourceRequest.h>
 
 #include <proto/exec.h>
@@ -100,38 +99,39 @@ DEFMMETHOD(List_Display)
     {
         STATIC char buf1[2048];
         STATIC char buf2[256];
-        ResourceHandleInternal* d = job->getInternal();
+        NetworkActivity activity = { };
+        networkActivityFor(job, &activity);
 
         snprintf(buf1, sizeof(buf1), "%s", (!job->firstRequest().isNull() && !job->firstRequest().url().isEmpty()) ? job->firstRequest().url().string().utf8().data() : "");
 
-        switch(d->m_state)
+        switch(activity.state)
         {
-            case STATUS_CONNECTING:
+            case NETWORK_ACTIVITY_CONNECTING:
             {
                 snprintf(buf2, sizeof(buf2), "%s", GSI(MSG_NETWORKWINDOW_STATUS_CONNECTING));
                 break;
             }
 
-            case STATUS_WAITING_DATA:
+            case NETWORK_ACTIVITY_WAITING_DATA:
             {
                 snprintf(buf2, sizeof(buf2), "%s", GSI(MSG_NETWORKWINDOW_STATUS_WAITING_FOR_DATA));
                 break;
             }
 
-            case STATUS_RECEIVING_DATA:
+            case NETWORK_ACTIVITY_RECEIVING_DATA:
             {
                 char received[128], total[128];
-                format_size(received, sizeof(received), d->m_received);
-                format_size(total, sizeof(total), d->m_totalSize);
+                format_size(received, sizeof(received), activity.received);
+                format_size(total, sizeof(total), activity.total);
                 snprintf(buf2, sizeof(buf2), GSI(MSG_NETWORKWINDOW_STATUS_RECEIVING_DATA), received, total);
                 break;
             }
 
-            case STATUS_SENDING_DATA:
+            case NETWORK_ACTIVITY_SENDING_DATA:
             {
                 char sent[128], total[128];
-                format_size(sent, sizeof(sent), d->m_bodyDataSent);
-                format_size(total, sizeof(total), d->m_bodySize);
+                format_size(sent, sizeof(sent), activity.sent);
+                format_size(total, sizeof(total), activity.bodySize);
                 snprintf(buf2, sizeof(buf2), GSI(MSG_NETWORKWINDOW_STATUS_SENDING_DATA), sent, total);
                 break;
             }

@@ -143,38 +143,16 @@ DEFSMETHOD(NetworkWindow_Cancel)
 {
     GETDATA;
 
-#if 0
-// broken 2.18
-    ResourceHandleManager *sharedResourceHandleManager = ResourceHandleManager::sharedInstance();
-    
-    if (msg->all)
-    {
-        ResourceHandle *job = NULL;
-
-        do
-        {
-            DoMethod(data->lv_transfers, MUIM_List_GetEntry, 0, (ResourceHandle **) &job);
-
-            if (job)
-            {
-                DoMethod(data->lv_transfers, MUIM_List_Remove, MUIV_List_Remove_First);
-                sharedResourceHandleManager->cancel(job);
-            }
-        }
-        while (job);
-    }
-    else
-    {
-        ResourceHandle *job = NULL;
-        DoMethod(data->lv_transfers, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, (ResourceHandle **) &job);
-
-        if(job)
-        {
+    if (msg->all) {
+        networkActivityAbortAll();
+    } else {
+        ResourceHandle *job = nullptr;
+        DoMethod(data->lv_transfers, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, (ResourceHandle **)&job);
+        if (job) {
             DoMethod(data->lv_transfers, MUIM_List_Remove, MUIV_List_Remove_Active);
-            sharedResourceHandleManager->cancel(job);
+            networkActivityAbort(job);
         }
     }
-#endif
 
     return 0;
 }

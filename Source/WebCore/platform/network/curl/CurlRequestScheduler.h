@@ -50,6 +50,7 @@ public:
     void cancel(CurlRequestSchedulerClient*);
 
     void callOnWorkerThread(Function<void()>&&);
+    void setMaxTotalConnections(long);
 
 #if OS(MORPHOS) || OS(AMIGAOS)
 	void stopCurlThread();

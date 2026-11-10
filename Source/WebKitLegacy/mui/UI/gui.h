@@ -162,6 +162,29 @@ typedef enum
     MIMETYPE_ACTION_IGNORE
 } mimetype_action_t;
 
+/* Network activity of one request. Filled by WebCore (CurlResourceHandleDelegate.cpp),
+ * read by the UI (activity LEDs, network window). The UI never touches ResourceHandleInternal. */
+#if defined(__cplusplus)
+enum { NETWORK_ACTIVITY_CONNECTING, NETWORK_ACTIVITY_WAITING_DATA, NETWORK_ACTIVITY_RECEIVING_DATA, NETWORK_ACTIVITY_SENDING_DATA };
+
+struct NetworkActivity
+{
+    unsigned long state;
+    long long received;
+    long long total;
+    long long sent;
+    long long bodySize;
+};
+
+/* Returns 1 and fills 'out' when 'job' (a ResourceHandle *) has activity, 0 otherwise. */
+int networkActivityFor(void *job, struct NetworkActivity *out);
+
+/* Aborts the request (ResourceHandle *) and tells the page loader it was cancelled. */
+void networkActivityAbort(void *job);
+/* Aborts every request currently listed in the network window. */
+void networkActivityAbortAll(void);
+#endif
+
 /* Exported structures */
 
 /*
