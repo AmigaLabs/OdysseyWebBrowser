@@ -47,7 +47,9 @@ using namespace WebCore;
 
 STATIC CONST CONST_STRPTR labels[] =
 {
+    "DuckDuckGo Lite",
     "Google",
+    "OS4Depot",
     "Aminet",
     "MorphOS",
     "YouTube",
@@ -56,7 +58,9 @@ STATIC CONST CONST_STRPTR labels[] =
 
 STATIC CONST CONST_STRPTR shortcuts[] =
 {
+    "d",
     "g",
+    "p",
     "a",
     "m",
     "y",
@@ -65,7 +69,9 @@ STATIC CONST CONST_STRPTR shortcuts[] =
 
 STATIC CONST CONST_STRPTR requests[] =
 {
+    "https://lite.duckduckgo.com/lite/?q=%s",
     "https://www.google.com/search?q=%s&ie=UTF-8&oe=UTF-8",
+    "https://os4depot.net/index.php?function=search&tool=simple&f_fields=%s",
     "https://www.aminet.net/search.php?query=%s",
     "https://www.morphos-storage.net/?find=%s",
     "https://www.youtube.com/results?search_query=%s",
