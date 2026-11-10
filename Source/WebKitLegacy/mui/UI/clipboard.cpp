@@ -664,8 +664,9 @@ static struct IOClipReq *clipReq;
 
 ULONG clipHook (struct Hook * h, VOID * o, struct ClipHookMsg * msg)
 {
-        Pasteboard::createForCopyAndPaste(nullptr)->clear();
-    //Pasteboard::generalPasteboard()->clear();
+#if !OS(AMIGAOS)
+    Pasteboard::createForGlobalSelection()->clear();
+#endif
     return (0);
 }
 

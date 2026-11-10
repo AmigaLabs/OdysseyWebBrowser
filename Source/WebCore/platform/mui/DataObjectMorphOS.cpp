@@ -165,13 +165,16 @@ DataObjectMorphOS* DataObjectMorphOS::forClipboard(int clipboard)
 {
     static HashMap<int, RefPtr<DataObjectMorphOS> > objectMap;
 
-    if (!objectMap.contains(clipboard)) {
+    // Key 0 is the empty-bucket marker of int-keyed HashMaps and trips a RELEASE_ASSERT (abort on AmigaOS), so shift the key.
+    int key = clipboard + 1;
+
+    if (!objectMap.contains(key)) {
         RefPtr<DataObjectMorphOS> dataObject = DataObjectMorphOS::create();
-        objectMap.set(clipboard, dataObject);
+        objectMap.set(key, dataObject);
         return dataObject.get();
     }
 
-    HashMap<int, RefPtr<DataObjectMorphOS> >::iterator it = objectMap.find(clipboard);
+    HashMap<int, RefPtr<DataObjectMorphOS> >::iterator it = objectMap.find(key);
     return it->value.get();
 }
 
