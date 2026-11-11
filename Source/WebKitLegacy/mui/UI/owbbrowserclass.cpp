@@ -520,10 +520,8 @@ DEFNEW
                     LocalFrame* sourceFrame = core(((WebView *) data->source_view)->mainFrame());
                     RefPtr<FragmentedSharedBuffer> dataSource = sourceFrame->loader().documentLoader() ? sourceFrame->loader().documentLoader()->mainResourceData() : nullptr;
 
-                    if (!mimeType)
-                    {
-                        mimeType = "text/html";
-                    }
+                    // Show the raw markup as text, like the old view-source mode did.
+                    mimeType = "text/plain";
 
                     if(dataSource)
                     {
