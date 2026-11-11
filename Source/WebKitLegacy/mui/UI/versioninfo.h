@@ -1,7 +1,7 @@
 #ifndef __VERSIONINFO_H__
 #define __VERSIONINFO_H__
 
-#define VERSION  "3.0"
+#define VERSION  "4.0.0"
 #ifndef OWB_BUILD_DATE
 #define OWB_BUILD_DATE __DATE__
 #endif
