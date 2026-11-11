@@ -31,6 +31,7 @@
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/TZoneMalloc.h>
+#include <wtf/RecursiveLockAdapter.h>
 #include <wtf/text/StringHash.h>
 
 namespace WebCore {
@@ -104,6 +105,9 @@ private:
     bool checkCookieAcceptPolicy(const URL& firstParty, const URL&);
     bool hasCookies(const URL&);
 
+    // The cookie database is used from the UI thread and the network thread.
+    // Every public entry point takes this lock. It is recursive because public methods call each other.
+    mutable RecursiveLock m_lock;
     SQLiteDatabase m_database;
     HashMap<String, std::unique_ptr<SQLiteStatement>> m_statements;
 };

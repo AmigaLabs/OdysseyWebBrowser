@@ -177,10 +177,7 @@ DEFTMETHOD(CookieManagerGroup_Load)
     NetworkStorageSession& storageSession = NetworkStorageSessionMap::defaultStorageSession();
 
     HashSet<String> hosts;
-#if 0
-// broken 2.30
-    storageSession.cookieStorage().getHostnamesWithCookies(storageSession, hosts);
-#endif
+    storageSession.getHostnamesWithCookies(hosts);
     Vector<Cookie> cookies = storageSession.cookieDatabase().getAllCookies();
 
     for (HashSet<String>::iterator it = hosts.begin(); it != hosts.end(); ++it)
@@ -227,7 +224,7 @@ DEFTMETHOD(CookieManagerGroup_Load)
                 node.domain = strdup(domain);
                 node.protocol = cookie.secure ? strdup("https") : strdup("http");
                 node.path = strdup(cookie.path.utf8().data());
-                node.expiry = cookie.expires.value();
+                node.expiry = cookie.expires.value_or(0);
                 node.secure = cookie.secure;
                 node.http_only = cookie.httpOnly;
                 node.session = cookie.session;
@@ -425,7 +422,6 @@ DEFTMETHOD(CookieManagerGroup_Remove)
     {
         struct cookie_entry *entry = (struct cookie_entry *) tn->tn_User;
         NetworkStorageSession& storageSession = NetworkStorageSessionMap::defaultStorageSession();
-
         if(entry && entry->flags == COOKIEFLAG_COOKIE)
         {
             String cookieURL = String(entry->protocol);
@@ -440,7 +436,7 @@ DEFTMETHOD(CookieManagerGroup_Remove)
         }
         else if(entry && entry->flags == COOKIEFLAG_DOMAIN)
         {
-            storageSession.cookieDatabase().deleteCookiesForHostname(entry->domain, IncludeHttpOnlyCookies::Yes);
+            NetworkStorageSessionMap::defaultStorageSession().cookieDatabase().deleteCookiesForHostname(entry->domain, IncludeHttpOnlyCookies::Yes);
             DoMethod(data->lt_cookies, MUIM_Listtree_Remove, NULL, MUIV_Listtree_Remove_TreeNode_Active, 0);
         }
     }
