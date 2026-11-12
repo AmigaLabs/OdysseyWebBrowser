@@ -74,6 +74,36 @@ static RefPtr<WebCore::BitmapImage> favIconForPageURL(const char* pageURL)
     return image;
 }
 
+// Box-filter scale of an ARGB32 surface into another ARGB32 surface, on native uint32 values (endian-safe).
+static void favScaleInto(cairo_surface_t* src, cairo_surface_t* dst)
+{
+    cairo_surface_flush(src);
+    cairo_surface_flush(dst);
+    int sw = cairo_image_surface_get_width(src), sh = cairo_image_surface_get_height(src);
+    int dw = cairo_image_surface_get_width(dst), dh = cairo_image_surface_get_height(dst);
+    int sst = cairo_image_surface_get_stride(src), dstStride = cairo_image_surface_get_stride(dst);
+    const unsigned char* s = cairo_image_surface_get_data(src);
+    unsigned char* d = cairo_image_surface_get_data(dst);
+    bool argb = cairo_image_surface_get_format(src) == CAIRO_FORMAT_ARGB32;
+    for (int y = 0; y < dh; ++y) {
+        int y0 = y * sh / dh, y1 = (y + 1) * sh / dh;
+        if (y1 <= y0) y1 = y0 + 1;
+        for (int x = 0; x < dw; ++x) {
+            int x0 = x * sw / dw, x1 = (x + 1) * sw / dw;
+            if (x1 <= x0) x1 = x0 + 1;
+            uint32_t a = 0, r = 0, g = 0, b = 0, n = 0;
+            for (int sy = y0; argb && sy < y1 && sy < sh; ++sy)
+                for (int sx = x0; sx < x1 && sx < sw; ++sx) {
+                    uint32_t p = *reinterpret_cast<const uint32_t*>(s + sy * sst + sx * 4);
+                    a += p >> 24; r += (p >> 16) & 255; g += (p >> 8) & 255; b += p & 255; ++n;
+                }
+            uint32_t out = n ? (((a / n) << 24) | ((r / n) << 16) | ((g / n) << 8) | (b / n)) : 0;
+            *reinterpret_cast<uint32_t*>(d + y * dstStride + x * 4) = out;
+        }
+    }
+    cairo_surface_mark_dirty(dst);
+}
+
 struct Data
 {
     ULONG need_redraw;
@@ -220,19 +250,8 @@ STATIC VOID doset(struct Data *data, APTR obj, struct TagItem *taglist)
 
                         if(icon_surface)
                         {
-                            cairo_save(data->cr);
-
-                            cairo_set_source_rgba(data->cr, 0, 0, 0, 0);
-                            cairo_rectangle(data->cr, 0, 0, FAVICON_WIDTH*FACTOR, FAVICON_HEIGHT*FACTOR);
-                            cairo_fill(data->cr);
-
-                            cairo_scale(data->cr, ((double) FAVICON_WIDTH*FACTOR)/((double) icon->width()),
-                                                    ((double) FAVICON_HEIGHT*FACTOR)/((double) icon->height()));
-
-                            cairo_set_source_surface(data->cr, icon_surface, 0, 0);
-                            cairo_paint(data->cr);
-
-                            cairo_restore(data->cr);
+                            // Scaled cairo_paint() reverses the pixel bytes on big-endian; scale in software instead.
+                            favScaleInto(icon_surface, data->surface);
 
 #if OS(AROS)
                             data->bgra = ARGB2BGRA(cairo_image_surface_get_data(data->surface),
