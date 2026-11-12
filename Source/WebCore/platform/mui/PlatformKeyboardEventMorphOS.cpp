@@ -634,8 +634,9 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(BalEventKey* event)
     }
     aSrc[1] = 0;
 
-    String aText(aSrc);
-    String aUnmodifiedText(aSrc);
+    // Only the character itself: passing the array would make String take both elements, adding a NUL after every typed key.
+    String aText(std::span<const UChar> { aSrc, aSrc[0] ? 1u : 0u });
+    String aUnmodifiedText(aText);
     String aKeyIdentifier = keyIdentifierForAmigaKeyCode(event);
 
     m_text = aText;
