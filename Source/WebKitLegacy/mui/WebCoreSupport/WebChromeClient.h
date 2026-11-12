@@ -32,6 +32,8 @@
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/ScrollTypes.h>
 #include <wtf/Forward.h>
+#include <wtf/RunLoop.h>
+#include <memory>
 
 #include <clib/debug_protos.h>
 
@@ -188,6 +190,7 @@ public:
 
 private:
     WebView* m_webView;
+    std::unique_ptr<WTF::RunLoop::Timer> m_hiddenUpdateTimer; // 1 s rendering updates of hidden tabs
     RefPtr<WebCore::Element> m_fullScreenElement;
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     std::unique_ptr<WebDesktopNotificationsDelegate> m_notificationsDelegate;

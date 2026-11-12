@@ -109,6 +109,12 @@ set(WebKit_OUTPUT_NAME webkitmui)
 set(WebKit2_OUTPUT_NAME webkit2mui)
 set(WebKit2_WebProcess_OUTPUT_NAME WebKitWebProcess)
 
+# Memory diagnostics on serial: [mem] lines every 10 s, live-byte counters, allocator self-test (docs/MEMORY.md).
+option(OWB_MEMORY_DEBUG "Print memory diagnostics on the serial port" OFF)
+if (OWB_MEMORY_DEBUG)
+    add_definitions(-DOWB_MEMORY_DEBUG=1)
+endif ()
+
 add_definitions(-DUSER_AGENT_GTK_MAJOR_VERSION=601)
 add_definitions(-DUSER_AGENT_GTK_MINOR_VERSION=1)
 

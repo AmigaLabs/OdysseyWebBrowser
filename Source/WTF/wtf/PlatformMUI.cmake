@@ -24,5 +24,6 @@ if (AmigaOS4)
         morphos/OS4Misc.cpp
         morphos/MemoryPressureHandlerMorphOS.cpp
         mui/utils.cpp
+        mui/MallocLargeOS4.cpp
     )
 endif()

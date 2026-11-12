@@ -100,6 +100,7 @@
 #include <WebCore/CurlCacheManager.h>
 #include <WebCore/LocalDOMWindow.h>
 #include <WebCore/MemoryCache.h>
+#include "MemoryProbeMUI.h" // memory diagnostics (OWB_MEMORY_DEBUG)
 #include <WebCore/MemoryRelease.h>
 #include "JITWorklist.h"
 #include <WebCore/CommonVM.h>
@@ -1026,11 +1027,19 @@ DEFNEW
     NEWLIST(&ua_list_bak);
 
     installClipboardMonitor();
-
     menus_init();
 
     JSC::initialize();
     WTF::initializeMainThread();
+    WebKit::memoryProbeStart(); // memory diagnostics (OWB_MEMORY_DEBUG), needs the main RunLoop
+    {
+        // Without a low-memory handler MemoryPressureHandler::releaseMemory() does nothing (docs/MEMORY.md, phase B).
+        auto& memoryPressureHandler = MemoryPressureHandler::singleton();
+        memoryPressureHandler.setLowMemoryHandler([] (Critical critical, Synchronous synchronous) {
+            WebCore::releaseMemory(critical, synchronous);
+        });
+        memoryPressureHandler.install();
+    }
     WebPlatformStrategies::initialize();
 
     /* Task that is used to signal main loop for processing of RunLoop based work */

@@ -283,6 +283,16 @@ ExceptionOr<void> WebSocket::connect(const String& url, const Vector<String>& pr
     if (RefPtr provider = context.socketProvider())
         m_channel = ThreadableWebSocketChannel::create(*scriptExecutionContext(), *this, *provider);
 
+#if OS(AMIGAOS)
+    // WebSocket networking is not available on this port, so there is no SocketProvider. Fail like an unreachable
+    // server (error + close events) instead of crashing the whole browser. Revert when WebSocket is enabled.
+    if (!m_channel) {
+        context.addConsoleMessage(MessageSource::JS, MessageLevel::Error, "WebSocket is not supported"_s);
+        failAsynchronously();
+        return { };
+    }
+#endif
+
     // Every ScriptExecutionContext should have a SocketProvider.
     RELEASE_ASSERT(m_channel);
 

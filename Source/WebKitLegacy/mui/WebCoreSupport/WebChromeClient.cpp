@@ -527,6 +527,16 @@ IntPoint WebChromeClient::screenToRootView(const WebCore::IntPoint& p) const
 
 void WebChromeClient::triggerRenderingUpdate()
 {
+    // WebCore calls this synchronously for invisible pages, and paint() -> renderingUpdateCompleted() asks for the next
+    // update right away when steps are pending (hidden tab using requestAnimationFrame): endless recursion until the stack
+    // overflowed. Hidden tabs update from a 1 s timer instead, which also keeps them from burning CPU (docs/MEMORY.md).
+    if (!m_webView->page()->isVisible()) {
+        if (!m_hiddenUpdateTimer)
+            m_hiddenUpdateTimer = std::make_unique<WTF::RunLoop::Timer>(WTF::RunLoop::main(), [this] { m_webView->paint(); });
+        if (!m_hiddenUpdateTimer->isActive())
+            m_hiddenUpdateTimer->startOneShot(1_s);
+        return;
+    }
     m_webView->paint();
 }
 

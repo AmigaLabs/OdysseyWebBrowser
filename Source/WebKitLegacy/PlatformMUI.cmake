@@ -153,6 +153,7 @@ list(APPEND WebKitLegacy_SOURCES
     mui/WebUtils.cpp
     mui/WebView.cpp
     mui/MemoryPressureMUI.cpp
+    mui/MemoryProbeMUI.cpp
     mui/WebURLResponse.cpp
 
     mui/WebCoreSupport/WebChromeClient.cpp

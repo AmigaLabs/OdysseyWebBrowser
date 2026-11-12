@@ -14,6 +14,8 @@ set(OdysseyWebBrowser_LIBRARIES
     # TEMP: one group so static-library cycles (WebKitLegacy <-> WTF/WebCore) resolve on AmigaOS
     -Wl,--start-group JavaScriptCore WebKitLegacy WebCore PAL WTF -Wl,--end-group
     -mcrt=clib4
+    # Large-block allocator (Source/WTF/wtf/mui/MallocLargeOS4.cpp, docs/MEMORY.md). Remove these 6 options to switch it off.
+    -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=memalign,--wrap=free,--wrap=malloc_usable_size
     -lfreetype
     -lcairo
     -lwebp 

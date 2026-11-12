@@ -138,6 +138,7 @@
 #include "ObserverData.h"
 #include "ObserverServiceData.h"
 #include <WebCore/Page.h>
+#include <WebCore/ActivityState.h>
 #include <WebCore/PageConfiguration.h>
 #include <WebCore/PagePasteboardContext.h>
 #include <WebCore/BackForwardCache.h>
@@ -1274,6 +1275,9 @@ void WebView::initWithFrame(BalRectangle& frame, const char* frameName, const ch
     m_page->focusController().setActive(true); 
     m_page->focusController().setFocused(true);
     m_page->settings().setMinimumDOMTimerInterval(Seconds(4.0/1000.0));
+    // Both are off by default; with setPageVisible() they slow down timers of background tabs.
+    m_page->settings().setHiddenPageDOMTimerThrottlingEnabled(true);
+    m_page->settings().setHiddenPageDOMTimerThrottlingAutoIncreases(true);
 
     LocalFrame* mainFrame = &downcast<LocalFrame>(m_page->mainFrame());
     LocalFrame* focusedFrame = m_page->focusController().focusedOrMainFrame();
@@ -2697,6 +2701,45 @@ void WebView::setViewWindow(BalWidget* view)
 {
     m_viewWindow = view;
     d->setViewWindow(view);
+}
+
+void WebView::setPageVisible(bool visible)
+{
+    if (!m_page)
+        return;
+
+    auto state = m_page->activityState();
+    if (visible) {
+        state.add({ ActivityState::IsVisible, ActivityState::IsVisibleOrOccluded });
+        state.remove(ActivityState::IsVisuallyIdle);
+    } else {
+        state.remove({ ActivityState::IsVisible, ActivityState::IsVisibleOrOccluded });
+        state.add(ActivityState::IsVisuallyIdle); // required for hidden-page timer throttling
+    }
+    m_page->setActivityState(state);
+
+    // A hidden tab can still keep the CPU at 100% (e.g. Cloudflare checks passing messages to a Worker, which neither timer
+    // throttling nor visibility affects). Freeze it after a while: timers, queued tasks and animation frames stop, and the
+    // page resumes the moment the tab is shown again. shortcut: fixed delay, make it a preference if users need to tune it.
+    constexpr Seconds freezeDelay = 30_s;
+    if (visible) {
+        if (m_freezeTimer)
+            m_freezeTimer->stop();
+        if (m_frozen) {
+            m_frozen = false;
+            m_page->resumeActiveDOMObjectsAndAnimations();
+        }
+    } else {
+        if (!m_freezeTimer) {
+            m_freezeTimer = std::make_unique<WTF::RunLoop::Timer>(WTF::RunLoop::main(), [this] {
+                if (!m_page || m_frozen || m_page->isVisible())
+                    return;
+                m_frozen = true;
+                m_page->suspendActiveDOMObjectsAndAnimations();
+            });
+        }
+        m_freezeTimer->startOneShot(freezeDelay);
+    }
 }
 
 BalPoint WebView::scrollOffset()

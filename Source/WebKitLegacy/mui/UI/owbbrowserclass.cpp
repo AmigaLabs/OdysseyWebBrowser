@@ -495,6 +495,7 @@ DEFNEW
         data->view->webView->initWithFrame(clientRect, data->is_frame ? data->url : "", "");
         data->view->webView->setViewWindow(data->view);
         data->view->webView->onResize(re);
+        data->view->webView->setPageVisible(false); // visible again on the first Show; keeps tabs opened in the background quiet
 
         /* Passed attributes */
         set(obj, MA_OWBBrowser_PrivateBrowsing, (IPTR) GetTagData(MA_OWBBrowser_PrivateBrowsing, FALSE, msg->ops_AttrList));
@@ -1378,6 +1379,9 @@ DEFMMETHOD(Show)
 
     rc = DOSUPER;
 
+    if(data->view && data->view->webView)
+        data->view->webView->setPageVisible(true);
+
     D(kprintf("[OWBBrowser] Show: %p size: %dx%d at (%d,%d) for widget %p\n", obj, _mwidth(obj), _mheight(obj), _mleft(obj), _mtop(obj), data->view));
 
     LONG oldwidth = data->width;
@@ -1541,6 +1545,9 @@ DEFMMETHOD(Show)
 DEFMMETHOD(Hide)
 {
     GETDATA;
+
+    if(data->view && data->view->webView)
+        data->view->webView->setPageVisible(false);
 
 #if !USE_MORPHOS_SURFACE
     if (data->rp_offscreen.BitMap)

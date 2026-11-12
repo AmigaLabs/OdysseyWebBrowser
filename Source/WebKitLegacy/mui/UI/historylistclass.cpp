@@ -31,6 +31,8 @@
 #include "WebHistory.h"
 #include "WebHistoryItem.h"
 
+#include <algorithm>
+#include <vector>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -297,6 +299,13 @@ DEFMMETHOD(List_Destruct)
     return TRUE;
 }
 
+// Skip rows whose WebHistoryItem was already freed but is still listed (crash fix, see docs/MEMORY.md 7b).
+static bool historyItemIsLive(WebHistoryItem *witem)
+{
+    std::vector<WebHistoryItem *> *list = WebHistory::sharedHistory()->historyList();
+    return std::find(list->begin(), list->end(), witem) != list->end();
+}
+
 DEFMMETHOD(List_Display)
 {
 #define LF "\n\33P[80------]"
@@ -310,6 +319,18 @@ DEFMMETHOD(List_Display)
         static char stitle[MAX_LABEL_WIDTH + 1];
         static char surl[MAX_URL_WIDTH + 1];
         WebHistoryItem *witem = (WebHistoryItem *) item->webhistoryitem;
+
+        if(!historyItemIsLive(witem))
+        {
+            static char sempty[] = "";
+            msg->array[0] = sempty;
+            if(getv(app, MA_OWBApp_ShowFavIcons) & MV_OWBApp_ShowFavIcons_History)
+            {
+                msg->array[1] = sempty;
+            }
+            return TRUE;
+        }
+
         char *url = (char *) witem->URLString();
         char *title = (char *) witem->title();
 

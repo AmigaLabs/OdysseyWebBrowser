@@ -48,6 +48,8 @@
 #include "WebDragData.h"
 #include <string>
 #include <wtf/RefPtr.h>
+#include <wtf/RunLoop.h>
+#include <memory>
 
 class DOMDocument;
 class DOMNode;
@@ -964,6 +966,12 @@ public:
     virtual void setViewWindow(BalWidget*);
 
     /**
+     * Tell WebCore whether the tab is shown. Hidden pages get throttled timers and no rendering updates
+     * (docs/MEMORY.md, background tabs at 100% CPU).
+     */
+    void setPageVisible(bool visible);
+
+    /**
      *  scrollOffset 
      */
     virtual BalPoint scrollOffset();
@@ -1698,6 +1706,9 @@ protected:
     //virtual void windowReceivedMessage(HWND, UINT message, WPARAM, LPARAM);
 
     BalWidget *m_viewWindow;
+    // TEMP freeze of background tabs (docs/MEMORY.md 7c)
+    std::unique_ptr<WTF::RunLoop::Timer> m_freezeTimer;
+    bool m_frozen { false };
     WebFrame* m_mainFrame;
     WebCore::Page* m_page;
     WebInspectorClient* m_inspectorClient;

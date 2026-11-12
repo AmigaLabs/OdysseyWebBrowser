@@ -58,6 +58,8 @@
 #include <WebCore/WindowFeatures.h>
 #include <WebCore/FrameLoader.h>
 #include <WebCore/MemoryCache.h>
+#include <WebCore/GCController.h>
+#include "MemoryProbeMUI.h" // memory diagnostics (OWB_MEMORY_DEBUG)
 #include "ScriptEntry.h"
 #include "TopSitesManager.h"
 #include <WebCore/markup.h>
@@ -1955,6 +1957,7 @@ static void invalidate_parent(struct Data *data, Object *browser)
 DEFSMETHOD(OWBWindow_AddBrowser)
 {
     GETDATA;
+    WebKit::memoryProbe("tab-open");
 
     //ULONG add_after_active = FALSE;
     ULONG add_after_active = !msg->addtoend && data->active_browser != NULL && (getv(app, MA_OWBApp_NewPagePosition) == MV_OWBApp_NewPagePosition_After_Active);
@@ -2050,6 +2053,7 @@ DEFSMETHOD(OWBWindow_AddBrowser)
 DEFSMETHOD(OWBWindow_RemoveBrowser)
 {
     GETDATA;
+    WebKit::memoryProbe("tab-close-before");
     ULONG count = getv(data->pagetitles, MUIA_Group_ChildCount);
 
     if(!msg->browser)
@@ -2118,6 +2122,10 @@ DEFSMETHOD(OWBWindow_RemoveBrowser)
 
     // Keep tab close responsive: only prune dead cache entries (no clients or loaders), not the full release.
     MemoryCache::singleton().pruneDeadResourcesToSize(0);
+    // Closed tabs keep documents/buffers alive until the next GC, which does not run when idle (docs/MEMORY.md, H3).
+    // Deferred to the next run-loop turn so the close itself stays quick.
+    GCController::singleton().garbageCollectSoon();
+    WebKit::memoryProbe("tab-close-after");
 
     return 0;
 }
