@@ -41,6 +41,7 @@ using namespace WebCore;
 
 BackForwardList::BackForwardList()
     : m_current(NoCurrentItemIndex)
+    , m_provisional(NoCurrentItemIndex)
     , m_capacity(DefaultCapacity)
     , m_closed(true)
     , m_enabled(true)
@@ -210,12 +211,18 @@ void BackForwardList::setChildItem(BackForwardFrameItemIdentifier, Ref<HistoryIt
 {
 }
 
-void BackForwardList::goToProvisionalItem(const HistoryItem&)
+// 2.48 moves the list position through the provisional item (as the upstream legacy list does); without this the position
+// never followed a Back, so the next navigation was appended after the wrong entry and Back returned to the page left before.
+void BackForwardList::goToProvisionalItem(const HistoryItem& item)
 {
+    m_provisional = m_current;
+    goToItem(const_cast<HistoryItem&>(item));
 }
 
 void BackForwardList::clearProvisionalItem(const HistoryItem&)
 {
+    if (m_provisional != NoCurrentItemIndex)
+        m_current = std::exchange(m_provisional, NoCurrentItemIndex);
 }
 
 RefPtr<HistoryItem> BackForwardList::itemAtIndex(int index, FrameIdentifier)

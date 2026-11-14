@@ -385,7 +385,7 @@ DEFTMETHOD(URLPrefsGroup_Load)
 
     for(size_t i = 0; i < urlsettings.size(); i++)
     {
-        Vector<String> urlsettingsAttributes = urlsettings[i].split("\1");
+        Vector<String> urlsettingsAttributes = urlsettings[i].split('\1');
 
         if(urlsettingsAttributes.size() >= 5)
         {

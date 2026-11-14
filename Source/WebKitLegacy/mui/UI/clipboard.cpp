@@ -674,6 +674,10 @@ bool installClipboardMonitor (void)
 {
     struct IOClipReq *clipIO;
 
+    /* The hook node is static: installing it twice would put the same node into the device's list twice. */
+    if (clipReq)
+        return true;
+
     /* Open clipboard unit 0 */
 
     if ((clipIO = clipboardOpen( 0L )))

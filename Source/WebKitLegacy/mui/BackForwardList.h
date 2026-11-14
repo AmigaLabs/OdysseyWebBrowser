@@ -76,6 +76,7 @@ private:
     HistoryItemVector m_entries;
     HistoryItemHashSet m_entryHash;
     unsigned m_current;
+    unsigned m_provisional; // position to restore if a back/forward navigation is cancelled
     unsigned m_capacity;
     bool m_closed;
     bool m_enabled;

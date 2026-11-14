@@ -71,6 +71,7 @@
 void close_dictionary();
 void destroy_application(void);
 void close_libs(void);
+void removeClipboardMonitor(void); // clipboard.cpp (its header needs WTF include paths)
 
 #if !defined(__amigaos4__)
 extern "C"
@@ -626,6 +627,10 @@ void destroy_application(void)
 		classes_cleanup();
 		app = NULL;
 	}
+
+	// The hook is installed at the start of the app's New. If startup failed or we leave through exit(), the app object
+	// never disposed it, and a stale hook left in clipboard.device crashes later runs. Does nothing when already removed.
+	removeClipboardMonitor();
 
 	locale_cleanup();
 }

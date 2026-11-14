@@ -117,7 +117,7 @@ static void load_searchengines(Object *obj, struct Data *data)
 
     for(size_t i = 0; i < lines.size(); i++)
     {
-        Vector<String> searchAttributes = lines[i].split("\1");
+        Vector<String> searchAttributes = lines[i].split('\1');
 
         if(searchAttributes.size() >= 2) // 1.10 introduced a 3rd field
         {

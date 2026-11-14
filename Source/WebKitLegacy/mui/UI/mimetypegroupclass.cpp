@@ -552,7 +552,7 @@ DEFMMETHOD(Import)
             Vector<String> mimetypes = input.split("\n");
             for(i = 0; i < mimetypes.size(); i++)
             {
-                Vector<String> mimetypeAttributes = mimetypes[i].split("\1");
+                Vector<String> mimetypeAttributes = mimetypes[i].split('\1');
 
                 if(mimetypeAttributes.size() == 6)
                 {

@@ -169,7 +169,7 @@ static void load_scripts(Object *obj, struct Data *data)
     Vector<String> scripts = fileBuffer.split("\n");
     for(size_t i = 0; i < scripts.size(); i++)
     {
-        Vector<String> scriptAttributes = scripts[i].split("\1");
+        Vector<String> scriptAttributes = scripts[i].split('\1');
 
         if(scriptAttributes.size() == 4)
         {
@@ -184,12 +184,12 @@ static void load_scripts(Object *obj, struct Data *data)
                 {
                     if(scriptAttributes[2].length())
                     {
-                        script->whitelist = scriptAttributes[2].split("\2");
+                        script->whitelist = scriptAttributes[2].split('\2');
                     }
 
                     if(scriptAttributes[3].length())
                     {
-                        script->blacklist = scriptAttributes[3].split("\2");
+                        script->blacklist = scriptAttributes[3].split('\2');
                     }
 
                     scripts_list.append(script);

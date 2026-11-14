@@ -115,7 +115,7 @@ void restore_download_state(Object *obj, struct Data *data)
     Vector<String> downloads = fileBuffer.split("\n");
     for(size_t i = 0; i < downloads.size(); i++)
     {
-        Vector<String> downloadAttributes = downloads[i].split("\1");
+        Vector<String> downloadAttributes = downloads[i].split('\1');
 
         if(downloadAttributes.size() >= 5) // Now 6 for new format
         {
