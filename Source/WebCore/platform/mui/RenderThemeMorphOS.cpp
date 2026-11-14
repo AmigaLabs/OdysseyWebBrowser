@@ -302,7 +302,7 @@ bool RenderThemeBal::paintTextFieldOrTextAreaOrSearchField(const RenderObject& o
         context.setStrokeGradient(createLinearGradient(regularTopOutline, regularBottomOutline, rect.maxXMinYCorner(), rect.maxXMaxYCorner()));
 
     Path textFieldRoundedRectangle = roundedRectForBorder(object, rect);
-    if (object.style().appearance() == StyleAppearance::SearchField) {
+    if (object.style().usedAppearance() == StyleAppearance::SearchField) {
         // We force the fill color to White so as to match the background color of the search cancel button graphic.
         context.setFillColor(Color::white);
         context.fillPath(textFieldRoundedRectangle);
@@ -387,7 +387,7 @@ void RenderThemeBal::adjustMenuListButtonStyle(RenderStyle& style, const Element
 void RenderThemeBal::calculateButtonSize(RenderStyle& style) const
 {
     int size = style.computedFontSize();
-    if (style.appearance() == StyleAppearance::Checkbox || style.appearance() == StyleAppearance::Radio) {
+    if (style.usedAppearance() == StyleAppearance::Checkbox || style.usedAppearance() == StyleAppearance::Radio) {
         style.setWidth(Length(size, LengthType::Fixed));
         style.setHeight(Length(size, LengthType::Fixed));
         return;
@@ -459,7 +459,8 @@ bool RenderThemeBal::paintButton(const RenderObject& object, const PaintInfo& in
         info.context().setStrokeGradient(createLinearGradient(regularTopOutline, regularBottomOutline, rect.maxXMinYCorner(), rect.maxXMaxYCorner()));
     }
 
-    StyleAppearance part = object.style().appearance();
+    // usedAppearance(): for appearance:auto (checkboxes, radios, <button>) the specified value is Auto, the control type is the used one.
+    StyleAppearance part = object.style().usedAppearance();
     switch (part) {
     case StyleAppearance::Checkbox: {
         FloatSize smallCorner(smallRadius, smallRadius);
@@ -689,7 +690,7 @@ void RenderThemeBal::paintMenuListButtonDecorations(const RenderBox& o, const Pa
 void RenderThemeBal::adjustSliderThumbSize(RenderStyle& style, const Element*) const
 {
     // Media thumb sizes dropped: 2.48 has no media appearances.
-    StyleAppearance part = style.appearance();
+    StyleAppearance part = style.usedAppearance();
     if (part == StyleAppearance::SliderThumbHorizontal || part == StyleAppearance::SliderThumbVertical) {
         style.setWidth(Length(part == StyleAppearance::SliderThumbVertical ? sliderThumbHeight : sliderThumbWidth, LengthType::Fixed));
         style.setHeight(Length(part == StyleAppearance::SliderThumbVertical ? sliderThumbWidth : sliderThumbHeight, LengthType::Fixed));
@@ -700,7 +701,7 @@ bool RenderThemeBal::paintSliderTrack(const RenderObject& object, const PaintInf
 {
     const static int SliderTrackHeight = 5;
     IntRect rect2;
-    if (object.style().appearance() == StyleAppearance::SliderHorizontal) {
+    if (object.style().usedAppearance() == StyleAppearance::SliderHorizontal) {
         rect2.setHeight(SliderTrackHeight);
         rect2.setWidth(rect.width());
         rect2.setX(rect.x());
