@@ -1053,7 +1053,7 @@ DEFNEW
             MUIA_Application_Title      , "Odyssey Web Browser",
             MUIA_Application_Version    , "$VER: Odyssey Web Browser " VERSION " (" OWB_BUILD_DATE ")",
             MUIA_Application_Copyright  , "\n2025 - AmigaLabs\n2014-2025 Krzysztof Smiechowicz\n2020 Jacek Piszczek\n2009-2014 Fabien Coeurjoly",
-            MUIA_Application_Author     , "Fabien Coeurjoly",
+            MUIA_Application_Author     , "AmigaLabs",
             MUIA_Application_Description, APPLICATION_DESCRIPTION,
             MUIA_Application_UsedClasses, classlist,
             MUIA_Application_Base       , APPLICATION_BASE,

@@ -1,0 +1,4 @@
+root = true
+
+[assets/**]
+charset = latin1
