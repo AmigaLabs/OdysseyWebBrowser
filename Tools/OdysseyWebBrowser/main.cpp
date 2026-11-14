@@ -765,6 +765,17 @@ int main (int argc, char* argv[])
 		freopen("NIL:", "w", stdout);
 	}
 
+	// Started from the URL handler (System/RunCommand): the process has no error stream (pr_CES == 0), shown as <ZERO>.
+	// clib4 duplicates stdin/stdout/stderr when it creates a thread, and DupFileHandle("<ZERO>") fails, so Thread::create()
+	// and with it the whole startup failed. Give the process and stdio a NIL: error stream, as the Workbench start does.
+	if (!ErrorOutput())
+	{
+		BPTR nilErr = Open("NIL:", MODE_NEWFILE);
+		if (nilErr)
+			SelectErrorOutput(nilErr);
+		freopen("NIL:", "w", stderr);
+	}
+
 	//dosnotify_init();
 
 	if(open_libs())
