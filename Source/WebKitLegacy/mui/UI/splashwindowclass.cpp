@@ -63,6 +63,7 @@ struct  MUIP_Process_Launch                 { ULONG MethodID; };
 #define MUIA_Process_AutoLaunch             0x80428855 /* V20 i.. ULONG             */
 #define MUIA_Process_Name                   0x8042732b /* V20 i.. ULONG             */
 #define MUIA_Process_Priority               0x80422a54 /* V20 i.. ULONG             */
+#define MUIA_Process_StackSize              0x804230d0 /* V20 i.. ULONG             */
 #define MUIA_Process_Task                   0x8042b123 /* V20 ..g ULONG             */
 
 #endif
@@ -237,6 +238,9 @@ DEFNEW
                     MUIA_Process_SourceObject, obj,
                     MUIA_Process_Name        , "[OWB] FontConfig Cache",
                     MUIA_Process_Priority    , 0,
+                    // fontconfig's FcConfigParse() has a 16 KB stack frame and runs again for every nested <include> (conf.d files,
+                    // local.conf, ~/.fonts.conf), on top of libxml2. MUI's default of 32 KB overflows at the second level.
+                    MUIA_Process_StackSize   , 512 * 1024,
                     MUIA_Process_AutoLaunch  , FALSE,
                     TAG_DONE);
 
