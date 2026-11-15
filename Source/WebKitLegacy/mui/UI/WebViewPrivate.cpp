@@ -1402,16 +1402,27 @@ bool WebViewPrivate::onMouseButtonUp(BalEventButton event)
 
         if(!urlToLoad.string().isEmpty())
         {
-            if(Page* oldPage = frame->page())
-            {
-                // shortcut: 2.48 WindowFeatures has no tab/background policy, always opens a plain new page, upgrade when MUI needs new-tab or background-tab
-                WindowFeatures features;
+            // 2.48 WindowFeatures has no tab/background policy, so createWindow() cannot carry the "Middle Button Behaviour"
+            // preference. Open the page directly, with the same arguments 2.34's WebChromeClient::createWindow passed.
+            BalWidget *viewWindow = m_webView->viewWindow();
+            ULONG privatebrowsing = viewWindow ? getv(viewWindow->browser, MA_OWBBrowser_PrivateBrowsing) : FALSE;
+            WTF::CString url = urlToLoad.string().utf8();
 
-                if (RefPtr<Page> newPage = oldPage->chrome().createWindow(
-                        *frame, String(), features,
-                        NavigationAction(*frame->document(), ResourceRequest(urlToLoad, frame->loader().outgoingReferrer()), InitiatedByMainFrame::Unknown, true)
-                        ))
-                    newPage->chrome().show();
+            switch(getv(app, MA_OWBApp_MiddleButtonPolicy))
+            {
+                case MV_OWBApp_MiddleButtonPolicy_NewWindow:
+                {
+                    WindowFeatures features;
+                    DoMethod(app, MM_OWBApp_AddWindow, url.data(), FALSE, NULL, FALSE, &features, privatebrowsing);
+                    break;
+                }
+                case MV_OWBApp_MiddleButtonPolicy_NewTab:
+                    DoMethod(app, MM_OWBApp_AddBrowser, NULL, url.data(), FALSE, NULL, FALSE, privatebrowsing, FALSE);
+                    break;
+                case MV_OWBApp_MiddleButtonPolicy_NewBackgroundTab:
+                default:
+                    DoMethod(app, MM_OWBApp_AddBrowser, NULL, url.data(), FALSE, NULL, TRUE, privatebrowsing, FALSE);
+                    break;
             }
 
             handled = true;
