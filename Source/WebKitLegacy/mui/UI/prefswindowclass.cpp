@@ -69,42 +69,44 @@ STATIC STRPTR cachemodels[] =
     NULL
 };
 
-STATIC CONST CONST_STRPTR textencodings[] =
+// First entry: "System default" (a catalog string, translated in cycles_init), the others are encoding names.
+STATIC STRPTR textencodings[] =
 {
-    "ISO-8859-1",
-    "ISO-8859-2",
-    "ISO-8859-3",
-    "ISO-8859-4",
-    "ISO-8859-5",
-    "ISO-8859-6",
-    "ISO-8859-7",
-    "ISO-8859-8",
-    "ISO-8859-9",
-    "ISO-8859-10",
-    "ISO-8859-13",
-    "ISO-8859-14",
-    "ISO-8859-15",
-    "UTF-8",
-    "BIG5",
-    "SHIFT-JIS",
-    "EUC-JP",
-    "ISO-2022-JP",
-    "ISO-2022-JP-1",
-    "CP1250",
-    "CP1251",
-    "CP1252",
-    "CP1253",
-    "CP1254",
-    "CP1255",
-    "CP1256",
-    "CP1257",
-    "CP1258",
-    "CP874",
-    "KOI8-R",
-    "KOI8-RU",
-    "UCS-2",
-    "UCS-2BE",
-    "UCS-2LE",
+    (STRPTR) MSG_PREFSWINDOW_FONTS_ENCODING_SYSTEM,
+    (STRPTR) "ISO-8859-1",
+    (STRPTR) "ISO-8859-2",
+    (STRPTR) "ISO-8859-3",
+    (STRPTR) "ISO-8859-4",
+    (STRPTR) "ISO-8859-5",
+    (STRPTR) "ISO-8859-6",
+    (STRPTR) "ISO-8859-7",
+    (STRPTR) "ISO-8859-8",
+    (STRPTR) "ISO-8859-9",
+    (STRPTR) "ISO-8859-10",
+    (STRPTR) "ISO-8859-13",
+    (STRPTR) "ISO-8859-14",
+    (STRPTR) "ISO-8859-15",
+    (STRPTR) "UTF-8",
+    (STRPTR) "BIG5",
+    (STRPTR) "SHIFT-JIS",
+    (STRPTR) "EUC-JP",
+    (STRPTR) "ISO-2022-JP",
+    (STRPTR) "ISO-2022-JP-1",
+    (STRPTR) "CP1250",
+    (STRPTR) "CP1251",
+    (STRPTR) "CP1252",
+    (STRPTR) "CP1253",
+    (STRPTR) "CP1254",
+    (STRPTR) "CP1255",
+    (STRPTR) "CP1256",
+    (STRPTR) "CP1257",
+    (STRPTR) "CP1258",
+    (STRPTR) "CP874",
+    (STRPTR) "KOI8-R",
+    (STRPTR) "KOI8-RU",
+    (STRPTR) "UCS-2",
+    (STRPTR) "UCS-2BE",
+    (STRPTR) "UCS-2LE",
     NULL
 };
 
@@ -258,6 +260,9 @@ static void cycles_init(void)
         }
         ptr++;
     }
+
+    // Only the first entry of the text encodings is a catalog string, the rest are codeset names
+    textencodings[0] = (STRPTR) GSI((IPTR) textencodings[0]);
 }
 
 MUI_HOOK(familypopclose, APTR list, APTR str)
@@ -663,7 +668,7 @@ DEFNEW
                                     Child, MakeLabel(GSI(MSG_PREFSWINDOW_FONTS_SMOOTHING_METHOD)),
                                     Child, cy_fontsmoothing = (Object *) MakePrefsCycle(GSI(MSG_PREFSWINDOW_FONTS_SMOOTHING_METHOD), smoothingmethods, MAKE_ID('S','F','S','M')),
                                     Child, MakeLabel(GSI(MSG_PREFSWINDOW_FONTS_ENCODING)),
-                                    Child, cy_textencoding = (Object *) MakePrefsCycle(GSI(MSG_PREFSWINDOW_FONTS_ENCODING), textencodings, MAKE_ID('S','T','E','1')),
+                                    Child, cy_textencoding = (Object *) MakePrefsCycle(GSI(MSG_PREFSWINDOW_FONTS_ENCODING), textencodings, MAKE_ID('S','T','E','2')),
 
                                     Child, MakeLabel(GSI(MSG_PREFSWINDOW_FONTS_STANDARD_FAMILY)),
                                     Child, FontFamilyPopString(standardfamily, "Bitstream Vera Sans", MAKE_ID('S','F','F','1')),
@@ -1387,7 +1392,9 @@ DEFGET
         case MA_OWBApp_TextEncoding:
         {
             ULONG i = getv(data->cy_textencoding, MUIA_Cycle_Active);
-            *msg->opg_Storage = (IPTR) textencodings[i];
+
+            // The first entry is "System default": no encoding name
+            *msg->opg_Storage = (IPTR) (i == 0 ? "" : textencodings[i]);
         }
         return TRUE;
 

@@ -77,6 +77,11 @@ static __attribute__((destructor)) void unicode_map_exit(void)
 }
 #endif
 
+#if OS(AMIGAOS)
+// utils.cpp: byte typed in the local encoding -> Unicode, with codesets.library. Global scope, not WebCore::.
+extern uint32 amigaToUnicodeChar(uint32 c);
+#endif
+
 namespace WebCore {
 
 static bool prev_AltKey;
@@ -623,7 +628,8 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(BalEventKey* event)
                             c = 18;
                     }
 
-                    aSrc[0] = (UChar) c;
+                    // The key comes in the local 8 bit encoding (system codeset, or the one chosen in the preferences)
+                    aSrc[0] = (UChar) amigaToUnicodeChar((unsigned char) c);
                 }
                 else
                 {

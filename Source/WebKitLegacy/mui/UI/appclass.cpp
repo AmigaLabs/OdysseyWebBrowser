@@ -148,6 +148,7 @@ extern void shutdownGlobalFTLWorklist();
 /* Local */
 #include "gui.h"
 #include "utils.h"
+#include <pal/text/TextEncoding.h>
 #include "clipboard.h"
 #include "owbcommand.h"
 #include "asl.h"
@@ -2536,7 +2537,27 @@ void prefs_update(Object *obj, struct Data *data)
     sharedPreferences->setDefaultFixedFontSize((int) getv(data->prefswin, MA_OWBApp_DefaultFixedFontSize));
     sharedPreferences->setMinimumFontSize((int) getv(data->prefswin, MA_OWBApp_MinimumFontSize));
     sharedPreferences->setMinimumLogicalFontSize((int) getv(data->prefswin, MA_OWBApp_MinimumLogicalFontSize));
-    sharedPreferences->setDefaultTextEncodingName((char *) getv(data->prefswin, MA_OWBApp_TextEncoding));
+    {
+        // Empty: "System default"
+        const char *encoding = (const char *) getv(data->prefswin, MA_OWBApp_TextEncoding);
+
+#if OS(AMIGAOS)
+        // Typed keys, local_to_utf8() and utf8_to_local() use this local encoding (codesets.library)
+        set_local_codeset(encoding);
+#endif
+
+        if(!encoding || !encoding[0])
+        {
+            // Charset for pages that don't declare one: the system's codeset if WebKit knows its name
+            const char *name = NULL;
+#if OS(AMIGAOS)
+            name = local_codeset_name();
+#endif
+            encoding = (name && PAL::TextEncoding(String::fromLatin1(name)).isValid()) ? name : "ISO-8859-1";
+        }
+
+        sharedPreferences->setDefaultTextEncodingName(encoding);
+    }
     sharedPreferences->setFontSmoothing((FontSmoothingType) getv(data->prefswin, MA_OWBApp_SmoothingType));
 
     sharedPreferences->setStandardFontFamily((char *) getv(data->prefswin, MA_OWBApp_StandardFontFamily));

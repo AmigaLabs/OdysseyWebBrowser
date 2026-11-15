@@ -2089,3 +2089,11 @@ Add a new, empty search engine\nat the end of the list.
 MSG_SEARCHMANAGERGROUP_REMOVE_HELP (//)
 Remove the selected search engine from the list.
 ;
+;
+;
+; PrefsWindow: text encoding entry that follows the system codeset
+;
+;
+MSG_PREFSWINDOW_FONTS_ENCODING_SYSTEM (//)
+System default
+;

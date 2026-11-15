@@ -13,6 +13,11 @@ void format_time(STRPTR buffer, ULONG size, ULONG seconds);
 void format_time_compact(STRPTR buffer, ULONG size, ULONG seconds);
 char *utf8_to_local(const char *in);
 char *local_to_utf8(const char *in);
+#if OS(AMIGAOS)
+void set_local_codeset(const char *name);
+const char *local_codeset_name(void);
+uint32 amigaToUnicodeChar(uint32 c);
+#endif
 ULONG name_match(CONST_STRPTR name, CONST_STRPTR pattern);
 STRPTR get_accepted_languages(STRPTR code, ULONG len);
 STRPTR get_language(STRPTR code, ULONG len);

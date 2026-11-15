@@ -61,6 +61,7 @@
 #if OS(AMIGAOS)
 #include <proto/codesets.h>
 #include <proto/application.h>
+#include <strings.h>
 #endif
 
 String truncate(const String& url, unsigned int size)
@@ -544,6 +545,68 @@ char *local_to_utf8(const char *in)
 }
 #else
 
+#if OS(AMIGAOS)
+/* Local (8 bit) encoding, converted with codesets.library. By default the system codeset; the "Text encoding" preference can
+ * override it (set_local_codeset). Used for typed keys, local_to_utf8() and utf8_to_local(). */
+static struct codeset *g_local_codeset = NULL; // NULL: the system default
+static bool g_local_is_utf8 = false;
+static uint32 g_unicode_map[256];
+static bool g_unicode_map_valid = false;
+
+static struct codeset *local_codeset(void)
+{
+    return g_local_codeset ? g_local_codeset : CodesetsFindA(NULL, NULL);
+}
+
+// name: a codeset name from the preferences, or empty/NULL for the system default.
+void set_local_codeset(const char *name)
+{
+    g_local_codeset = NULL;
+    g_local_is_utf8 = false;
+    g_unicode_map_valid = false;
+
+    if(name && name[0])
+    {
+        if(!strcasecmp(name, "UTF-8"))
+            g_local_is_utf8 = true;
+        else if(strncasecmp(name, "UCS-", 4)) // UCS-2 cannot be typed byte by byte, use the system default instead
+            g_local_codeset = CodesetsFind((CONST_STRPTR) name, CSA_FallbackToDefault, FALSE, TAG_DONE);
+        // shortcut: only single byte codesets can be typed (as in 1.23); names codesets.library does not know use the system default
+    }
+
+    if(!g_local_is_utf8)
+    {
+        struct codeset *cs = local_codeset();
+
+        if(cs)
+        {
+            for(ULONG c = 0; c < 256; c++)
+            {
+                uint32 ucs4 = (c < 0x80) ? c : cs->table[c].ucs4;
+                g_unicode_map[c] = (ucs4 && ucs4 <= 0xFFFF) ? ucs4 : c; // unmapped byte: keep it, as before
+            }
+            g_unicode_map_valid = true;
+        }
+    }
+}
+
+// Name of the codeset in use, e.g. "ISO-8859-7"
+const char *local_codeset_name(void)
+{
+    struct codeset *cs = g_local_is_utf8 ? CodesetsFindA("UTF-8", NULL) : local_codeset();
+    return cs ? cs->name : NULL;
+}
+
+// One byte typed on the keyboard (in the local encoding) to a Unicode code point
+uint32 amigaToUnicodeChar(uint32 c)
+{
+    if(g_unicode_map_valid && c < 256)
+        return g_unicode_map[c];
+
+    return c;
+}
+#endif
+
 char *utf8_to_local(const char *in)
 {
     if(!in)
@@ -589,29 +652,17 @@ char *utf8_to_local(const char *in)
     }
 #endif
 #if OS(AMIGAOS)
+    // UTF-8 page titles/text to the local encoding, for MUI widgets
+    if(g_local_is_utf8)
+        return strdup(in);
+
     {
         ULONG dataConvertedLength;
         STRPTR dataConverted = CodesetsUTF8ToStr(
                         CSA_Source, (IPTR) in,
                         CSA_DestLenPtr, (IPTR) &dataConvertedLength,
+                        CSA_DestCodeset, (IPTR) local_codeset(),
                         TAG_END);
-
-        if(dataConverted)
-        {
-            char * _ret = strdup(dataConverted);
-            CodesetsFreeA(dataConverted, NULL);
-            return _ret;
-        }
-    }
-#endif
-#if OS(AMIGAOS)
-    {
-        ULONG dataConvertedLength;
-        // Convert UTF-8 page titles/text to the system local charset for MUI widgets.
-        STRPTR dataConverted = CodesetsUTF8ToStr(
-                            CSA_Source, (IPTR) in,
-                            CSA_DestLenPtr, (IPTR) &dataConvertedLength,
-                            TAG_END);
 
         if(dataConverted)
         {
@@ -661,6 +712,27 @@ char *local_to_utf8(const char *in)
         ULONG dataConvertedLength;
         STRPTR dataConverted = CodesetsConvertStr(CSA_Source, (IPTR) in, CSA_SourceLen, (IPTR) strlen(in),
                 CSA_DestLenPtr, (IPTR) &dataConvertedLength, CSA_DestCodeset, (IPTR) utfCodeset, TAG_END);
+
+        if(dataConverted)
+        {
+            char * _ret = strdup(dataConverted);
+            CodesetsFreeA(dataConverted, NULL);
+            return _ret;
+        }
+    }
+#endif
+#if OS(AMIGAOS)
+    // Local encoding (system default unless overridden in the preferences) to UTF-8
+    if(g_local_is_utf8)
+        return strdup(in);
+
+    if(in[0])
+    {
+        struct codeset *utfCodeset = CodesetsFindA("UTF-8", NULL);
+        ULONG dataConvertedLength;
+        STRPTR dataConverted = CodesetsConvertStr(CSA_Source, (IPTR) in, CSA_SourceLen, (IPTR) strlen(in),
+                CSA_SourceCodeset, (IPTR) local_codeset(), CSA_DestCodeset, (IPTR) utfCodeset,
+                CSA_DestLenPtr, (IPTR) &dataConvertedLength, TAG_END);
 
         if(dataConverted)
         {
