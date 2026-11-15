@@ -33,6 +33,7 @@
 #include <WebCore/RenderEmbeddedObject.h>
 #include <WebCore/CookieConsentDecisionResult.h>
 #include "DateTimeChooser.h"
+#include <WebCore/Cursor.h>
 #include <WebCore/FileChooser.h>
 #include <WebCore/FileIconLoader.h>
 #include "JSActionDelegate.h"
@@ -495,23 +496,12 @@ void WebChromeClient::loadIconForFiles(const Vector<WTF::String>& filenames, Web
 
 void WebChromeClient::setCursor(const Cursor& cursor)
 {
-    //FIXME: implement me!
-    /*
-    HCURSOR platformCursor = cursor.platformCursor()->nativeCursor();
-    if (!platformCursor)
-        return;
-    if (COMPtr<IWebUIDelegate> delegate = uiDelegate()) {
-        COMPtr<IWebUIDelegatePrivate> delegatePrivate(Query, delegate);
-        if (delegatePrivate) {
-            if (SUCCEEDED(delegatePrivate->webViewSetCursor(m_webView, reinterpret_cast<OLE_HANDLE>(platformCursor))))
-                return;
-        }
-    }
+    // Link hand, text caret, resize arrows... The browser view applies it as MUIA_PointerType (see MA_OWBBrowser_Pointer).
+    BalWidget *widget = m_webView->viewWindow();
 
-    m_webView->setLastCursor(platformCursor);
-    ::SetCursor(platformCursor);
-    return;
-    */
+    // Only the visible tab owns the mouse pointer.
+    if(widget && widget->browser && widget->browser == (Object *) getv(app, MA_OWBApp_ActiveBrowser))
+        set(widget->browser, MA_OWBBrowser_Pointer, (IPTR) cursor.platformCursor());
 }
 
 void WebChromeClient::setCursorHiddenUntilMouseMoves(bool)

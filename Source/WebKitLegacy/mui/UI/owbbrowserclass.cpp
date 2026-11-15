@@ -746,17 +746,16 @@ static void doset(APTR obj, struct Data *data, struct TagItem *tags)
                 }
             }            
 #else
+            // MUI shows MUIA_PointerType while the mouse is over this object and restores the parent's pointer when it leaves.
             if(getv(app, MA_OWBApp_EnablePointers))
             {
                 if (data->pointertype != tag->ti_Data)
                 {
                     data->pointertype = tag->ti_Data;
-
-                    if (muiRenderInfo(obj))
-						SetWindowPointer(_window(obj), WA_Pointer, tag->ti_Data, TAG_DONE);
+                    set(obj, MUIA_PointerType, (LONG) tag->ti_Data);
                 }
             }
- #endif
+#endif
         }
         break;
 

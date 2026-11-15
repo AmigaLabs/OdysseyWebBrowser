@@ -42,7 +42,126 @@ namespace WebCore {
 
 void Cursor::ensurePlatformCursor() const
 {
-#if !OS(AROS) && !OS(AMIGAOS)
+#if OS(AMIGAOS)
+    // The browser view sets this as MUIA_PointerType; MUIV_PointerType_* have the same values as POINTERTYPE_*.
+    ULONG pointertype;
+
+    switch(m_type)
+    {
+        default:
+        case Type::Pointer:
+            pointertype = POINTERTYPE_NORMAL;
+            break;
+        case Type::Hand:
+            pointertype = POINTERTYPE_LINK;
+            break;
+        case Type::Cross:
+            pointertype = POINTERTYPE_CROSS;
+            break;
+        case Type::Wait:
+            pointertype = POINTERTYPE_BUSY;
+            break;
+        case Type::Help:
+            pointertype = POINTERTYPE_HELP;
+            break;
+        case Type::IBeam:
+            pointertype = POINTERTYPE_TEXT;
+            break;
+        case Type::VerticalText:
+            pointertype = POINTERTYPE_VERTICALTEXT;
+            break;
+        case Type::Move:
+        case Type::MiddlePanning:
+            pointertype = POINTERTYPE_SCROLLALL;
+            break;
+        case Type::Grab:
+        case Type::Grabbing:
+            pointertype = POINTERTYPE_HAND;
+            break;
+        case Type::EastResize:
+        case Type::EastPanning:
+            pointertype = POINTERTYPE_EASTRESIZE;
+            break;
+        case Type::WestResize:
+        case Type::WestPanning:
+            pointertype = POINTERTYPE_WESTRESIZE;
+            break;
+        case Type::NorthResize:
+        case Type::NorthPanning:
+            pointertype = POINTERTYPE_NORTHRESIZE;
+            break;
+        case Type::SouthResize:
+        case Type::SouthPanning:
+            pointertype = POINTERTYPE_SOUTHRESIZE;
+            break;
+        case Type::NorthEastResize:
+        case Type::NorthEastPanning:
+            pointertype = POINTERTYPE_NORTHEASTRESIZE;
+            break;
+        case Type::NorthWestResize:
+        case Type::NorthWestPanning:
+            pointertype = POINTERTYPE_NORTHWESTRESIZE;
+            break;
+        case Type::SouthEastResize:
+        case Type::SouthEastPanning:
+            pointertype = POINTERTYPE_SOUTHEASTRESIZE;
+            break;
+        case Type::SouthWestResize:
+        case Type::SouthWestPanning:
+            pointertype = POINTERTYPE_SOUTHWESTRESIZE;
+            break;
+        case Type::EastWestResize:
+            pointertype = POINTERTYPE_EASTWESTRESIZE;
+            break;
+        case Type::NorthSouthResize:
+            pointertype = POINTERTYPE_NORTHSOUTHRESIZE;
+            break;
+        case Type::NorthEastSouthWestResize:
+            pointertype = POINTERTYPE_NORTHEASTSOUTHWESTRESIZE;
+            break;
+        case Type::NorthWestSouthEastResize:
+            pointertype = POINTERTYPE_NORTHWESTSOUTHEASTRESIZE;
+            break;
+        case Type::ColumnResize:
+            pointertype = POINTERTYPE_COLUMNRESIZE;
+            break;
+        case Type::RowResize:
+            pointertype = POINTERTYPE_ROWRESIZE;
+            break;
+        case Type::Cell:
+            pointertype = POINTERTYPE_CELL;
+            break;
+        case Type::ContextMenu:
+            pointertype = POINTERTYPE_CONTEXTMENU;
+            break;
+        case Type::Alias:
+            pointertype = POINTERTYPE_ALIAS;
+            break;
+        case Type::Progress:
+            pointertype = POINTERTYPE_PROGRESS;
+            break;
+        case Type::NoDrop:
+            pointertype = POINTERTYPE_NODROP;
+            break;
+        case Type::NotAllowed:
+            pointertype = POINTERTYPE_NOTALLOWED;
+            break;
+        case Type::Copy:
+            pointertype = POINTERTYPE_COPY;
+            break;
+        case Type::None:
+            pointertype = POINTERTYPE_NONE;
+            break;
+        case Type::ZoomIn:
+            pointertype = POINTERTYPE_ZOOMIN;
+            break;
+        case Type::ZoomOut:
+            pointertype = POINTERTYPE_ZOOMOUT;
+            break;
+    }
+
+    m_platformCursor = (void *) (uintptr_t) pointertype;
+#elif !OS(AROS)
     ULONG pointertype;
 
     switch(m_type)
