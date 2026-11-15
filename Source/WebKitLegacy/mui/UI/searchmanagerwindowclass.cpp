@@ -45,13 +45,19 @@ struct Data
 
 DEFNEW
 {
-    Object *group;
+    Object *group, *bt_save, *bt_cancel;
 
     obj = (Object *) DoSuperNew(cl, obj,
             MUIA_Window_ID, MAKE_ID('W','S','E','A'),
             MUIA_Window_Title, GSI(MSG_SEARCHMANAGERWINDOW_TITLE),
             MUIA_Window_NoMenus, TRUE,
-            WindowContents, group = (Object *) NewObject(getsearchmanagergroupclass(), NULL, TAG_DONE),
+            WindowContents, VGroup,
+                Child, group = (Object *) NewObject(getsearchmanagergroupclass(), NULL, TAG_DONE),
+                Child, HGroup,
+                    Child, bt_save = (Object *) MakeButton(GSI(MSG_SEARCHMANAGERWINDOW_SAVE)),
+                    Child, bt_cancel = (Object *) MakeButton(GSI(MSG_SEARCHMANAGERWINDOW_CANCEL)),
+                End,
+            End,
             TAG_MORE, msg->ops_AttrList);
 
     if (obj)
@@ -60,7 +66,13 @@ DEFNEW
 
         data->group = group;
 
-        DoMethod(obj, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, obj, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+        set(bt_save,   MUIA_ShortHelp, GSI(MSG_SEARCHMANAGERWINDOW_SAVE_HELP));
+        set(bt_cancel, MUIA_ShortHelp, GSI(MSG_SEARCHMANAGERWINDOW_CANCEL_HELP));
+
+        // Edits take effect only with "Save"; the close gadget works like "Cancel".
+        DoMethod(obj,       MUIM_Notify, MUIA_Window_CloseRequest, TRUE,  obj, 1, MM_SearchManagerWindow_Cancel);
+        DoMethod(bt_save,   MUIM_Notify, MUIA_Pressed,             FALSE, obj, 1, MM_SearchManagerWindow_Save);
+        DoMethod(bt_cancel, MUIM_Notify, MUIA_Pressed,             FALSE, obj, 1, MM_SearchManagerWindow_Cancel);
     }
 
     return (IPTR)obj;
@@ -94,10 +106,32 @@ DEFTMETHOD(SearchManagerGroup_Load)
     return DoMethod(data->group, MM_SearchManagerGroup_Load);
 }
 
+DEFTMETHOD(SearchManagerWindow_Save)
+{
+    GETDATA;
+
+    DoMethod(data->group, MM_SearchManagerGroup_Save);
+    set(obj, MUIA_Window_Open, FALSE);
+
+    return 0;
+}
+
+DEFTMETHOD(SearchManagerWindow_Cancel)
+{
+    GETDATA;
+
+    DoMethod(data->group, MM_SearchManagerGroup_Revert);
+    set(obj, MUIA_Window_Open, FALSE);
+
+    return 0;
+}
+
 BEGINMTABLE
 DECNEW
 DECGET
 DECTMETHOD(SearchManagerGroup_Load)
+DECTMETHOD(SearchManagerWindow_Save)
+DECTMETHOD(SearchManagerWindow_Cancel)
 ENDMTABLE
 
 DECSUBCLASS_NC(MUIC_Window, searchmanagerwindowclass)

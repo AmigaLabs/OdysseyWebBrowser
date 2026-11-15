@@ -739,6 +739,12 @@ enum {
     MM_SearchManagerGroup_Remove,
     MM_SearchManagerGroup_Update,
     MM_SearchManagerGroup_Change,
+    MM_SearchManagerGroup_Save,
+    MM_SearchManagerGroup_Revert,
+    MM_SearchManagerGroup_Up,
+    MM_SearchManagerGroup_Down,
+    MM_SearchManagerWindow_Save,
+    MM_SearchManagerWindow_Cancel,
 
     /* Script Manager */
     MM_ScriptManagerGroup_Load,

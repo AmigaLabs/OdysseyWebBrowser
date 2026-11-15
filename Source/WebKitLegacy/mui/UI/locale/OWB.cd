@@ -2054,3 +2054,38 @@ disabled
 MSG_USERAGENTLIST_INFO (//60)
 NOTE: max. 64 entries; max. in menu 31
 ;
+;
+;
+; SearchManagerWindow / SearchManagerGroup: Save, Cancel, Up, Down and help bubbles
+;
+;
+MSG_SEARCHMANAGERWINDOW_SAVE (//)
+_Save
+;
+MSG_SEARCHMANAGERWINDOW_CANCEL (//)
+_Cancel
+;
+MSG_SEARCHMANAGERWINDOW_SAVE_HELP (//)
+Save the changes to the search engine list\nand close the window.
+;
+MSG_SEARCHMANAGERWINDOW_CANCEL_HELP (//)
+Ignore all changes and close the window.
+;
+MSG_SEARCHMANAGERGROUP_UP (//)
+Up
+;
+MSG_SEARCHMANAGERGROUP_DOWN (//)
+Down
+;
+MSG_SEARCHMANAGERGROUP_UP_HELP (//)
+Move the selected search engine up in the list.
+;
+MSG_SEARCHMANAGERGROUP_DOWN_HELP (//)
+Move the selected search engine down in the list.
+;
+MSG_SEARCHMANAGERGROUP_ADD_HELP (//)
+Add a new, empty search engine\nat the end of the list.
+;
+MSG_SEARCHMANAGERGROUP_REMOVE_HELP (//)
+Remove the selected search engine from the list.
+;
