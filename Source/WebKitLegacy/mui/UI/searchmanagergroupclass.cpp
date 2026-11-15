@@ -111,7 +111,7 @@ static void load_searchengines(Object *obj, struct Data *data)
     searchFile->close();
     delete searchFile;
 
-    Vector<String> lines = fileBuffer.split("\n");
+    Vector<String> lines = fileBuffer.split('\n');
 
     set(data->lv_entries, MUIA_List_Quiet, TRUE);
 

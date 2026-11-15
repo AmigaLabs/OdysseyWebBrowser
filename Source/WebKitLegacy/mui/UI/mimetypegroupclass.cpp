@@ -315,7 +315,7 @@ DEFTMETHOD(MimeTypeGroup_Refresh)
     if(mn)
     {
         String mimetypestr = mn->mimetype;
-        Vector<String> types = mimetypestr.split("/");
+        Vector<String> types = mimetypestr.split('/');
 
         set(data->bt_remove, MUIA_Disabled, mn->builtin);
         set(data->st_mimefamily, MUIA_Disabled, mn->builtin);
@@ -549,7 +549,7 @@ DEFMMETHOD(Import)
         {
             ULONG i;
             String input = val;
-            Vector<String> mimetypes = input.split("\n");
+            Vector<String> mimetypes = input.split('\n');
             for(i = 0; i < mimetypes.size(); i++)
             {
                 Vector<String> mimetypeAttributes = mimetypes[i].split('\1');

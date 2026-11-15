@@ -179,7 +179,7 @@ String MIMETypeRegistry::mimeTypeForExtension(StringView ext)
         {
             struct mimetypenode *mn = (struct mimetypenode *) n;
             String extensions = mn->extensions;
-            Vector<String> listExtensions = extensions.split(" ");
+            Vector<String> listExtensions = extensions.split(' ');
 
             for(size_t i = 0; i < listExtensions.size(); i++)
             {
@@ -214,7 +214,7 @@ Vector<String> MIMETypeRegistry::extensionsForMIMEType(const String& type)
         {
             Vector<String> newExtensions;
             String strExtensions = mn->extensions;
-            newExtensions = strExtensions.split(" ");
+            newExtensions = strExtensions.split(' ');
             
             if(newExtensions.size())
                 extensions = newExtensions;

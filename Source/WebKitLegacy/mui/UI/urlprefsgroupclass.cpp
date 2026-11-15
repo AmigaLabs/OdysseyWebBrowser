@@ -379,7 +379,7 @@ DEFTMETHOD(URLPrefsGroup_Load)
     urlFile->close();
     delete urlFile;
 
-    Vector<String> urlsettings = fileBuffer.split("\n");
+    Vector<String> urlsettings = fileBuffer.split('\n');
 
     set(data->lv_url, MUIA_List_Quiet, TRUE);
 

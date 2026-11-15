@@ -3185,7 +3185,7 @@ DEFSMETHOD(OWBApp_RequestPolicyForMimeType)
     /* Search again with family match */
     if(!matching_mn)
     {
-        Vector<String> typeparts = mimetype.split("/");
+        Vector<String> typeparts = mimetype.split('/');
 
         if(typeparts.size() == 2)
         {
@@ -3232,7 +3232,7 @@ DEFSMETHOD(OWBApp_RequestPolicyForMimeType)
             {
                 struct mimetypenode *mn = (struct mimetypenode *) n;
                 String extensions = mn->extensions;
-                Vector<String> listExtensions = extensions.split(" ");
+                Vector<String> listExtensions = extensions.split(' ');
 
                 for(unsigned int i = 0; i < listExtensions.size(); i++)
                 {
@@ -3499,11 +3499,11 @@ DEFSMETHOD(OWBApp_RestoreSession)
             static Vector<WindowState> windowstates;
             windowstates.clear();
 
-            Vector<String> entries = input.split("\n");
+            Vector<String> entries = input.split('\n');
 
             for(i = 0; i < entries.size(); i++)
             {
-                Vector<String> attributes = entries[i].split(" ");
+                Vector<String> attributes = entries[i].split(' ');
 
                 if(attributes.size() == 4)
                 {
