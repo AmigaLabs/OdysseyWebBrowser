@@ -252,7 +252,7 @@ What's missing and might be supported in next versions
 History
 -------
 
-- 16.11.2026: Odyssey Web Browser 4.0.0
+- 16.11.2026: Odyssey Web Browser 4.1.0
 
 * Fixed opening websites with URLOpen
 * Fixed checkboxes and radio buttons' look and feel
@@ -265,10 +265,10 @@ History
 * Fixed the mouse pointer types. Now, when the pointer is over fields,
   links etc change to the respective icon
 * Increased the FontConfig cache that was crashing on some systems
-* Fixed text encodings' conversion between unicode and ISO. In preferences
+* Fixed text encodings' conversion between Unicode and ISO. In preferences
   a new "System default" option is available, which check the encoding the
   system uses, and make the translation to that. But also the user can
-  choose their preference. The unicode conversion now works on window
+  choose their preference. The Unicode conversion now works on window
   titles and tabs.
 
 - 14.11.2026: Odyssey Web Browser 4.0.0
