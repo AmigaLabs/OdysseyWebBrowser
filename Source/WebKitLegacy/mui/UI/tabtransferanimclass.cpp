@@ -32,9 +32,11 @@
 
 #define SYSTEM_PRIVATE 1
 
+#ifndef __amigaos4__
 #include <cybergraphx/cybergraphics.h>
-#include <proto/alib.h>
 #include <proto/cybergraphics.h>
+#endif
+#include <proto/alib.h>
 #include <proto/utility.h>
 
 #include "gui.h"

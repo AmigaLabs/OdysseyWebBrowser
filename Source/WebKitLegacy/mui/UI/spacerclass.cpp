@@ -1,5 +1,7 @@
+#ifndef __amigaos4__
 #include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
+#endif
 #include <proto/graphics.h>
 
 #ifndef POP_BRIGHTEN
