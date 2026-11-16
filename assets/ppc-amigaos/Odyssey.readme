@@ -1,4 +1,4 @@
-Odyssey 4.0.0 - AmigaOS4
+Odyssey 4.1.0 - AmigaOS4
 
 ***********************************************************************************
 *                                                                                 *
@@ -251,6 +251,25 @@ What's missing and might be supported in next versions
 
 History
 -------
+
+- 16.11.2026: Odyssey Web Browser 4.0.0
+
+* Fixed opening websites with URLOpen
+* Fixed checkboxes and radio buttons' look and feel
+* Fixed navigating in website history using the back and forward buttons
+* Enhanced the Search Engines window. Now there are buttons for saving or 
+  cancelling the changes, but also for changing the order of the engines
+* Fixed the middle mouse button that didn't respect the action set in
+  preferences
+* Fixed navigation using the 4th and 5th mouse buttons
+* Fixed the mouse pointer types. Now, when the pointer is over fields,
+  links etc change to the respective icon
+* Increased the FontConfig cache that was crashing on some systems
+* Fixed text encodings' conversion between unicode and ISO. In preferences
+  a new "System default" option is available, which check the encoding the
+  system uses, and make the translation to that. But also the user can
+  choose their preference. The unicode conversion now works on window
+  titles and tabs.
 
 - 14.11.2026: Odyssey Web Browser 4.0.0
 
